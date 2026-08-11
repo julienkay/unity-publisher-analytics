@@ -503,7 +503,7 @@
         animation: false,
         aria: { enabled: true, description: `${viewModel.metric.label} by day across ${viewModel.years.length} calendar years.` },
         tooltip: { trigger: "item", confine: true, backgroundColor: "#151927", borderWidth: 0, padding: [10, 12], textStyle: { color: "#fff", fontSize: 11 }, formatter: parameter => `<strong>${escapeHtml(parameter.data[0])}</strong><br/><span style="color:#aaa3d8">${viewModel.metric.label}</span>&nbsp;&nbsp;${formatValue(parameter.data[1])}` },
-        visualMap: { min: 0, max: viewModel.scaleMax, calculable: true, orient: "horizontal", right: 20, top: 8, itemWidth: 9, itemHeight: 110, text: [formatValue(viewModel.scaleMax), "0"], textGap: 7, textStyle: { color: "#81899b", fontSize: 9 }, inRange: { color: ["#f1f0f8", "#d9d4f6", "#a99def", "#6c5ce7", "#372c83"] }, seriesIndex: series.map((_, index) => index) },
+        visualMap: { min: 0, max: viewModel.scaleMax, calculable: false, orient: "horizontal", right: 20, top: 8, itemWidth: 9, itemHeight: 110, text: [formatValue(viewModel.scaleMax), "0"], textGap: 7, textStyle: { color: "#81899b", fontSize: 9 }, inRange: { color: ["#f1f0f8", "#d9d4f6", "#a99def", "#6c5ce7", "#372c83"] }, seriesIndex: series.map((_, index) => index) },
         calendar: calendars, series
       }, { notMerge: true });
     };
