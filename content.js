@@ -136,9 +136,9 @@
     }
   });
 
-  async function fetchPackageCategoryIds() {
-    const categoryIds = new Map(), limit = 200;
-    let offset = 0;
+  async function fetchPackageCategoryMetadata() {
+    const categoryIdsByIdentifier = new Map(), categoryIdsByName = new Map(), metadataFields = new Set(), limit = 200;
+    let offset = 0, rowCount = 0, assignmentCount = 0;
     while (true) {
       const body = { limit: String(limit), order_by: "name", order: "asc" };
       if (offset) body.offset = String(offset);
@@ -146,24 +146,37 @@
       const rows = valueFrom(response, ["package_versions", "packageVersions"]);
       if (!Array.isArray(rows) || !rows.length) break;
       for (const item of rows) {
-        const packageId = String(valueFrom(item, ["package_id", "packageId"]) || ""), categoryId = String(valueFrom(item, ["category_id", "categoryId"]) || "");
-        if (packageId && categoryId) categoryIds.set(packageId, categoryId);
+        rowCount += 1;
+        Object.keys(item || {}).forEach(field => metadataFields.add(field));
+        const categoryId = String(valueFrom(item, ["category_id", "categoryId"]) || "");
+        if (!categoryId) continue;
+        assignmentCount += 1;
+        for (const identifier of [valueFrom(item, ["package_id", "packageId"]), valueFrom(item, ["genesis_product_id", "genesisProductId", "product_id", "productId"]), valueFrom(item, ["id"])]) {
+          if (identifier !== "" && identifier !== null && identifier !== undefined) categoryIdsByIdentifier.set(String(identifier), categoryId);
+        }
+        const name = compact(valueFrom(item, ["name", "package_name", "packageName"])).toLocaleLowerCase();
+        if (name) categoryIdsByName.set(name, categoryId);
       }
       offset += rows.length;
       const total = toNumber(valueFrom(response, ["total"]));
       if (rows.length < limit || (total && offset >= total)) break;
     }
-    return categoryIds;
+    return { categoryIdsByIdentifier, categoryIdsByName, metadataFields: [...metadataFields].sort(), rowCount, assignmentCount };
   }
 
   async function fetchPackages() {
-    const [raw, categoryRows, categoryIdsByPackage] = await Promise.all([apiJson(API.packages), apiJson(API.categories), fetchPackageCategoryIds()]);
+    const [raw, categoryRows, metadata] = await Promise.all([apiJson(API.packages), apiJson(API.categories), fetchPackageCategoryMetadata()]);
     const categories = new Map((Array.isArray(categoryRows) ? categoryRows : []).map(item => [String(valueFrom(item, ["id", "category_id", "categoryId"]) || ""), compact(valueFrom(item, ["assetstore_name", "assetstoreName", "name", "title", "category_name", "categoryName"]))]).filter(([id, name]) => id && name));
-    return (Array.isArray(raw) ? raw : []).map(item => {
+    const packages = (Array.isArray(raw) ? raw : []).map(item => {
       const id = String(valueFrom(item, ["package_id", "packageId", "id"]) || "");
-      const categoryId = String(valueFrom(item, ["category_id", "categoryId"]) || categoryIdsByPackage.get(id) || "");
-      return { id, name: valueFrom(item, ["name", "title", "package_name"]) || `Package ${id}`, categoryId, category: packageCategory(item) || categories.get(categoryId) || "", firstPublished: parseDate(valueFrom(item, ["first_published_time", "firstPublishedTime", "first_published"])) };
+      const name = valueFrom(item, ["name", "title", "package_name"]) || `Package ${id}`;
+      const categoryId = String(valueFrom(item, ["category_id", "categoryId"]) || metadata.categoryIdsByIdentifier.get(id) || metadata.categoryIdsByName.get(compact(name).toLocaleLowerCase()) || "");
+      return { id, name, categoryId, category: packageCategory(item) || categories.get(categoryId) || "", firstPublished: parseDate(valueFrom(item, ["first_published_time", "firstPublishedTime", "first_published"])) };
     }).filter(item => item.id);
+    if (packages.length && !packages.some(item => item.category)) {
+      console.warn("Unity Publisher Analytics+ category metadata unavailable:", { publishedPackages: packages.length, metadataRows: metadata.rowCount, metadataAssignments: metadata.assignmentCount, categoryDefinitions: categories.size, metadataFields: metadata.metadataFields });
+    }
+    return packages;
   }
 
   function normalizeSales(raw, period) {
