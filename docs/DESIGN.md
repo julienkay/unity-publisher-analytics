@@ -44,12 +44,13 @@ The type tokens live on `#upa-root` in `styles.css`.
 - Menus and advanced editors open beneath their trigger and dismiss with outside click or Escape.
 - Primary actions use the violet accent; destructive actions require explicit wording and confirmation.
 - Cards begin with an eyebrow, title, one-sentence explanation, and optional tools aligned on the right.
+- Dense package tables use a strong identity column, paired primary/secondary values, and horizontal scrolling instead of compressed text.
 - Empty, loading, error, and success states use publisher-facing language and keep the next action obvious.
 
 ## Charts
 
 - Start with the question the chart answers, then choose the visualization.
-- Use the shared semantic colors: violet for revenue, cyan for pageviews, amber for downloads, and green for positive performance/status.
+- Use the shared semantic colors: violet for revenue, cyan for pageviews, amber for downloads, green for positive performance/status, and rose for negative movement.
 - Keep axes and legends at 10px or larger when space allows; tooltips use at least 11px.
 - Put units in labels or tooltips, format values consistently, and make the active date range explicit near the chart.
 - Avoid visual noise: hide meaningless zero hover states, soften grid lines, and keep legends separated from plotted data.

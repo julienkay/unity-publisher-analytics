@@ -36,7 +36,7 @@ Additional views reveal patterns that are hard to see in a timeline:
 - A filterable Sankey diagram shows how package revenue is distributed across price tiers without implying customer-level journeys that the aggregate source data cannot support.
 - Every chart can be saved as a high-resolution PNG or shared through the device's native share surface when available.
 
-The left navigation separates a general Dashboard from the deeper Analytics workspace. Dashboard combines the four headline metrics with aligned revenue, pageview, and download timelines. Within Analytics, focused tabs switch between Revenue, Daily patterns, Revenue flow, and Packages while the selected date range remains shared across the workspace.
+The left navigation separates a general Dashboard from the deeper Analytics workspace. Dashboard combines six headline metrics with aligned revenue, pageview, and download timelines, followed by a ranked package table. Within Analytics, focused tabs switch between Revenue, Daily patterns, Revenue flow, and Packages while the selected date range remains shared across the workspace.
 
 Progress is saved as the history is synced. If the page is refreshed, the extension continues from where it left off. Once the full history is ready, recent results are refreshed automatically whenever the Publisher Portal is visited.
 
