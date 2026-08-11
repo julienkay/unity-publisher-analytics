@@ -15,7 +15,7 @@
     try { url = new URL(path, location.origin); } catch { return false; }
     if (url.origin !== location.origin) return false;
     if (url.pathname === "/publisher-v2-api/proxy" && method === "GET") {
-      return url.searchParams.get("path") === "/management/once-published-packages" && url.searchParams.get("type") === "array";
+      return ["/management/once-published-packages", "/management/categories"].includes(url.searchParams.get("path")) && url.searchParams.get("type") === "array";
     }
     if (/^\/publisher-v2-api\/monthly-(sales|downloads)$/.test(url.pathname) && method === "GET") return /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get("date") || "");
     if (url.pathname === "/publisher-v2-api/publisher-revenues" && method === "GET") return true;

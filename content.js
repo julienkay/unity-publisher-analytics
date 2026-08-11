@@ -8,6 +8,7 @@
   const DAILY_API_MIN_DATE = "2019-01-01";
   const API = {
     packages: "/publisher-v2-api/proxy?path=%2Fmanagement%2Fonce-published-packages&type=array",
+    categories: "/publisher-v2-api/proxy?path=%2Fmanagement%2Fcategories&type=array",
     sales: month => `/publisher-v2-api/monthly-sales?date=${month}-01`,
     downloads: month => `/publisher-v2-api/monthly-downloads?date=${month}-01`,
     revenue: "/publisher-v2-api/publisher-revenues",
@@ -135,10 +136,12 @@
   });
 
   async function fetchPackages() {
-    const raw = await apiJson(API.packages);
+    const [raw, categoryRows] = await Promise.all([apiJson(API.packages), apiJson(API.categories)]);
+    const categories = new Map((Array.isArray(categoryRows) ? categoryRows : []).map(item => [String(valueFrom(item, ["id", "category_id", "categoryId"]) || ""), compact(valueFrom(item, ["assetstore_name", "assetstoreName", "name", "title", "category_name", "categoryName"]))]).filter(([id, name]) => id && name));
     return (Array.isArray(raw) ? raw : []).map(item => {
       const id = String(valueFrom(item, ["package_id", "packageId", "id"]) || "");
-      return { id, name: valueFrom(item, ["name", "title", "package_name"]) || `Package ${id}`, category: packageCategory(item), firstPublished: parseDate(valueFrom(item, ["first_published_time", "firstPublishedTime", "first_published"])) };
+      const categoryId = String(valueFrom(item, ["category_id", "categoryId"]) || "");
+      return { id, name: valueFrom(item, ["name", "title", "package_name"]) || `Package ${id}`, categoryId, category: packageCategory(item) || categories.get(categoryId) || "", firstPublished: parseDate(valueFrom(item, ["first_published_time", "firstPublishedTime", "first_published"])) };
     }).filter(item => item.id);
   }
 
