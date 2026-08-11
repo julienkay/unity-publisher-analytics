@@ -182,7 +182,7 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 .upa-package-table tbody tr:hover { background:#fafafe; }
 .upa-package-identity { display:flex;align-items:center;gap:10px;min-width:0;cursor:help; }
 .upa-package-avatar { display:grid;place-items:center;flex:0 0 auto;width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#eeeaff,#f7f5ff);color:#5b4bc8;font-size:var(--upa-font-support);font-weight:850; }
-.upa-package-name { overflow:hidden;color:#2c3446;font-size:var(--upa-font-lead);font-weight:750;text-overflow:ellipsis;white-space:nowrap; }
+.upa-package-name { overflow:hidden;color:#2c3446;font-size:var(--upa-font-body);font-weight:700;text-overflow:ellipsis;white-space:nowrap; }
 .upa-package-table td { min-width:0;color:#2c3446;font-size:var(--upa-font-body);font-weight:700;white-space:nowrap; }
 .upa-table-value { font:inherit; }
 .upa-table-inline-detail { margin-left:6px;color:#8a91a1;font-size:var(--upa-font-caption);font-weight:650; }
