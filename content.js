@@ -339,10 +339,18 @@
     chartResizeObservers.clear(); chartInstances.clear();
   }
 
-  function createChart(key, container) {
+  function createChart(key, container, onResize) {
     if (!container || !globalThis.UPAECharts?.init) return null;
     const chart = globalThis.UPAECharts.init(container, null, { renderer: "svg" });
-    const observer = new ResizeObserver(() => chart.resize());
+    let lastWidth = Math.round(container.clientWidth);
+    const observer = new ResizeObserver(entries => {
+      chart.resize();
+      const width = Math.round(entries[0]?.contentRect.width || container.clientWidth);
+      if (onResize && width !== lastWidth) {
+        lastWidth = width;
+        onResize(chart, width);
+      }
+    });
     observer.observe(container); chartInstances.set(key, chart); chartResizeObservers.set(key, observer);
     return chart;
   }
@@ -447,28 +455,43 @@
     if (!container) return;
     if (!viewModel.points.length) { container.innerHTML = '<div class="upa-empty-chart">No daily activity is available for this date range.</div>'; return; }
     if (!globalThis.UPAECharts?.init) { container.innerHTML = '<div class="upa-empty-chart">The chart renderer could not be loaded.</div>'; return; }
-    const chart = createChart("calendar", container); if (!chart) return;
     const formatValue = value => viewModel.metric.currency
       ? new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value || 0)
       : number(value);
-    const calendars = viewModel.years.map((year, index) => ({
-      range: year, top: 66 + index * 116, left: 62, right: 24, height: 82, cellSize: ["auto", 13],
-      splitLine: { show: true, lineStyle: { color: "#fff", width: 3 } },
-      itemStyle: { color: "#f3f4f7", borderColor: "#fff", borderWidth: 2 },
-      yearLabel: { show: true, position: "left", margin: 35, color: "#434b5d", fontSize: 12, fontWeight: 750 },
-      monthLabel: { color: "#858da0", fontSize: 9, margin: 7 }, dayLabel: { firstDay: 1, color: "#a0a6b5", fontSize: 8, margin: 7 }
-    }));
     const series = viewModel.years.map((year, index) => ({
       name: viewModel.metric.label, type: "heatmap", coordinateSystem: "calendar", calendarIndex: index,
       data: viewModel.points.filter(([date]) => date.startsWith(year)), emphasis: { itemStyle: { borderColor: "#26213f", borderWidth: 1, shadowBlur: 5, shadowColor: "rgba(40,32,78,.25)" } }
     }));
-    chart.setOption({
-      animation: false,
-      aria: { enabled: true, description: `${viewModel.metric.label} by day across ${viewModel.years.length} calendar years.` },
-      tooltip: { trigger: "item", confine: true, backgroundColor: "#151927", borderWidth: 0, padding: [10, 12], textStyle: { color: "#fff", fontSize: 11 }, formatter: parameter => `<strong>${escapeHtml(parameter.data[0])}</strong><br/><span style="color:#aaa3d8">${viewModel.metric.label}</span>&nbsp;&nbsp;${formatValue(parameter.data[1])}` },
-      visualMap: { min: 0, max: viewModel.scaleMax, calculable: true, orient: "horizontal", right: 20, top: 8, itemWidth: 9, itemHeight: 110, text: [formatValue(viewModel.scaleMax), "0"], textGap: 7, textStyle: { color: "#81899b", fontSize: 9 }, inRange: { color: ["#f1f0f8", "#d9d4f6", "#a99def", "#6c5ce7", "#372c83"] }, seriesIndex: series.map((_, index) => index) },
-      calendar: calendars, series
-    });
+    const setCalendarOption = (chart, availableWidth) => {
+      const width = Math.max(280, availableWidth || container.clientWidth);
+      const sideRoom = width < 540 ? 48 : 88;
+      const cellSize = Math.max(5, Math.min(18, Math.floor((width - sideRoom) / 53)));
+      const rowHeight = cellSize * 7;
+      const rowGap = Math.max(30, Math.round(cellSize * 1.8));
+      const firstRowTop = 66;
+      const rowStep = rowHeight + rowGap;
+      const calendarWidth = cellSize * 53;
+      const left = Math.max(36, Math.round((width - calendarWidth) / 2));
+      const chartHeight = Math.max(250, firstRowTop + viewModel.years.length * rowStep + 22);
+      const calendars = viewModel.years.map((year, index) => ({
+        range: year, top: firstRowTop + index * rowStep, left, cellSize: [cellSize, cellSize],
+        splitLine: { show: true, lineStyle: { color: "#fff", width: 3 } },
+        itemStyle: { color: "#f3f4f7", borderColor: "#fff", borderWidth: 2 },
+        yearLabel: { show: true, position: "left", margin: 35, color: "#434b5d", fontSize: 12, fontWeight: 750 },
+        monthLabel: { color: "#858da0", fontSize: 9, margin: 7 }, dayLabel: { firstDay: 1, color: "#a0a6b5", fontSize: 8, margin: 7 }
+      }));
+      container.style.height = `${chartHeight}px`;
+      chart.resize({ height: chartHeight });
+      chart.setOption({
+        animation: false,
+        aria: { enabled: true, description: `${viewModel.metric.label} by day across ${viewModel.years.length} calendar years.` },
+        tooltip: { trigger: "item", confine: true, backgroundColor: "#151927", borderWidth: 0, padding: [10, 12], textStyle: { color: "#fff", fontSize: 11 }, formatter: parameter => `<strong>${escapeHtml(parameter.data[0])}</strong><br/><span style="color:#aaa3d8">${viewModel.metric.label}</span>&nbsp;&nbsp;${formatValue(parameter.data[1])}` },
+        visualMap: { min: 0, max: viewModel.scaleMax, calculable: true, orient: "horizontal", right: 20, top: 8, itemWidth: 9, itemHeight: 110, text: [formatValue(viewModel.scaleMax), "0"], textGap: 7, textStyle: { color: "#81899b", fontSize: 9 }, inRange: { color: ["#f1f0f8", "#d9d4f6", "#a99def", "#6c5ce7", "#372c83"] }, seriesIndex: series.map((_, index) => index) },
+        calendar: calendars, series
+      }, { notMerge: true });
+    };
+    const chart = createChart("calendar", container, setCalendarOption); if (!chart) return;
+    setCalendarOption(chart, container.clientWidth);
   }
 
   function sankeyPackageOptions(items) {
@@ -571,7 +594,7 @@
     const hasData = records.length > 0;
     const availableBounds = availableDateBounds(), dateBounds = selectedDateBounds(), interval = resolvedInterval(dateBounds), revenueChartData = revenueViewModel(dailyAll, interval);
     const overviewChartData = overviewViewModel(dailyAll, dateBounds), calendarData = calendarViewModel(dailyAll, prefs.calendarMetric), sankeyData = sankeyViewModel(salesItems, prefs.sankeyPackages);
-    const calendarHeight = Math.max(250, calendarData.years.length * 116 + 64), sankeyHeight = Math.max(410, sankeyData.activePackages.length * 48 + 96);
+    const sankeyHeight = Math.max(410, sankeyData.activePackages.length * 48 + 96);
     chartShareMetadata.set("overview", { title: "Portfolio pulse", subtitle: `${intervalName(overviewChartData.interval)} revenue, pageviews, and downloads · ${dateBounds.start} to ${dateBounds.end}` });
     chartShareMetadata.set("revenue", { title: "Gross revenue over time", subtitle: `${intervalName(interval)} totals · ${dateBounds.start} to ${dateBounds.end}` });
     chartShareMetadata.set("calendar", { title: `${calendarData.metric.label} calendar`, subtitle: `${dateBounds.start} to ${dateBounds.end} · daily intensity across ${calendarData.years.length} ${calendarData.years.length === 1 ? "year" : "years"}` });
@@ -616,7 +639,7 @@
           <main class="upa-content" data-section="${section}" data-view="${view}">${records.length ? `<section class="upa-kpis upa-view-panel upa-view-dashboard" id="upa-view-dashboard"><article><div><small>Gross revenue</small><span class="upa-kpi-dot upa-violet"></span></div><strong>${money(revenueChartData.total)}</strong><span>${number(paidUnits)} paid units</span></article><article><div><small>Pageviews</small><span class="upa-kpi-dot upa-cyan"></span></div><strong>${number(pageViews)}</strong><span>${number(salesQty)} purchases and claims</span></article><article><div><small>Downloads</small><span class="upa-kpi-dot upa-amber"></span></div><strong>${number(downloads)}</strong><span>Across the selected period</span></article><article><div><small>Current balance</small><span class="upa-kpi-dot upa-green"></span></div><strong>${money(balance)}</strong><span>${number(daysTracked)} days tracked</span></article><article class="upa-dashboard-chart"><div class="upa-section-title"><div><small>PORTFOLIO PULSE</small><h2>Business activity over time</h2><p>${intervalName(overviewChartData.interval)} revenue, pageviews, and downloads on aligned timelines.</p></div><div class="upa-section-tools"><span>${overviewChartData.points.length} periods</span>${chartActions("overview")}</div></div><div class="upa-pulse-legend"><span><i class="upa-pulse-revenue"></i>Gross revenue</span><span><i class="upa-pulse-views"></i>Pageviews</span><span><i class="upa-pulse-downloads"></i>Downloads</span></div><div id="upa-overview-chart" class="upa-overview-chart" role="img" aria-label="Aligned gross revenue, pageviews, and downloads timelines"></div></article></section>
             <section class="upa-dashboard-grid"><article class="upa-card upa-performance-card upa-view-panel upa-view-revenue" id="upa-view-revenue"><div class="upa-section-title"><div><small>PERFORMANCE</small><h2>Gross revenue over time</h2><p>${intervalName(interval)} totals from ${escapeHtml(dateBounds.start)} to ${escapeHtml(dateBounds.end)}.</p></div><div class="upa-section-tools"><span>${revenueChartData.points.length} periods</span>${chartActions("revenue")}</div></div><div class="upa-chart-summary"><div class="upa-chart-metric"><i></i><span>Gross revenue</span></div><dl><div><dt>Total</dt><dd>${money(revenueChartData.total)}</dd></div><div><dt>Average</dt><dd>${money(revenueChartData.average)}</dd></div><div><dt>Peak</dt><dd>${revenueChartData.peak ? money(revenueChartData.peak[1]) : money(0)}</dd></div></dl></div><div id="upa-revenue-chart" class="upa-revenue-chart" role="img" aria-label="Interactive gross revenue chart"></div><div class="upa-chart-hint"><span>Scroll or pinch to zoom</span><span>Drag to pan</span><span>Use the navigator handles for an exact window</span></div></article>
             <article class="upa-card upa-packages-card upa-view-panel upa-view-packages" id="upa-view-packages"><div class="upa-section-title"><div><small>AUDIENCE &amp; CONVERSION</small><h2>Package performance</h2><p>Top packages ranked by gross sales.</p></div><span>${packages.length} packages</span></div><div class="upa-package-list">${packages.slice(0, 10).map((item, index) => `<div class="upa-package-row"><b>${String(index + 1).padStart(2, "0")}</b><div><strong>${escapeHtml(item.name)}</strong><span>${number(item.pageViews)} views · ${item.conversion.toFixed(2)}% conversion · ${number(item.downloads)} downloads</span></div><em>${money(item.sales)}</em></div>`).join("")}</div></article></section>
-            <section class="upa-card upa-insight-card upa-view-panel upa-view-calendar" id="upa-view-calendar"><div class="upa-section-title"><div><small>SEASONALITY &amp; OUTLIERS</small><h2>Daily activity calendar</h2><p>Compare daily intensity across years and spot recurring patterns at a glance.</p></div><div class="upa-section-tools"><span>${calendarData.years.length} ${calendarData.years.length === 1 ? "year" : "years"}</span>${chartActions("calendar")}</div></div><div class="upa-insight-toolbar"><label class="upa-inline-select">Show<select id="upa-calendar-metric"><option value="sales" ${prefs.calendarMetric === "sales" ? "selected" : ""}>Gross revenue</option><option value="salesQty" ${prefs.calendarMetric === "salesQty" ? "selected" : ""}>Purchases and claims</option><option value="pageViews" ${prefs.calendarMetric === "pageViews" ? "selected" : ""}>Pageviews</option><option value="downloads" ${prefs.calendarMetric === "downloads" ? "selected" : ""}>Downloads</option></select></label><div class="upa-insight-facts"><span><small>Total</small><strong>${calendarData.metric.currency ? money(calendarData.total) : number(calendarData.total)}</strong></span><span><small>Peak day</small><strong>${calendarData.peak ? escapeHtml(calendarData.peak[0]) : "—"}</strong></span><span><small>Peak value</small><strong>${calendarData.peak ? (calendarData.metric.currency ? money(calendarData.peak[1]) : number(calendarData.peak[1])) : "—"}</strong></span></div></div><div id="upa-calendar-chart" class="upa-calendar-chart" style="height:${calendarHeight}px" role="img" aria-label="Calendar heatmap with one row per year"></div><div class="upa-chart-hint"><span>Each row is one year</span><span>Darker days are higher</span><span>The color scale softens extreme outliers so everyday patterns stay visible</span></div></section>
+            <section class="upa-card upa-insight-card upa-view-panel upa-view-calendar" id="upa-view-calendar"><div class="upa-section-title"><div><small>SEASONALITY &amp; OUTLIERS</small><h2>Daily activity calendar</h2><p>Compare daily intensity across years and spot recurring patterns at a glance.</p></div><div class="upa-section-tools"><span>${calendarData.years.length} ${calendarData.years.length === 1 ? "year" : "years"}</span>${chartActions("calendar")}</div></div><div class="upa-insight-toolbar"><label class="upa-inline-select">Show<select id="upa-calendar-metric"><option value="sales" ${prefs.calendarMetric === "sales" ? "selected" : ""}>Gross revenue</option><option value="salesQty" ${prefs.calendarMetric === "salesQty" ? "selected" : ""}>Purchases and claims</option><option value="pageViews" ${prefs.calendarMetric === "pageViews" ? "selected" : ""}>Pageviews</option><option value="downloads" ${prefs.calendarMetric === "downloads" ? "selected" : ""}>Downloads</option></select></label><div class="upa-insight-facts"><span><small>Total</small><strong>${calendarData.metric.currency ? money(calendarData.total) : number(calendarData.total)}</strong></span><span><small>Peak day</small><strong>${calendarData.peak ? escapeHtml(calendarData.peak[0]) : "—"}</strong></span><span><small>Peak value</small><strong>${calendarData.peak ? (calendarData.metric.currency ? money(calendarData.peak[1]) : number(calendarData.peak[1])) : "—"}</strong></span></div></div><div id="upa-calendar-chart" class="upa-calendar-chart" role="img" aria-label="Calendar heatmap with one row per year"></div><div class="upa-chart-hint"><span>Each row is one year</span><span>Darker days are higher</span><span>The color scale softens extreme outliers so everyday patterns stay visible</span></div></section>
             <section class="upa-card upa-insight-card upa-view-panel upa-view-sankey" id="upa-view-sankey"><div class="upa-section-title"><div><small>REVENUE COMPOSITION</small><h2>Where revenue comes from</h2><p>Follow gross revenue from packages through their price tiers.</p></div><div class="upa-section-tools"><span>${sankeyData.activePackages.length} shown</span>${chartActions("sankey")}</div></div><div class="upa-insight-toolbar upa-sankey-toolbar"><details class="upa-package-filter"><summary><span>Packages</span><strong>${sankeyData.explicitKeys.length ? `${sankeyData.explicitKeys.length} selected` : "Top 8 by revenue"}</strong></summary><div class="upa-package-filter-panel"><div class="upa-package-filter-head"><span>Choose packages to compare</span><button data-action="sankey-top">Use top 8</button></div><div class="upa-package-checklist">${sankeyData.options.map(item => `<label><input type="checkbox" data-sankey-package="${escapeHtml(item.key)}" ${sankeyData.activePackages.some(active => active.key === item.key) ? "checked" : ""}><span><strong>${escapeHtml(item.name)}</strong><small>${money(item.gross)}</small></span></label>`).join("")}</div></div></details><div class="upa-insight-facts"><span><small>Revenue shown</small><strong>${money(sankeyData.total)}</strong></span><span><small>Price tiers</small><strong>${number(sankeyData.tiers)}</strong></span><span><small>Packages</small><strong>${number(sankeyData.activePackages.length)}</strong></span></div></div><div id="upa-sankey-chart" class="upa-sankey-chart" style="height:${sankeyHeight}px" role="img" aria-label="Sankey diagram of package revenue through price tiers"></div><div class="upa-chart-hint"><span>Hover to isolate a flow</span><span>Drag nodes to arrange the view</span><span>Shows revenue composition, not individual customer journeys</span></div></section>` : `<section class="upa-welcome"><div class="upa-welcome-copy"><small>YOUR COMPLETE PICTURE</small><h2>Go beyond the<br>one-year window.</h2><p>Bring your available sales, downloads, revenue, pageviews, and conversion history into one configurable workspace.</p>${syncJob?.active ? '<div class="upa-welcome-running"><i></i><span>Your history is being prepared. You can leave this page open and follow the progress above.</span></div>' : '<button class="upa-primary upa-large" data-action="sync-all">Sync full history</button>'}</div><div class="upa-welcome-visual" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><span>Lifetime</span></div></section>`}</main>
         </section>
       </div>
