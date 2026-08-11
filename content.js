@@ -477,7 +477,7 @@
       : number(value);
     const series = viewModel.years.map((year, index) => ({
       name: viewModel.metric.label, type: "heatmap", coordinateSystem: "calendar", calendarIndex: index,
-      data: viewModel.points.filter(([date]) => date.startsWith(year)), emphasis: { itemStyle: { borderColor: "#26213f", borderWidth: 1, shadowBlur: 5, shadowColor: "rgba(40,32,78,.25)" } }
+      data: viewModel.points.filter(([date, value]) => date.startsWith(year) && value > 0), emphasis: { itemStyle: { borderColor: "#26213f", borderWidth: 1, shadowBlur: 5, shadowColor: "rgba(40,32,78,.25)" } }
     }));
     const setCalendarOption = (chart, availableWidth) => {
       const width = Math.max(280, availableWidth || container.clientWidth);
