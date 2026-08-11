@@ -16,6 +16,7 @@
   let records = [];
   let prefs = { section: "dashboard", view: "revenue", range: "all", interval: "auto", start: "", end: "", calendarMetric: "sales", sankeyPackages: [] };
   let syncJob = null;
+  let isRefreshing = false;
   let isOpen = false;
   let renderQueued = false;
   const chartInstances = new Map();
@@ -29,6 +30,10 @@
   const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[character]);
   const number = value => new Intl.NumberFormat().format(Number(value) || 0);
   const money = value => new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Number(value) || 0);
+  const dateTime = value => {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "Refresh time unavailable" : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+  };
 
   function toNumber(value) {
     if (typeof value === "number") return Number.isFinite(value) ? value : 0;
@@ -214,7 +219,11 @@
           syncJob.scopeIndex += 1; syncJob.cursor = syncJob.start; await saveJob();
         }
       }
-      if (syncJob.active) { syncJob.active = false; syncJob.phase = "complete"; syncJob.finishedAt = new Date().toISOString(); syncJob.label = "Your history is up to date"; await saveJob(); records = await getAll(); render(); toast("Your complete publisher history is ready."); }
+      if (syncJob.active) {
+        const completedAt = new Date().toISOString();
+        syncJob.active = false; syncJob.phase = "complete"; syncJob.finishedAt = completedAt; syncJob.lastRefreshedAt = completedAt; syncJob.label = "Your history is up to date";
+        await saveJob(); records = await getAll(); render(); toast("Your complete publisher history is ready.");
+      }
     } catch (error) {
       console.error("Unity Publisher Analytics+ sync failed:", error);
       syncJob = { ...(syncJob || {}), active: false, phase: "error", error: error.message, label: "Sync couldn't be completed" }; await saveJob(); render(); toast("We couldn't finish syncing your history. Please try again.", "error");
@@ -225,8 +234,10 @@
     await database({ type: "UPA_DB_CLEAR" }); records = []; syncJob = null; isOpen = true; render(); await runFullSync();
   }
 
-  async function incrementalSync() {
-    if (syncJob?.active || !records.length) return;
+  async function incrementalSync(announce = false) {
+    if (syncJob?.active || isRefreshing || !records.length) return;
+    isRefreshing = true; render();
+    let notice = "", noticeType = "success";
     try {
       const packages = await fetchPackages(), currentMonth = new Date().toISOString().slice(0, 7);
       const [salesRaw, downloadsRaw, revenueRaw] = await Promise.all([apiJson(API.sales(currentMonth)), apiJson(API.downloads(currentMonth)), apiJson(API.revenue)]);
@@ -243,8 +254,14 @@
           await putMany(normalizeDaily(raw, scope)); cursor = chunkEnd;
         }
       }
-      records = await getAll(); render();
-    } catch (error) { console.warn("Unity Publisher Analytics+ incremental API sync failed:", error.message); }
+      records = await getAll();
+      syncJob = { ...(syncJob || {}), active: false, phase: "complete", error: "", label: "Your history is up to date", lastRefreshedAt: new Date().toISOString() };
+      await saveJob();
+      if (announce) notice = "Your publisher data has been refreshed.";
+    } catch (error) {
+      console.warn("Unity Publisher Analytics+ incremental API sync failed:", error.message);
+      if (announce) { notice = "We couldn't refresh your publisher data. Please try again."; noticeType = "error"; }
+    } finally { isRefreshing = false; render(); if (notice) toast(notice, noticeType); }
   }
 
   function availableDateBounds() {
@@ -611,17 +628,23 @@
       ? { label: "Dashboard", description: "Your publishing business at a glance." }
       : { label: "Analytics", description: "Explore trends, patterns, and package performance." };
     const viewTabs = views.map(item => `<button class="upa-view-tab ${item.id === view ? "upa-active" : ""}" type="button" role="tab" aria-selected="${item.id === view}" aria-controls="upa-view-${item.id}" data-view="${item.id}">${item.label}</button>`).join("");
-    const syncTitle = syncJob?.active ? syncJob.label : syncJob?.phase === "error" ? "Sync couldn't be completed" : records.length ? "Your data is up to date" : "Ready to sync your history";
+    const syncIncomplete = Boolean(syncJob && !syncJob.active && ["months", "daily"].includes(syncJob.phase));
+    const syncTitle = syncJob?.active ? syncJob.label : syncJob?.phase === "error" ? "Sync couldn't be completed" : "Sync paused";
     const syncDetail = syncJob?.active
       ? `${syncJob.completed || 0} of ${syncJob.total || "?"} steps complete`
       : syncJob?.phase === "error"
         ? "Try again. If it keeps happening, refresh the Publisher Portal first."
-        : "Checks for new data when you visit the portal";
+        : "Continue when you're ready. Your progress has been saved.";
     const syncIcon = syncJob?.active
       ? `<div class="upa-sync-icon upa-sync-progress" style="--upa-progress-angle:${progress * 3.6}deg" aria-hidden="true"><span>${progress}%</span></div>`
       : syncJob?.phase === "error"
         ? '<div class="upa-sync-icon upa-sync-error" aria-hidden="true">!</div>'
-        : '<div class="upa-sync-icon upa-sync-complete" aria-hidden="true">✓</div>';
+        : '<div class="upa-sync-icon" aria-hidden="true">Ⅱ</div>';
+    const latestCapturedAt = records.reduce((latest, item) => item.capturedAt > latest ? item.capturedAt : latest, "");
+    const lastRefreshedAt = syncJob?.lastRefreshedAt || syncJob?.finishedAt || latestCapturedAt;
+    const refreshTooltip = `Refresh publisher data · ${lastRefreshedAt ? `Last refreshed ${dateTime(lastRefreshedAt)}` : "Not refreshed yet"}`;
+    const showRefreshAction = hasData && !syncJob?.active && syncJob?.phase !== "error" && !syncIncomplete;
+    const refreshAction = showRefreshAction ? `<button class="upa-refresh-action ${isRefreshing ? "upa-refreshing" : ""}" type="button" data-action="refresh" aria-label="${escapeHtml(refreshTooltip)}" ${isRefreshing ? "disabled" : ""}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 5.9A5.5 5.5 0 1 0 13 10.7"></path><path d="M13.4 2.8v3.5H9.9"></path></svg><span>${isRefreshing ? "Refreshing…" : "Refresh data"}</span><span class="upa-refresh-tooltip" role="tooltip">${escapeHtml(refreshTooltip)}</span></button>` : "";
     host.classList.toggle("upa-open", isOpen);
     document.documentElement.classList.toggle("upa-dashboard-open", isOpen);
     host.innerHTML = `<button class="upa-fab" aria-label="Open Unity Analytics+" title="Unity Analytics+"><span>A+</span></button><aside class="upa-panel" aria-label="Unity Analytics+ dashboard">
@@ -633,9 +656,9 @@
           ${hasData ? '<div class="upa-sidebar-actions"><button data-action="export">Export data</button><button class="upa-danger" data-action="clear">Clear data</button></div>' : ""}
         </aside>
         <section class="upa-workspace">
-          <header class="upa-header ${section === "dashboard" ? "upa-header-compact" : ""}"><div class="upa-header-main"><div><small>Publisher workspace</small><h1>${hasData ? sectionMeta.label : "Welcome"}</h1><p>${hasData ? sectionMeta.description : "Build a complete, configurable view of your publishing business."}</p></div><button class="upa-icon-button" data-action="close" aria-label="Close analytics">×</button></div>${hasData ? `<nav class="upa-mobile-nav" aria-label="Workspace sections"><button class="${section === "dashboard" ? "upa-active" : ""}" type="button" data-section="dashboard">Dashboard</button><button class="${section === "analytics" ? "upa-active" : ""}" type="button" data-section="analytics">Analytics</button></nav>` : ""}${hasData && section === "analytics" ? `<nav class="upa-view-tabs" role="tablist" aria-label="Analytics views">${viewTabs}</nav>` : ""}</header>
+          <header class="upa-header ${section === "dashboard" ? "upa-header-compact" : ""}"><div class="upa-header-main"><div><small>Publisher workspace</small><h1>${hasData ? sectionMeta.label : "Welcome"}</h1><div class="upa-header-subline"><p>${hasData ? sectionMeta.description : "Build a complete, configurable view of your publishing business."}</p>${refreshAction}</div></div><button class="upa-icon-button" data-action="close" aria-label="Close analytics">×</button></div>${hasData ? `<nav class="upa-mobile-nav" aria-label="Workspace sections"><button class="${section === "dashboard" ? "upa-active" : ""}" type="button" data-section="dashboard">Dashboard</button><button class="${section === "analytics" ? "upa-active" : ""}" type="button" data-section="analytics">Analytics</button></nav>` : ""}${hasData && section === "analytics" ? `<nav class="upa-view-tabs" role="tablist" aria-label="Analytics views">${viewTabs}</nav>` : ""}</header>
           ${hasData ? `<div class="upa-toolbar"><label>Time range<select id="upa-range"><option value="all" ${prefs.range === "all" ? "selected" : ""}>All available history</option><option value="12" ${prefs.range === "12" ? "selected" : ""}>Last 12 months</option><option value="6" ${prefs.range === "6" ? "selected" : ""}>Last 6 months</option><option value="3" ${prefs.range === "3" ? "selected" : ""}>Last 3 months</option><option value="custom" ${prefs.range === "custom" ? "selected" : ""}>Custom range</option></select></label><div class="upa-date-range"><label>From<input id="upa-start" type="date" value="${dateBounds.start}" min="${availableBounds.start}" max="${availableBounds.end}"></label><span>to</span><label>Until<input id="upa-end" type="date" value="${dateBounds.end}" min="${availableBounds.start}" max="${availableBounds.end}"></label></div>${section === "analytics" && view === "revenue" ? `<label>Interval<select id="upa-interval"><option value="auto" ${prefs.interval === "auto" ? "selected" : ""}>Automatic (${intervalName(interval).toLowerCase()})</option><option value="day" ${prefs.interval === "day" ? "selected" : ""}>Daily</option><option value="week" ${prefs.interval === "week" ? "selected" : ""}>Weekly</option><option value="month" ${prefs.interval === "month" ? "selected" : ""}>Monthly</option><option value="quarter" ${prefs.interval === "quarter" ? "selected" : ""}>Quarterly</option><option value="year" ${prefs.interval === "year" ? "selected" : ""}>Yearly</option></select></label>` : ""}</div>` : ""}
-          ${(hasData || syncJob?.active || syncJob?.phase === "error") ? `<section class="upa-sync ${syncJob?.active ? "upa-syncing" : ""}">${syncIcon}<div class="upa-sync-copy"><strong>${escapeHtml(syncTitle)}</strong><span>${escapeHtml(syncDetail)}</span>${syncJob?.active ? '<small class="upa-sync-note">Large catalogs can take several minutes. Keep this tab open; if interrupted, progress resumes when you return.</small>' : ""}</div><div class="upa-sync-actions">${syncJob?.active ? '<button data-action="stop-sync">Pause</button>' : hasData ? '<button class="upa-primary" data-action="sync-all">Resync full history</button>' : ""}</div>${syncJob?.active ? `<div class="upa-progress"><i style="width:${progress}%"></i></div>` : ""}</section>` : ""}
+          ${(syncJob?.active || syncJob?.phase === "error" || syncIncomplete) ? `<section class="upa-sync ${syncJob?.active ? "upa-syncing" : ""}">${syncIcon}<div class="upa-sync-copy"><strong>${escapeHtml(syncTitle)}</strong><span>${escapeHtml(syncDetail)}</span>${syncJob?.active ? '<small class="upa-sync-note">Large catalogs can take several minutes. Keep this tab open; if interrupted, progress resumes when you return.</small>' : ""}</div><div class="upa-sync-actions">${syncJob?.active ? '<button data-action="stop-sync">Pause</button>' : syncIncomplete ? '<button data-action="continue-sync">Continue</button>' : '<button data-action="sync-all">Try full sync again</button>'}</div>${syncJob?.active ? `<div class="upa-progress"><i style="width:${progress}%"></i></div>` : ""}</section>` : ""}
           <main class="upa-content" data-section="${section}" data-view="${view}">${records.length ? `<section class="upa-kpis upa-view-panel upa-view-dashboard" id="upa-view-dashboard"><article><div><small>Gross revenue</small><span class="upa-kpi-dot upa-violet"></span></div><strong>${money(revenueChartData.total)}</strong><span>${number(paidUnits)} paid units</span></article><article><div><small>Pageviews</small><span class="upa-kpi-dot upa-cyan"></span></div><strong>${number(pageViews)}</strong><span>${number(salesQty)} purchases and claims</span></article><article><div><small>Downloads</small><span class="upa-kpi-dot upa-amber"></span></div><strong>${number(downloads)}</strong><span>Across the selected period</span></article><article><div><small>Current balance</small><span class="upa-kpi-dot upa-green"></span></div><strong>${money(balance)}</strong><span>${number(daysTracked)} days tracked</span></article><article class="upa-dashboard-chart"><div class="upa-section-title"><div><small>PORTFOLIO PULSE</small><h2>Business activity over time</h2><p>${intervalName(overviewChartData.interval)} revenue, pageviews, and downloads on aligned timelines.</p></div><div class="upa-section-tools"><span>${overviewChartData.points.length} periods</span>${chartActions("overview")}</div></div><div class="upa-pulse-legend"><span><i class="upa-pulse-revenue"></i>Gross revenue</span><span><i class="upa-pulse-views"></i>Pageviews</span><span><i class="upa-pulse-downloads"></i>Downloads</span></div><div id="upa-overview-chart" class="upa-overview-chart" role="img" aria-label="Aligned gross revenue, pageviews, and downloads timelines"></div></article></section>
             <section class="upa-dashboard-grid"><article class="upa-card upa-performance-card upa-view-panel upa-view-revenue" id="upa-view-revenue"><div class="upa-section-title"><div><small>PERFORMANCE</small><h2>Gross revenue over time</h2><p>${intervalName(interval)} totals from ${escapeHtml(dateBounds.start)} to ${escapeHtml(dateBounds.end)}.</p></div><div class="upa-section-tools"><span>${revenueChartData.points.length} periods</span>${chartActions("revenue")}</div></div><div class="upa-chart-summary"><div class="upa-chart-metric"><i></i><span>Gross revenue</span></div><dl><div><dt>Total</dt><dd>${money(revenueChartData.total)}</dd></div><div><dt>Average</dt><dd>${money(revenueChartData.average)}</dd></div><div><dt>Peak</dt><dd>${revenueChartData.peak ? money(revenueChartData.peak[1]) : money(0)}</dd></div></dl></div><div id="upa-revenue-chart" class="upa-revenue-chart" role="img" aria-label="Interactive gross revenue chart"></div><div class="upa-chart-hint"><span>Scroll or pinch to zoom</span><span>Drag to pan</span><span>Use the navigator handles for an exact window</span></div></article>
             <article class="upa-card upa-packages-card upa-view-panel upa-view-packages" id="upa-view-packages"><div class="upa-section-title"><div><small>AUDIENCE &amp; CONVERSION</small><h2>Package performance</h2><p>Top packages ranked by gross sales.</p></div><span>${packages.length} packages</span></div><div class="upa-package-list">${packages.slice(0, 10).map((item, index) => `<div class="upa-package-row"><b>${String(index + 1).padStart(2, "0")}</b><div><strong>${escapeHtml(item.name)}</strong><span>${number(item.pageViews)} views · ${item.conversion.toFixed(2)}% conversion · ${number(item.downloads)} downloads</span></div><em>${money(item.sales)}</em></div>`).join("")}</div></article></section>
@@ -670,7 +693,9 @@
       if (event.target.closest(".upa-fab")) { isOpen = true; render(); return; }
       if (action === "close") { isOpen = false; render(); }
       if (action === "sync-all") await startFullSync();
+      if (action === "refresh") await incrementalSync(true);
       if (action === "stop-sync") { syncJob.active = false; syncJob.label = "Sync paused"; await saveJob(); render(); }
+      if (action === "continue-sync") { syncJob.active = true; await saveJob(); render(); await runFullSync(); }
       if (action === "sankey-top") { prefs.sankeyPackages = []; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); }
       if (action === "export") download(`unity-publisher-analytics-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), records }, null, 2));
       if (action === "clear" && window.confirm("Clear all locally synced publisher data? This can't be undone.")) { await database({ type: "UPA_DB_CLEAR" }); records = []; syncJob = null; render(); }
