@@ -33,7 +33,7 @@ The main revenue chart supports automatic or explicit daily, weekly, monthly, qu
 Additional views reveal patterns that are hard to see in a timeline:
 
 - A stacked calendar compares daily revenue, purchases, pageviews, or downloads across every available year.
-- A filterable Sankey diagram shows how package revenue is distributed across price tiers without implying customer-level journeys that the aggregate source data cannot support.
+- A filterable Sankey diagram splits total gross revenue into package contributions, with optional category grouping when Unity supplies category metadata.
 - Every chart can be saved as a high-resolution PNG or shared through the device's native share surface when available.
 
 The left navigation separates a general Dashboard from the deeper Analytics workspace. Dashboard combines six headline metrics with aligned revenue, pageview, and download timelines, followed by a ranked package table. Within Analytics, focused tabs switch between Revenue, Daily patterns, Revenue flow, and Packages while the selected date range remains shared across the workspace.

@@ -14,7 +14,7 @@
     daily: "/publisher-v2-api/dashboard/daily"
   };
   let records = [];
-  let prefs = { section: "dashboard", view: "revenue", range: "all", interval: "auto", start: "", end: "", calendarMetric: "sales", sankeyPackages: [] };
+  let prefs = { section: "dashboard", view: "revenue", range: "all", interval: "auto", start: "", end: "", calendarMetric: "sales", sankeyPackages: [], sankeyGroupBy: "none" };
   let syncJob = null;
   let isRefreshing = false;
   let isOpen = false;
@@ -57,6 +57,13 @@
       if (key) return object[key];
     }
     return "";
+  }
+
+  function packageCategory(item) {
+    const raw = valueFrom(item, ["category", "category_name", "categoryName", "asset_category", "assetCategory"]);
+    if (Array.isArray(raw)) return compact(raw.map(value => typeof value === "object" ? valueFrom(value, ["name", "title", "label"]) : value).filter(Boolean).at(-1));
+    if (raw && typeof raw === "object") return compact(valueFrom(raw, ["name", "title", "label"]));
+    return compact(raw);
   }
 
   function parseDate(value) {
@@ -131,13 +138,13 @@
     const raw = await apiJson(API.packages);
     return (Array.isArray(raw) ? raw : []).map(item => {
       const id = String(valueFrom(item, ["package_id", "packageId", "id"]) || "");
-      return { id, name: valueFrom(item, ["name", "title", "package_name"]) || `Package ${id}`, firstPublished: parseDate(valueFrom(item, ["first_published_time", "firstPublishedTime", "first_published"])) };
+      return { id, name: valueFrom(item, ["name", "title", "package_name"]) || `Package ${id}`, category: packageCategory(item), firstPublished: parseDate(valueFrom(item, ["first_published_time", "firstPublishedTime", "first_published"])) };
     }).filter(item => item.id);
   }
 
   function normalizeSales(raw, period) {
     return (Array.isArray(raw) ? raw : []).map(item => normalize({
-      type: "sales", period, date: `${period}-01`, packageId: String(valueFrom(item, ["package_id", "packageId"]) || ""), package: valueFrom(item, ["name", "package_name"]),
+      type: "sales", period, date: `${period}-01`, packageId: String(valueFrom(item, ["package_id", "packageId"]) || ""), package: valueFrom(item, ["name", "package_name"]), category: packageCategory(item),
       price: toNumber(item.price), qty: toNumber(valueFrom(item, ["sales", "quantity"])), refunds: toNumber(item.refunds), chargebacks: toNumber(item.chargebacks),
       gross: toNumber(item.gross), net: toNumber(item.revenue), first: parseDate(item.first), last: parseDate(item.last), currency: "USD"
     }));
@@ -148,7 +155,7 @@
       const data = item.downloads || {};
       const freeDownloads = toNumber(valueFrom(data, ["free_downloads", "freeDownloads"])), entitledDownloads = toNumber(valueFrom(data, ["entitled_downloads", "entitledDownloads"]));
       const freeUsers = toNumber(valueFrom(data, ["free_users", "freeUsers"])), entitledUsers = toNumber(valueFrom(data, ["entitled_users", "entitledUsers"]));
-      return normalize({ type: "downloads", period, date: `${period}-01`, packageId: String(valueFrom(item, ["package_id", "packageId"]) || ""), package: item.name,
+      return normalize({ type: "downloads", period, date: `${period}-01`, packageId: String(valueFrom(item, ["package_id", "packageId"]) || ""), package: item.name, category: packageCategory(item),
         downloads: freeDownloads + entitledDownloads, users: freeUsers + entitledUsers, freeDownloads, freeUsers, entitledDownloads, entitledUsers,
         freeFirst: parseDate(valueFrom(data, ["free_first", "freeFirst"])), freeLast: parseDate(valueFrom(data, ["free_last", "freeLast"])),
         entitledFirst: parseDate(valueFrom(data, ["entitled_first", "entitledFirst"])), entitledLast: parseDate(valueFrom(data, ["entitled_last", "entitledLast"])) });
@@ -171,7 +178,7 @@
       const paidQty = toNumber(valueFrom(metrics, ["sales", "paid_sales", "paidSales"]));
       const freeQty = toNumber(valueFrom(metrics, ["free_obtained", "freeObtained"]));
       const salesQty = paidQty + freeQty;
-      result.push(normalize({ type: "daily", period: date.slice(0, 7), date, scope: scope.id ? "package" : "all", packageId: scope.id, package: scope.name,
+      result.push(normalize({ type: "daily", period: date.slice(0, 7), date, scope: scope.id ? "package" : "all", packageId: scope.id, package: scope.name, category: scope.category || "",
         sales: toNumber(valueFrom(metrics, ["gross"])), salesQty, paidQty, freeQty, pageViews, conversionRate: Math.min(1, salesQty / (pageViews || 1)) * 100,
         downloads: toNumber(metrics.downloads), wishlisted: toNumber(metrics.wishlisted), refunds: toNumber(metrics.refunds), ratingAvg: toNumber(valueFrom(metrics, ["rating", "ratingAvg"])),
         quickLooks: toNumber(valueFrom(metrics, ["quick_looks", "quickLooks"])), carted: toNumber(metrics.carted), currency: "USD" }));
@@ -262,7 +269,7 @@
         }
       }
       records = await getAll();
-      syncJob = { ...(syncJob || {}), active: false, phase: "complete", error: "", label: "Your history is up to date", lastRefreshedAt: new Date().toISOString() };
+      syncJob = { ...(syncJob || {}), packages, active: false, phase: "complete", error: "", label: "Your history is up to date", lastRefreshedAt: new Date().toISOString() };
       await saveJob();
       if (announce) notice = "Your publisher data has been refreshed.";
     } catch (error) {
@@ -553,39 +560,44 @@
     setCalendarOption(chart, container.clientWidth);
   }
 
-  function sankeyPackageOptions(items) {
+  function sankeyPackageOptions(items, categoriesByPackage) {
     const packages = new Map();
     for (const item of items) {
-      const key = String(item.packageId || item.package || "unknown"), current = packages.get(key) || { key, name: item.package || `Package ${key}`, gross: 0 };
+      const key = String(item.packageId || item.package || "unknown"), current = packages.get(key) || { key, name: item.package || `Package ${key}`, category: item.category || categoriesByPackage.get(key) || "", gross: 0 };
+      if (!current.category) current.category = item.category || categoriesByPackage.get(key) || "";
       current.gross += Math.max(0, item.gross); packages.set(key, current);
     }
     return [...packages.values()].filter(item => item.gross > 0).sort((a, b) => b.gross - a.gross);
   }
 
-  function sankeyViewModel(items, selectedPackageKeys) {
-    const options = sankeyPackageOptions(items), availableKeys = new Set(options.map(item => item.key));
+  function sankeyViewModel(items, selectedPackageKeys, requestedGroupBy, categoriesByPackage) {
+    const options = sankeyPackageOptions(items, categoriesByPackage), availableKeys = new Set(options.map(item => item.key));
     const explicitKeys = (selectedPackageKeys || []).filter(key => availableKeys.has(key));
     const activePackages = explicitKeys.length ? options.filter(item => explicitKeys.includes(item.key)) : options.slice(0, 8);
-    const activeKeys = new Set(activePackages.map(item => item.key)), packageTierLinks = new Map(), tierTotals = new Map();
-    for (const item of items) {
-      const packageKey = String(item.packageId || item.package || "unknown"), gross = Math.max(0, item.gross);
-      if (!activeKeys.has(packageKey) || !gross) continue;
-      const tierKey = Number(item.price || 0).toFixed(2), linkKey = `${packageKey}|${tierKey}`;
-      packageTierLinks.set(linkKey, (packageTierLinks.get(linkKey) || 0) + gross); tierTotals.set(tierKey, (tierTotals.get(tierKey) || 0) + gross);
-    }
-    const priceLabel = value => new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: Number(value) % 1 ? 2 : 0, maximumFractionDigits: 2 }).format(value);
+    const categoryAvailable = options.some(item => item.category);
+    const groupBy = requestedGroupBy === "category" && categoryAvailable ? "category" : "none";
     const palette = ["#6c5ce7", "#8b7cf0", "#4e8bd7", "#21a7bd", "#aa69c7", "#6170c7", "#6751aa", "#3f8fa4"];
-    const nodes = activePackages.map((item, index) => ({ name: `package:${item.key}`, label: item.name, kind: "package", itemStyle: { color: palette[index % palette.length] } }));
-    for (const tierKey of tierTotals.keys()) nodes.push({ name: `tier:${tierKey}`, label: `${priceLabel(Number(tierKey))} tier`, kind: "tier", itemStyle: { color: "#34a7b7" } });
-    nodes.push({ name: "revenue", label: "Gross revenue", kind: "total", itemStyle: { color: "#2f9c69" } });
-    const packageNames = new Map(activePackages.map(item => [item.key, item.name]));
+    const total = activePackages.reduce((sum, item) => sum + item.gross, 0);
+    const nodes = [{ name: "revenue", displayLabel: "Gross revenue", kind: "total", depth: 0, label: { position: "left" }, itemStyle: { color: "#2f9c69" } }];
     const links = [];
-    for (const [key, value] of packageTierLinks) {
-      const [packageKey, tierKey] = key.split("|");
-      links.push({ source: `package:${packageKey}`, target: `tier:${tierKey}`, value, sourceLabel: packageNames.get(packageKey), targetLabel: `${priceLabel(Number(tierKey))} tier` });
+    const categoryTotals = new Map();
+    if (groupBy === "category") {
+      for (const item of activePackages) {
+        const category = item.category || "Uncategorized";
+        categoryTotals.set(category, (categoryTotals.get(category) || 0) + item.gross);
+      }
+      for (const [category, value] of categoryTotals) {
+        const key = `category:${category}`;
+        nodes.push({ name: key, displayLabel: category, kind: "category", depth: 1, itemStyle: { color: "#34a7b7" } });
+        links.push({ source: "revenue", target: key, value, sourceLabel: "Gross revenue", targetLabel: category });
+      }
     }
-    for (const [tierKey, value] of tierTotals) links.push({ source: `tier:${tierKey}`, target: "revenue", value, sourceLabel: `${priceLabel(Number(tierKey))} tier`, targetLabel: "Gross revenue" });
-    return { options, explicitKeys, activePackages, nodes, links, total: [...tierTotals.values()].reduce((sum, value) => sum + value, 0), tiers: tierTotals.size };
+    activePackages.forEach((item, index) => {
+      const packageNode = `package:${item.key}`, source = groupBy === "category" ? `category:${item.category || "Uncategorized"}` : "revenue";
+      nodes.push({ name: packageNode, displayLabel: item.name, kind: "package", depth: groupBy === "category" ? 2 : 1, label: { position: "right" }, itemStyle: { color: palette[index % palette.length] } });
+      links.push({ source, target: packageNode, value: item.gross, sourceLabel: groupBy === "category" ? (item.category || "Uncategorized") : "Gross revenue", targetLabel: item.name });
+    });
+    return { options, explicitKeys, activePackages, nodes, links, total, groupBy, categoryAvailable, categories: categoryTotals.size };
   }
 
   function renderSankeyChart(viewModel) {
@@ -597,11 +609,11 @@
     const fullMoney = value => new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value || 0);
     chart.setOption({
       animationDuration: 550, animationDurationUpdate: 350,
-      aria: { enabled: true, description: `Gross revenue from ${viewModel.activePackages.length} packages through ${viewModel.tiers} price tiers.` },
-      tooltip: { trigger: "item", triggerOn: "mousemove", confine: true, backgroundColor: "#151927", borderWidth: 0, padding: [10, 12], textStyle: { color: "#fff", fontSize: 11 }, formatter: parameter => parameter.dataType === "edge" ? `<strong>${escapeHtml(parameter.data.sourceLabel)}</strong><br/><span style="color:#aaa3d8">to ${escapeHtml(parameter.data.targetLabel)}</span>&nbsp;&nbsp;${fullMoney(parameter.value)}` : `<strong>${escapeHtml(parameter.data.label)}</strong><br/>${fullMoney(parameter.value)}` },
+      aria: { enabled: true, description: `Gross revenue split across ${viewModel.activePackages.length} packages${viewModel.groupBy === "category" ? ` in ${viewModel.categories} categories` : ""}.` },
+      tooltip: { trigger: "item", triggerOn: "mousemove", confine: true, backgroundColor: "#151927", borderWidth: 0, padding: [10, 12], textStyle: { color: "#fff", fontSize: 11 }, formatter: parameter => parameter.dataType === "edge" ? `<strong>${escapeHtml(parameter.data.sourceLabel)}</strong><br/><span style="color:#aaa3d8">to ${escapeHtml(parameter.data.targetLabel)}</span>&nbsp;&nbsp;${fullMoney(parameter.value)}` : `<strong>${escapeHtml(parameter.data.displayLabel)}</strong><br/>${fullMoney(parameter.value)}` },
       series: [{
-        type: "sankey", left: 18, right: 18, top: 22, bottom: 20, nodeWidth: 14, nodeGap: 13, nodeAlign: "justify", draggable: true, layoutIterations: 36,
-        data: viewModel.nodes, links: viewModel.links, label: { color: "#343b4d", fontSize: 11, fontWeight: 650, formatter: parameter => parameter.data.label },
+        type: "sankey", left: 110, right: 205, top: 22, bottom: 20, nodeWidth: 14, nodeGap: 13, nodeAlign: "justify", draggable: false, layoutIterations: 36,
+        data: viewModel.nodes, links: viewModel.links, label: { color: "#343b4d", fontSize: 11, fontWeight: 650, lineHeight: 16, width: 185, overflow: "truncate", formatter: parameter => parameter.data.kind === "total" ? `Gross revenue\n${money(viewModel.total)}` : parameter.data.displayLabel },
         lineStyle: { color: "gradient", curveness: .52, opacity: .3 }, emphasis: { focus: "adjacency", lineStyle: { opacity: .65 } }, itemStyle: { borderWidth: 0, borderRadius: 3 }
       }]
     });
@@ -665,16 +677,25 @@
       share: packageRevenueTotal ? item.sales / packageRevenueTotal * 100 : 0,
       trailing: trailingRevenueMetrics(packageHistory.get(item.id) || [], availableBounds)
     }));
-    const overviewChartData = overviewViewModel(dailyAll, dateBounds), calendarData = calendarViewModel(dailyAll, prefs.calendarMetric), sankeyData = sankeyViewModel(salesItems, prefs.sankeyPackages);
+    const packageCategories = new Map();
+    for (const item of syncJob?.packages || []) {
+      const packageKey = String(item.id || item.name || "");
+      if (packageKey && item.category) packageCategories.set(packageKey, item.category);
+    }
+    for (const item of records) {
+      const packageKey = String(item.packageId || item.package || "");
+      if (packageKey && item.category && !packageCategories.has(packageKey)) packageCategories.set(packageKey, item.category);
+    }
+    const overviewChartData = overviewViewModel(dailyAll, dateBounds), calendarData = calendarViewModel(dailyAll, prefs.calendarMetric), sankeyData = sankeyViewModel(salesItems, prefs.sankeyPackages, prefs.sankeyGroupBy, packageCategories);
     const sankeyHeight = Math.max(410, sankeyData.activePackages.length * 48 + 96);
     chartShareMetadata.set("overview", { title: "Portfolio pulse", subtitle: `${intervalName(overviewChartData.interval)} revenue, pageviews, and downloads · ${dateBounds.start} to ${dateBounds.end}` });
     chartShareMetadata.set("revenue", { title: "Gross revenue over time", subtitle: `${intervalName(interval)} totals · ${dateBounds.start} to ${dateBounds.end}` });
     chartShareMetadata.set("calendar", { title: `${calendarData.metric.label} calendar`, subtitle: `${dateBounds.start} to ${dateBounds.end} · daily intensity across ${calendarData.years.length} ${calendarData.years.length === 1 ? "year" : "years"}` });
-    chartShareMetadata.set("sankey", { title: "Where revenue comes from", subtitle: `${sankeyData.activePackages.length} packages · ${sankeyData.tiers} price tiers · ${dateBounds.start} to ${dateBounds.end}` });
+    chartShareMetadata.set("sankey", { title: "Where revenue comes from", subtitle: `${sankeyData.activePackages.length} packages${sankeyData.groupBy === "category" ? ` · ${sankeyData.categories} categories` : ""} · ${dateBounds.start} to ${dateBounds.end}` });
     const views = [
       { id: "revenue", label: "Revenue", description: "Explore gross revenue over time with flexible intervals." },
       { id: "calendar", label: "Daily patterns", description: "Compare daily intensity and seasonality across years." },
-      { id: "sankey", label: "Revenue flow", description: "See how package revenue is distributed across price tiers." },
+      { id: "sankey", label: "Revenue flow", description: "Break down gross revenue by package." },
       { id: "packages", label: "Packages", description: "Compare attention, conversion, downloads, and gross sales." }
     ];
     const section = ["dashboard", "analytics"].includes(prefs.section) ? prefs.section : "dashboard";
@@ -729,7 +750,7 @@
             <section class="upa-dashboard-grid"><article class="upa-card upa-performance-card upa-view-panel upa-view-revenue" id="upa-view-revenue"><div class="upa-section-title"><div><small>PERFORMANCE</small><h2>Gross revenue over time</h2><p>${intervalName(interval)} totals from ${escapeHtml(dateBounds.start)} to ${escapeHtml(dateBounds.end)}.</p></div><div class="upa-section-tools"><span>${revenueChartData.points.length} periods</span>${chartActions("revenue")}</div></div><div class="upa-chart-summary"><div class="upa-chart-metric"><i></i><span>Gross revenue</span></div><dl><div><dt>Total</dt><dd>${money(revenueChartData.total)}</dd></div><div><dt>Average</dt><dd>${money(revenueChartData.average)}</dd></div><div><dt>Peak</dt><dd>${revenueChartData.peak ? money(revenueChartData.peak[1]) : money(0)}</dd></div></dl></div><div id="upa-revenue-chart" class="upa-revenue-chart" role="img" aria-label="Interactive gross revenue chart"></div><div class="upa-chart-hint"><span>Scroll or pinch to zoom</span><span>Drag to pan</span><span>Use the navigator handles for an exact window</span></div></article>
             <article class="upa-card upa-packages-card upa-view-panel upa-view-packages" id="upa-view-packages"><div class="upa-section-title"><div><small>AUDIENCE &amp; CONVERSION</small><h2>Package performance</h2><p>Top packages ranked by gross sales.</p></div><span>${packages.length} packages</span></div><div class="upa-package-list">${packages.slice(0, 10).map((item, index) => `<div class="upa-package-row"><b>${String(index + 1).padStart(2, "0")}</b><div><strong>${escapeHtml(item.name)}</strong><span>${number(item.pageViews)} views · ${item.conversion.toFixed(2)}% conversion · ${number(item.downloads)} downloads</span></div><em>${money(item.sales)}</em></div>`).join("")}</div></article></section>
             <section class="upa-card upa-insight-card upa-view-panel upa-view-calendar" id="upa-view-calendar"><div class="upa-section-title"><div><small>SEASONALITY &amp; OUTLIERS</small><h2>Daily activity calendar</h2><p>Compare daily intensity across years and spot recurring patterns at a glance.</p></div><div class="upa-section-tools"><span>${calendarData.years.length} ${calendarData.years.length === 1 ? "year" : "years"}</span>${chartActions("calendar")}</div></div><div class="upa-insight-toolbar"><label class="upa-inline-select">Show<select id="upa-calendar-metric"><option value="sales" ${prefs.calendarMetric === "sales" ? "selected" : ""}>Gross revenue</option><option value="salesQty" ${prefs.calendarMetric === "salesQty" ? "selected" : ""}>Purchases and claims</option><option value="pageViews" ${prefs.calendarMetric === "pageViews" ? "selected" : ""}>Pageviews</option><option value="downloads" ${prefs.calendarMetric === "downloads" ? "selected" : ""}>Downloads</option></select></label><div class="upa-insight-facts"><span><small>Total</small><strong>${calendarData.metric.currency ? money(calendarData.total) : number(calendarData.total)}</strong></span><span><small>Peak day</small><strong>${calendarData.peak ? escapeHtml(calendarData.peak[0]) : "—"}</strong></span><span><small>Peak value</small><strong>${calendarData.peak ? (calendarData.metric.currency ? money(calendarData.peak[1]) : number(calendarData.peak[1])) : "—"}</strong></span></div></div><div id="upa-calendar-chart" class="upa-calendar-chart" role="img" aria-label="Calendar heatmap with one row per year"></div><div class="upa-chart-hint"><span>Each row is one year</span><span>Darker days are higher</span><span>The color scale softens extreme outliers so everyday patterns stay visible</span></div></section>
-            <section class="upa-card upa-insight-card upa-view-panel upa-view-sankey" id="upa-view-sankey"><div class="upa-section-title"><div><small>REVENUE COMPOSITION</small><h2>Where revenue comes from</h2><p>Follow gross revenue from packages through their price tiers.</p></div><div class="upa-section-tools"><span>${sankeyData.activePackages.length} shown</span>${chartActions("sankey")}</div></div><div class="upa-insight-toolbar upa-sankey-toolbar"><details class="upa-package-filter"><summary><span>Packages</span><strong>${sankeyData.explicitKeys.length ? `${sankeyData.explicitKeys.length} selected` : "Top 8 by revenue"}</strong></summary><div class="upa-package-filter-panel"><div class="upa-package-filter-head"><span>Choose packages to compare</span><button data-action="sankey-top">Use top 8</button></div><div class="upa-package-checklist">${sankeyData.options.map(item => `<label><input type="checkbox" data-sankey-package="${escapeHtml(item.key)}" ${sankeyData.activePackages.some(active => active.key === item.key) ? "checked" : ""}><span><strong>${escapeHtml(item.name)}</strong><small>${money(item.gross)}</small></span></label>`).join("")}</div></div></details><div class="upa-insight-facts"><span><small>Revenue shown</small><strong>${money(sankeyData.total)}</strong></span><span><small>Price tiers</small><strong>${number(sankeyData.tiers)}</strong></span><span><small>Packages</small><strong>${number(sankeyData.activePackages.length)}</strong></span></div></div><div id="upa-sankey-chart" class="upa-sankey-chart" style="height:${sankeyHeight}px" role="img" aria-label="Sankey diagram of package revenue through price tiers"></div><div class="upa-chart-hint"><span>Hover to isolate a flow</span><span>Drag nodes to arrange the view</span><span>Shows revenue composition, not individual customer journeys</span></div></section>` : `<section class="upa-welcome"><div class="upa-welcome-copy"><small>YOUR COMPLETE PICTURE</small><h2>Go beyond the<br>one-year window.</h2><p>Bring your available sales, downloads, revenue, pageviews, and conversion history into one configurable workspace.</p>${syncJob?.active ? '<div class="upa-welcome-running"><i></i><span>Your history is being prepared. You can leave this page open and follow the progress above.</span></div>' : '<button class="upa-primary upa-large" data-action="sync-all">Sync full history</button>'}</div><div class="upa-welcome-visual" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><span>Lifetime</span></div></section>`}</main>
+            <section class="upa-card upa-insight-card upa-view-panel upa-view-sankey" id="upa-view-sankey"><div class="upa-section-title"><div><small>REVENUE COMPOSITION</small><h2>Where revenue comes from</h2></div><div class="upa-section-tools"><span>${sankeyData.activePackages.length} shown</span>${chartActions("sankey")}</div></div><div class="upa-insight-toolbar upa-sankey-toolbar"><div class="upa-sankey-controls"><label class="upa-inline-select">Group by<select id="upa-sankey-group"><option value="none" ${sankeyData.groupBy === "none" ? "selected" : ""}>None</option><option value="category" ${sankeyData.groupBy === "category" ? "selected" : ""} ${sankeyData.categoryAvailable ? "" : "disabled"}>${sankeyData.categoryAvailable ? "Category" : "Category unavailable"}</option></select></label><details class="upa-package-filter"><summary><span>Packages</span><strong>${sankeyData.explicitKeys.length ? `${sankeyData.explicitKeys.length} selected` : "Top 8 by revenue"}</strong></summary><div class="upa-package-filter-panel"><div class="upa-package-filter-head"><span>Choose packages to compare</span><button data-action="sankey-top">Use top 8</button></div><div class="upa-package-checklist">${sankeyData.options.map(item => `<label><input type="checkbox" data-sankey-package="${escapeHtml(item.key)}" ${sankeyData.activePackages.some(active => active.key === item.key) ? "checked" : ""}><span><strong>${escapeHtml(item.name)}</strong><small>${money(item.gross)}</small></span></label>`).join("")}</div></div></details></div><div class="upa-insight-facts"><span><small>Revenue shown</small><strong>${money(sankeyData.total)}</strong></span>${sankeyData.groupBy === "category" ? `<span><small>Categories</small><strong>${number(sankeyData.categories)}</strong></span>` : ""}<span><small>Packages</small><strong>${number(sankeyData.activePackages.length)}</strong></span></div></div><div id="upa-sankey-chart" class="upa-sankey-chart" style="height:${sankeyHeight}px" role="img" aria-label="Gross revenue split by package${sankeyData.groupBy === "category" ? " and category" : ""}"></div></section>` : `<section class="upa-welcome"><div class="upa-welcome-copy"><small>YOUR COMPLETE PICTURE</small><h2>Go beyond the<br>one-year window.</h2><p>Bring your available sales, downloads, revenue, pageviews, and conversion history into one configurable workspace.</p>${syncJob?.active ? '<div class="upa-welcome-running"><i></i><span>Your history is being prepared. You can leave this page open and follow the progress above.</span></div>' : '<button class="upa-primary upa-large" data-action="sync-all">Sync full history</button>'}</div><div class="upa-welcome-visual" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><span>Lifetime</span></div></section>`}</main>
         </section>
       </div>
       <div class="upa-toast" role="status" aria-live="polite"></div>
@@ -799,6 +820,7 @@
     document.addEventListener("change", async event => {
       if (event.target.id === "upa-interval") { prefs.interval = event.target.value; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); }
       if (event.target.id === "upa-calendar-metric") { prefs.calendarMetric = event.target.value; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); }
+      if (event.target.id === "upa-sankey-group") { prefs.sankeyGroupBy = event.target.value === "category" ? "category" : "none"; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); }
       if (event.target.matches("[data-sankey-package]")) {
         prefs.sankeyPackages = [...document.querySelectorAll("#upa-root [data-sankey-package]:checked")].map(input => input.dataset.sankeyPackage);
         await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); requestAnimationFrame(() => { const filter = document.querySelector("#upa-root .upa-package-filter"); if (filter) filter.open = true; });
@@ -823,7 +845,7 @@
     prefs = {
       section: storedPrefs.section || (storedPrefs.view && storedPrefs.view !== "overview" ? "analytics" : "dashboard"),
       view: analyticsViews.includes(storedPrefs.view) ? storedPrefs.view : "revenue", range: ranges.includes(storedPrefs.range) ? storedPrefs.range : "all", interval: storedPrefs.interval || "auto", start: storedPrefs.start || "", end: storedPrefs.end || "",
-      calendarMetric: storedPrefs.calendarMetric || "sales", sankeyPackages: Array.isArray(storedPrefs.sankeyPackages) ? storedPrefs.sankeyPackages : []
+      calendarMetric: storedPrefs.calendarMetric || "sales", sankeyPackages: Array.isArray(storedPrefs.sankeyPackages) ? storedPrefs.sankeyPackages : [], sankeyGroupBy: storedPrefs.sankeyGroupBy === "category" ? "category" : "none"
     };
     await chrome.storage.local.set({ [PREFS_KEY]: prefs });
     records = await getAll(); syncJob = await getMeta(SYNC_KEY); isOpen = Boolean(syncJob?.active);
