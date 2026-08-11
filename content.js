@@ -14,10 +14,12 @@
     daily: "/publisher-v2-api/dashboard/daily"
   };
   let records = [];
-  let prefs = { range: "all" };
+  let prefs = { range: "all", interval: "auto", start: "", end: "" };
   let syncJob = null;
   let isOpen = false;
   let renderQueued = false;
+  let revenueChart = null;
+  let revenueChartResizeObserver = null;
   const pendingApiRequests = new Map();
 
   const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
@@ -244,11 +246,27 @@
     } catch (error) { console.warn("Unity Publisher Analytics+ incremental API sync failed:", error.message); }
   }
 
+  function availableDateBounds() {
+    const dates = records.filter(item => item.type === "daily" && item.scope === "all").map(item => item.date).filter(Boolean).sort();
+    return { start: dates[0] || "", end: dates.at(-1) || "" };
+  }
+
+  function selectedDateBounds() {
+    const available = availableDateBounds();
+    if (!available.start) return available;
+    if (prefs.range === "custom") {
+      const start = prefs.start || available.start, end = prefs.end || available.end;
+      return start <= end ? { start, end } : { start: end, end: start };
+    }
+    if (prefs.range === "all") return available;
+    const start = new Date(`${available.end}T00:00:00Z`);
+    start.setUTCMonth(start.getUTCMonth() - Number(prefs.range));
+    return { start: start.toISOString().slice(0, 10), end: available.end };
+  }
+
   function filtered(type) {
-    let result = records.filter(item => item.type === type);
-    if (prefs.range === "all") return result;
-    const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - Number(prefs.range));
-    return result.filter(item => new Date(item.date) >= cutoff);
+    const bounds = selectedDateBounds();
+    return records.filter(item => item.type === type && (!bounds.start || (item.date >= bounds.start && item.date <= bounds.end)));
   }
 
   function aggregateSales(items) {
@@ -268,27 +286,90 @@
     return [...packages.values()].map(item => ({ ...item, conversion: item.salesQty / (item.pageViews || 1) * 100 })).sort((a, b) => b.sales - a.sales);
   }
 
-  function lineChart(points) {
-    if (!points.length) return '<div class="upa-empty-chart">Sync your history to see the revenue trend.</div>';
-    const width = 900, height = 280, padLeft = 64, padRight = 20, padTop = 20, padBottom = 35, max = Math.max(...points.map(point => point.gross), 1);
-    const plotWidth = width - padLeft - padRight, plotHeight = height - padTop - padBottom;
-    const coords = points.map((point, index) => ({ ...point, x: padLeft + (points.length === 1 ? plotWidth / 2 : index * plotWidth / (points.length - 1)), y: padTop + plotHeight - point.gross / max * plotHeight }));
-    const path = coords.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
-    const area = `${path} L${coords.at(-1).x.toFixed(1)},${(padTop + plotHeight).toFixed(1)} L${coords[0].x.toFixed(1)},${(padTop + plotHeight).toFixed(1)} Z`;
-    const grid = [0, .25, .5, .75, 1].map(ratio => { const y = padTop + plotHeight * (1 - ratio); return `<line x1="${padLeft}" y1="${y}" x2="${width - padRight}" y2="${y}" stroke="#eceef3"/><text x="${padLeft - 10}" y="${y + 3}" text-anchor="end">${money(max * ratio)}</text>`; }).join("");
-    const tickIndexes = [...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])];
-    return `<svg class="upa-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Monthly gross revenue trend"><defs><linearGradient id="upa-revenue-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6c5ce7" stop-opacity=".22"/><stop offset="1" stop-color="#6c5ce7" stop-opacity="0"/></linearGradient></defs>${grid}<path d="${area}" fill="url(#upa-revenue-fill)"/><path d="${path}" fill="none" stroke="#6c5ce7" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${coords.map(point => `<circle cx="${point.x}" cy="${point.y}" r="3" fill="#fff" stroke="#6c5ce7" stroke-width="2"><title>${escapeHtml(point.month)}: ${money(point.gross)}</title></circle>`).join("")}${tickIndexes.map(index => `<text x="${coords[index].x}" y="${height - 9}" text-anchor="middle">${escapeHtml(points[index].month)}</text>`).join("")}</svg>`;
+  function resolvedInterval(bounds) {
+    if (prefs.interval && prefs.interval !== "auto") return prefs.interval;
+    const days = bounds.start && bounds.end ? Math.max(1, (new Date(`${bounds.end}T00:00:00Z`) - new Date(`${bounds.start}T00:00:00Z`)) / 86400000) : 0;
+    if (days <= 120) return "day";
+    if (days <= 730) return "week";
+    if (days <= 2190) return "month";
+    return "quarter";
+  }
+
+  function bucketStart(value, interval) {
+    const date = new Date(`${value}T00:00:00Z`);
+    if (interval === "week") date.setUTCDate(date.getUTCDate() - (date.getUTCDay() + 6) % 7);
+    if (interval === "month") date.setUTCDate(1);
+    if (interval === "quarter") { date.setUTCMonth(Math.floor(date.getUTCMonth() / 3) * 3, 1); }
+    if (interval === "year") date.setUTCMonth(0, 1);
+    return date.toISOString().slice(0, 10);
+  }
+
+  function revenueViewModel(items, interval) {
+    const buckets = new Map();
+    for (const item of items) {
+      const key = bucketStart(item.date, interval);
+      buckets.set(key, (buckets.get(key) || 0) + item.sales);
+    }
+    const points = [...buckets].sort(([a], [b]) => a.localeCompare(b)).map(([date, value]) => [Date.parse(`${date}T00:00:00Z`), value]);
+    const total = points.reduce((sum, point) => sum + point[1], 0);
+    const peak = points.reduce((best, point) => !best || point[1] > best[1] ? point : best, null);
+    return { interval, points, total, average: points.length ? total / points.length : 0, peak };
+  }
+
+  function intervalName(interval) {
+    return ({ day: "Daily", week: "Weekly", month: "Monthly", quarter: "Quarterly", year: "Yearly" })[interval] || "Revenue";
+  }
+
+  function disposeRevenueChart() {
+    revenueChartResizeObserver?.disconnect(); revenueChartResizeObserver = null;
+    revenueChart?.dispose(); revenueChart = null;
+  }
+
+  function renderRevenueChart(viewModel) {
+    const container = document.getElementById("upa-revenue-chart");
+    if (!container || !viewModel.points.length) return;
+    if (!globalThis.UPAECharts?.init) { container.innerHTML = '<div class="upa-empty-chart">The chart renderer could not be loaded.</div>'; return; }
+    const compactMoney = value => new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 }).format(value || 0);
+    const fullMoney = value => new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value || 0);
+    const dateLabel = timestamp => new Intl.DateTimeFormat(undefined, ["day", "week"].includes(viewModel.interval) ? { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" } : { month: "short", year: "numeric", timeZone: "UTC" }).format(timestamp);
+    const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    revenueChart = globalThis.UPAECharts.init(container, null, { renderer: "svg" });
+    revenueChart.setOption({
+      animation: !reducedMotion && viewModel.points.length < 260,
+      aria: { enabled: true, description: `${intervalName(viewModel.interval)} gross revenue from ${dateLabel(viewModel.points[0][0])} to ${dateLabel(viewModel.points.at(-1)[0])}.` },
+      grid: { left: 14, right: 18, top: 22, bottom: 72, containLabel: true },
+      tooltip: {
+        trigger: "axis", confine: true, backgroundColor: "#151927", borderWidth: 0, padding: [10, 12], textStyle: { color: "#fff", fontSize: 11 },
+        formatter: parameters => { const point = parameters[0]?.data; return point ? `<strong>${dateLabel(point[0])}</strong><br/><span style="color:#aaa3d8">Gross revenue</span>&nbsp;&nbsp;${fullMoney(point[1])}` : ""; }
+      },
+      xAxis: { type: "time", boundaryGap: false, axisLine: { lineStyle: { color: "#dfe2e9" } }, axisTick: { show: false }, axisLabel: { color: "#81899b", fontSize: 10, hideOverlap: true }, splitLine: { show: false } },
+      yAxis: { type: "value", min: 0, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: "#81899b", fontSize: 10, formatter: compactMoney }, splitLine: { lineStyle: { color: "#eceef3" } } },
+      dataZoom: [
+        { type: "inside", filterMode: "none", zoomOnMouseWheel: true, moveOnMouseMove: true, moveOnMouseWheel: true, preventDefaultMouseMove: true },
+        { type: "slider", filterMode: "none", height: 20, bottom: 16, borderColor: "transparent", backgroundColor: "#f0f1f5", fillerColor: "rgba(108,92,231,.14)", dataBackground: { lineStyle: { color: "#aaa2ec" }, areaStyle: { color: "#ddd9fa" } }, selectedDataBackground: { lineStyle: { color: "#6c5ce7" }, areaStyle: { color: "#c8c1f5" } }, handleStyle: { color: "#fff", borderColor: "#6c5ce7" }, moveHandleStyle: { color: "#6c5ce7" }, textStyle: { color: "#81899b", fontSize: 9 } }
+      ],
+      series: [{
+        name: "Gross revenue", type: "line", data: viewModel.points, smooth: .16, sampling: "lttb", showSymbol: viewModel.points.length <= 120, symbol: "circle", symbolSize: 6,
+        lineStyle: { color: "#6c5ce7", width: 2.5 }, itemStyle: { color: "#fff", borderColor: "#6c5ce7", borderWidth: 2 },
+        areaStyle: { color: new globalThis.UPAECharts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: "rgba(108,92,231,.23)" }, { offset: 1, color: "rgba(108,92,231,0)" }]) }, emphasis: { focus: "series" }
+      }]
+    });
+    revenueChartResizeObserver = new ResizeObserver(() => revenueChart?.resize());
+    revenueChartResizeObserver.observe(container);
   }
 
   function render() {
     renderQueued = false; const host = document.getElementById("upa-root"); if (!host) return;
-    const sales = aggregateSales(filtered("sales")), downloads = filtered("downloads").reduce((sum, item) => sum + item.downloads, 0);
+    disposeRevenueChart();
+    const sales = aggregateSales(filtered("sales"));
     const daily = filtered("daily"), dailyAll = daily.filter(item => item.scope === "all"), packages = aggregatePackages(daily);
     const pageViews = dailyAll.reduce((sum, item) => sum + item.pageViews, 0), salesQty = dailyAll.reduce((sum, item) => sum + item.salesQty, 0);
+    const paidUnits = dailyAll.reduce((sum, item) => sum + item.paidQty, 0), downloads = dailyAll.reduce((sum, item) => sum + item.downloads, 0);
     const revenue = records.filter(item => item.type === "revenue").sort((a, b) => a.date.localeCompare(b.date)), balance = revenue.at(-1)?.balance || 0;
     const progress = syncJob?.active ? Math.min(100, Math.round((syncJob.completed || 0) / Math.max(syncJob.total || 1, 1) * 100)) : 0;
     const daysTracked = new Set(dailyAll.map(item => item.date)).size;
     const hasData = records.length > 0;
+    const availableBounds = availableDateBounds(), dateBounds = selectedDateBounds(), interval = resolvedInterval(dateBounds), revenueChartData = revenueViewModel(dailyAll, interval);
     const syncTitle = syncJob?.active ? syncJob.label : syncJob?.phase === "error" ? "Sync couldn't be completed" : records.length ? "Your data is up to date" : "Ready to sync your history";
     const syncDetail = syncJob?.active
       ? `${syncJob.completed || 0} of ${syncJob.total || "?"} steps complete`
@@ -312,15 +393,16 @@
         </nav>
         <section class="upa-workspace">
           <header class="upa-header"><div><small>Publisher workspace</small><h1>${hasData ? "Overview" : "Welcome"}</h1><p>${hasData ? "Your catalog performance across the selected period." : "Build a complete, configurable view of your publishing business."}</p></div><button class="upa-icon-button" data-action="close" aria-label="Close analytics">×</button></header>
-          ${hasData ? `<div class="upa-toolbar"><label>Time range<select id="upa-range"><option value="all" ${prefs.range === "all" ? "selected" : ""}>All available history</option><option value="12" ${prefs.range === "12" ? "selected" : ""}>Last 12 months</option><option value="6" ${prefs.range === "6" ? "selected" : ""}>Last 6 months</option><option value="3" ${prefs.range === "3" ? "selected" : ""}>Last 3 months</option></select></label></div>` : ""}
+          ${hasData ? `<div class="upa-toolbar"><label>Time range<select id="upa-range"><option value="all" ${prefs.range === "all" ? "selected" : ""}>All available history</option><option value="12" ${prefs.range === "12" ? "selected" : ""}>Last 12 months</option><option value="6" ${prefs.range === "6" ? "selected" : ""}>Last 6 months</option><option value="3" ${prefs.range === "3" ? "selected" : ""}>Last 3 months</option><option value="custom" ${prefs.range === "custom" ? "selected" : ""}>Custom range</option></select></label><div class="upa-date-range"><label>From<input id="upa-start" type="date" value="${dateBounds.start}" min="${availableBounds.start}" max="${availableBounds.end}"></label><span>to</span><label>Until<input id="upa-end" type="date" value="${dateBounds.end}" min="${availableBounds.start}" max="${availableBounds.end}"></label></div><label>Interval<select id="upa-interval"><option value="auto" ${prefs.interval === "auto" ? "selected" : ""}>Automatic (${intervalName(interval).toLowerCase()})</option><option value="day" ${prefs.interval === "day" ? "selected" : ""}>Daily</option><option value="week" ${prefs.interval === "week" ? "selected" : ""}>Weekly</option><option value="month" ${prefs.interval === "month" ? "selected" : ""}>Monthly</option><option value="quarter" ${prefs.interval === "quarter" ? "selected" : ""}>Quarterly</option><option value="year" ${prefs.interval === "year" ? "selected" : ""}>Yearly</option></select></label></div>` : ""}
           ${(hasData || syncJob?.active || syncJob?.phase === "error") ? `<section class="upa-sync ${syncJob?.active ? "upa-syncing" : ""}">${syncIcon}<div class="upa-sync-copy"><strong>${escapeHtml(syncTitle)}</strong><span>${escapeHtml(syncDetail)}</span>${syncJob?.active ? '<small class="upa-sync-note">Large catalogs can take several minutes. Keep this tab open; if interrupted, progress resumes when you return.</small>' : ""}</div><div class="upa-sync-actions">${syncJob?.active ? '<button data-action="stop-sync">Pause</button>' : hasData ? '<button class="upa-primary" data-action="sync-all">Resync full history</button>' : ""}</div>${syncJob?.active ? `<div class="upa-progress"><i style="width:${progress}%"></i></div>` : ""}</section>` : ""}
-          <main class="upa-content" id="upa-overview">${records.length ? `<section class="upa-kpis"><article><div><small>Gross revenue</small><span class="upa-kpi-dot upa-violet"></span></div><strong>${money(sales.totals.gross)}</strong><span>${number(sales.totals.qty)} paid units</span></article><article><div><small>Pageviews</small><span class="upa-kpi-dot upa-cyan"></span></div><strong>${number(pageViews)}</strong><span>${number(salesQty)} purchases and claims</span></article><article><div><small>Downloads</small><span class="upa-kpi-dot upa-amber"></span></div><strong>${number(downloads)}</strong><span>Across the selected period</span></article><article><div><small>Current balance</small><span class="upa-kpi-dot upa-green"></span></div><strong>${money(balance)}</strong><span>${number(daysTracked)} days tracked</span></article></section>
-            <section class="upa-dashboard-grid"><article class="upa-card upa-performance-card" id="upa-performance"><div class="upa-section-title"><div><small>PERFORMANCE</small><h2>Monthly gross revenue</h2><p>Lifetime revenue movement across your catalog.</p></div><span>${sales.months.length} periods</span></div>${lineChart(sales.months)}</article>
+          <main class="upa-content" id="upa-overview">${records.length ? `<section class="upa-kpis"><article><div><small>Gross revenue</small><span class="upa-kpi-dot upa-violet"></span></div><strong>${money(revenueChartData.total)}</strong><span>${number(paidUnits)} paid units</span></article><article><div><small>Pageviews</small><span class="upa-kpi-dot upa-cyan"></span></div><strong>${number(pageViews)}</strong><span>${number(salesQty)} purchases and claims</span></article><article><div><small>Downloads</small><span class="upa-kpi-dot upa-amber"></span></div><strong>${number(downloads)}</strong><span>Across the selected period</span></article><article><div><small>Current balance</small><span class="upa-kpi-dot upa-green"></span></div><strong>${money(balance)}</strong><span>${number(daysTracked)} days tracked</span></article></section>
+            <section class="upa-dashboard-grid"><article class="upa-card upa-performance-card" id="upa-performance"><div class="upa-section-title"><div><small>PERFORMANCE</small><h2>Gross revenue over time</h2><p>${intervalName(interval)} totals from ${escapeHtml(dateBounds.start)} to ${escapeHtml(dateBounds.end)}.</p></div><span>${revenueChartData.points.length} periods</span></div><div class="upa-chart-summary"><div class="upa-chart-metric"><i></i><span>Gross revenue</span></div><dl><div><dt>Total</dt><dd>${money(revenueChartData.total)}</dd></div><div><dt>Average</dt><dd>${money(revenueChartData.average)}</dd></div><div><dt>Peak</dt><dd>${revenueChartData.peak ? money(revenueChartData.peak[1]) : money(0)}</dd></div></dl></div><div id="upa-revenue-chart" class="upa-revenue-chart" role="img" aria-label="Interactive gross revenue chart"></div><div class="upa-chart-hint"><span>Scroll or pinch to zoom</span><span>Drag to pan</span><span>Use the navigator handles for an exact window</span></div></article>
             <article class="upa-card upa-packages-card" id="upa-packages"><div class="upa-section-title"><div><small>AUDIENCE &amp; CONVERSION</small><h2>Package performance</h2><p>Top packages ranked by gross sales.</p></div><span>${packages.length} packages</span></div><div class="upa-package-list">${packages.slice(0, 10).map((item, index) => `<div class="upa-package-row"><b>${String(index + 1).padStart(2, "0")}</b><div><strong>${escapeHtml(item.name)}</strong><span>${number(item.pageViews)} views · ${item.conversion.toFixed(2)}% conversion · ${number(item.downloads)} downloads</span></div><em>${money(item.sales)}</em></div>`).join("")}</div></article></section>` : `<section class="upa-welcome"><div class="upa-welcome-copy"><small>YOUR COMPLETE PICTURE</small><h2>Go beyond the<br>one-year window.</h2><p>Bring your available sales, downloads, revenue, pageviews, and conversion history into one configurable workspace.</p>${syncJob?.active ? '<div class="upa-welcome-running"><i></i><span>Your history is being prepared. You can leave this page open and follow the progress above.</span></div>' : '<button class="upa-primary upa-large" data-action="sync-all">Sync full history</button>'}</div><div class="upa-welcome-visual" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><span>Lifetime</span></div></section>`}</main>
         </section>
       </div>
       <div class="upa-toast" role="status" aria-live="polite"></div>
     </aside>`;
+    if (hasData && isOpen) renderRevenueChart(revenueChartData);
   }
 
   function scheduleRender() { if (!renderQueued) { renderQueued = true; requestAnimationFrame(render); } }
@@ -340,14 +422,23 @@
       if (action === "clear" && window.confirm("Clear all locally synced publisher data? This can't be undone.")) { await database({ type: "UPA_DB_CLEAR" }); records = []; syncJob = null; render(); }
     });
     document.addEventListener("change", async event => {
-      if (event.target.id === "upa-range") { prefs.range = event.target.value; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); }
+      if (event.target.id === "upa-range") {
+        const currentBounds = selectedDateBounds(); prefs.range = event.target.value;
+        if (prefs.range === "custom") { prefs.start = currentBounds.start; prefs.end = currentBounds.end; }
+        await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render();
+      }
+      if (event.target.id === "upa-start" || event.target.id === "upa-end") {
+        prefs.range = "custom"; prefs[event.target.id === "upa-start" ? "start" : "end"] = event.target.value;
+        await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render();
+      }
+      if (event.target.id === "upa-interval") { prefs.interval = event.target.value; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); }
     });
     chrome.runtime.onMessage.addListener(message => { if (message?.type === "UPA_TOGGLE") { isOpen = !isOpen; render(); } });
   }
 
   async function init() {
     const stored = await chrome.storage.local.get(PREFS_KEY);
-    prefs = { range: stored[PREFS_KEY]?.range || "all" };
+    prefs = { range: stored[PREFS_KEY]?.range || "all", interval: stored[PREFS_KEY]?.interval || "auto", start: stored[PREFS_KEY]?.start || "", end: stored[PREFS_KEY]?.end || "" };
     await chrome.storage.local.set({ [PREFS_KEY]: prefs });
     records = await getAll(); syncJob = await getMeta(SYNC_KEY); isOpen = Boolean(syncJob?.active);
     const root = document.createElement("div"); root.id = "upa-root"; document.body.appendChild(root); bindEvents(); render();

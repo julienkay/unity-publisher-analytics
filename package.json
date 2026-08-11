@@ -1,0 +1,11 @@
+{
+  "name": "unity-publisher-analytics",
+  "private": true,
+  "scripts": {
+    "build:charts": "esbuild scripts/echarts-entry.js --bundle --minify --format=iife --global-name=echarts --outfile=vendor/echarts.min.js --legal-comments=linked"
+  },
+  "devDependencies": {
+    "echarts": "6.1.0",
+    "esbuild": "0.28.2"
+  }
+}

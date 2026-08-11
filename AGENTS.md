@@ -5,4 +5,4 @@
 - Never hardcode publisher IDs, packages, or publisher-specific history dates.
 - Keep implementation terminology out of publisher-facing copy.
 - Do not bump the extension version unless explicitly requested.
-- Before finishing, run `node --check` on every JavaScript file and validate `manifest.json`.
+- Before finishing, rebuild charts, run `node --check` on every JavaScript file, and validate `manifest.json`.

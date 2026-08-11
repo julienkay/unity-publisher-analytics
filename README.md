@@ -27,6 +27,8 @@ The dashboard brings together:
 - Daily sales, purchases and claims, pageviews, conversion, downloads, wishlist changes, refunds, ratings, quick looks, and cart activity.
 - Portfolio-wide and per-package performance.
 
+The main revenue chart supports automatic or explicit daily, weekly, monthly, quarterly, and yearly intervals. Choose a preset or exact start and end dates, then scroll or pinch to zoom, drag to pan, or use the navigator handles to focus on a precise window.
+
 Progress is saved as the history is synced. If the page is refreshed, the extension continues from where it left off. Once the full history is ready, recent results are refreshed automatically whenever the Publisher Portal is visited.
 
 ## Storage and privacy
@@ -41,4 +43,6 @@ The extension uses the signed-in portal session and the reporting endpoints alre
 
 Daily history is collected for the complete portfolio and for each package in date windows supported by the portal. The available account history is discovered dynamically and is limited only by Unity's own analytics retention boundary.
 
-There is no build step or third-party dependency. These endpoints are implementation details and can change without notice. The extension deliberately trusts this single source instead of maintaining alternate ingestion paths.
+Apache ECharts is bundled locally with the extension; no runtime code is loaded from a CDN. To rebuild the committed chart bundle after changing `scripts/echarts-entry.js`, run `npm install` and `npm run build:charts`.
+
+The Publisher Portal endpoints are implementation details and can change without notice. The extension deliberately trusts this single source instead of maintaining alternate ingestion paths.
