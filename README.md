@@ -3,6 +3,7 @@
 A Chrome extension that turns Unity Publisher Portal data into a clearer historical dashboard.
 
 See [VISION.md](VISION.md) for the product direction and guiding principles.
+See [docs/DESIGN.md](docs/DESIGN.md) for the shared interface system.
 See [docs/RENDERING.md](docs/RENDERING.md) for the visualization architecture.
 
 ## Install locally

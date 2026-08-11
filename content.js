@@ -425,15 +425,15 @@
     const fullMoney = value => new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value || 0);
     const axes = [0, 1, 2].map(index => ({
       type: "time", gridIndex: index, boundaryGap: false, axisLine: { show: index === 2, lineStyle: { color: "#dfe2e9" } }, axisTick: { show: false },
-      axisLabel: { show: index === 2, color: "#81899b", fontSize: 9, hideOverlap: true }, splitLine: { show: false }
+      axisLabel: { show: index === 2, color: "#81899b", fontSize: 10, hideOverlap: true }, splitLine: { show: false }
     }));
     const yAxes = [
       { name: "REVENUE", formatter: compactMoney, color: "#6c5ce7" },
       { name: "PAGEVIEWS", formatter: compactNumber, color: "#21a7bd" },
       { name: "DOWNLOADS", formatter: compactNumber, color: "#d99721" }
     ].map((axis, index) => ({
-      type: "value", gridIndex: index, min: 0, name: axis.name, nameLocation: "end", nameGap: 7, nameTextStyle: { color: axis.color, fontSize: 8, fontWeight: 800, align: "left" },
-      axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: "#8b92a3", fontSize: 9, formatter: axis.formatter }, splitLine: { lineStyle: { color: "#eef0f4" } }
+      type: "value", gridIndex: index, min: 0, name: axis.name, nameLocation: "end", nameGap: 7, nameTextStyle: { color: axis.color, fontSize: 9, fontWeight: 800, align: "left" },
+      axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: "#8b92a3", fontSize: 10, formatter: axis.formatter }, splitLine: { lineStyle: { color: "#eef0f4" } }
     }));
     const series = [
       { name: "Gross revenue", key: "revenue", color: "#6c5ce7", area: ["rgba(108,92,231,.2)", "rgba(108,92,231,0)"] },
@@ -504,7 +504,7 @@
         splitLine: { show: true, lineStyle: { color: "#fff", width: 3 } },
         itemStyle: { color: "#f3f4f7", borderColor: "#fff", borderWidth: 2 },
         yearLabel: { show: true, position: "left", margin: 35, color: "#434b5d", fontSize: 12, fontWeight: 750 },
-        monthLabel: { color: "#858da0", fontSize: 9, margin: 7 }, dayLabel: { firstDay: 1, color: "#a0a6b5", fontSize: 8, margin: 7 }
+        monthLabel: { color: "#858da0", fontSize: 10, margin: 7 }, dayLabel: { firstDay: 1, color: "#a0a6b5", fontSize: 9, margin: 7 }
       }));
       container.style.height = `${chartHeight}px`;
       chart.resize({ height: chartHeight });
@@ -512,7 +512,7 @@
         animation: false,
         aria: { enabled: true, description: `${viewModel.metric.label} by day across ${viewModel.years.length} calendar years.` },
         tooltip: { trigger: "item", confine: true, backgroundColor: "#151927", borderWidth: 0, padding: [10, 12], textStyle: { color: "#fff", fontSize: 11 }, formatter: parameter => `<strong>${escapeHtml(parameter.data[0])}</strong><br/><span style="color:#aaa3d8">${viewModel.metric.label}</span>&nbsp;&nbsp;${formatValue(parameter.data[1])}` },
-        visualMap: { min: 0, max: viewModel.scaleMax, calculable: false, orient: "horizontal", right: 20, top: 8, itemWidth: 9, itemHeight: 110, text: [formatValue(viewModel.scaleMax), "0"], textGap: 7, textStyle: { color: "#81899b", fontSize: 9 }, inRange: { color: ["#f1f0f8", "#d9d4f6", "#a99def", "#6c5ce7", "#372c83"] }, seriesIndex: series.map((_, index) => index) },
+        visualMap: { min: 0, max: viewModel.scaleMax, calculable: false, orient: "horizontal", right: 20, top: 8, itemWidth: 9, itemHeight: 110, text: [formatValue(viewModel.scaleMax), "0"], textGap: 7, textStyle: { color: "#81899b", fontSize: 10 }, inRange: { color: ["#f1f0f8", "#d9d4f6", "#a99def", "#6c5ce7", "#372c83"] }, seriesIndex: series.map((_, index) => index) },
         calendar: calendars, series
       }, { notMerge: true });
     };
@@ -568,7 +568,7 @@
       tooltip: { trigger: "item", triggerOn: "mousemove", confine: true, backgroundColor: "#151927", borderWidth: 0, padding: [10, 12], textStyle: { color: "#fff", fontSize: 11 }, formatter: parameter => parameter.dataType === "edge" ? `<strong>${escapeHtml(parameter.data.sourceLabel)}</strong><br/><span style="color:#aaa3d8">to ${escapeHtml(parameter.data.targetLabel)}</span>&nbsp;&nbsp;${fullMoney(parameter.value)}` : `<strong>${escapeHtml(parameter.data.label)}</strong><br/>${fullMoney(parameter.value)}` },
       series: [{
         type: "sankey", left: 18, right: 18, top: 22, bottom: 20, nodeWidth: 14, nodeGap: 13, nodeAlign: "justify", draggable: true, layoutIterations: 36,
-        data: viewModel.nodes, links: viewModel.links, label: { color: "#343b4d", fontSize: 10, fontWeight: 650, formatter: parameter => parameter.data.label },
+        data: viewModel.nodes, links: viewModel.links, label: { color: "#343b4d", fontSize: 11, fontWeight: 650, formatter: parameter => parameter.data.label },
         lineStyle: { color: "gradient", curveness: .52, opacity: .3 }, emphasis: { focus: "adjacency", lineStyle: { opacity: .65 } }, itemStyle: { borderWidth: 0, borderRadius: 3 }
       }]
     });
