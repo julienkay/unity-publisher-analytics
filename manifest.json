@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Unity Publisher Analytics+",
+  "version": "0.1.0",
+  "description": "Clearer sales, audience, download, and revenue insights for Unity publishers.",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": ["https://publisher.unity.com/*"],
+  "action": {
+    "default_title": "Open Unity Analytics+"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://publisher.unity.com/*"],
+      "js": ["api-client.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://publisher.unity.com/*"],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}
