@@ -29,6 +29,12 @@ The dashboard brings together:
 
 The main revenue chart supports automatic or explicit daily, weekly, monthly, quarterly, and yearly intervals. Choose a preset or exact start and end dates, then scroll or pinch to zoom, drag to pan, or use the navigator handles to focus on a precise window.
 
+Additional views reveal patterns that are hard to see in a timeline:
+
+- A stacked calendar compares daily revenue, purchases, pageviews, or downloads across every available year.
+- A filterable Sankey diagram shows how package revenue is distributed across price tiers without implying customer-level journeys that the aggregate source data cannot support.
+- Every chart can be saved as a high-resolution PNG or shared through the device's native share surface when available.
+
 Progress is saved as the history is synced. If the page is refreshed, the extension continues from where it left off. Once the full history is ready, recent results are refreshed automatically whenever the Publisher Portal is visited.
 
 ## Storage and privacy

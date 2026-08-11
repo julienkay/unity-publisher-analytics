@@ -1,6 +1,6 @@
 # Rendering architecture
 
-Status: active. The first modular ECharts bundle powers the main revenue chart.
+Status: active. A modular ECharts bundle powers the revenue timeline, daily calendar, and revenue-flow views.
 
 ## Decision
 
@@ -29,10 +29,10 @@ Use SVG by default for ordinary dashboard charts because it remains crisp, inspe
 
 Manifest V3 does not permit remotely hosted executable code. Pin ECharts to an exact version, generate a local modular bundle containing only the chart types, components, and renderers in use, and commit the distributable bundle with its license notice. Do not load chart code from a CDN.
 
-The first modular build includes:
+The modular build includes:
 
-- Line series with area styling.
-- Tooltip, grid, data zoom, and accessibility components.
+- Line, heatmap, and Sankey series.
+- Tooltip, grid, data zoom, calendar, visual-map, and accessibility components.
 - The SVG renderer.
 
 Add other series, components, and the Canvas renderer only when a shipped visualization needs them. Rebuild and commit `vendor/echarts.min.js` and its legal notice after changing the entry point.

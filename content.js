@@ -14,12 +14,13 @@
     daily: "/publisher-v2-api/dashboard/daily"
   };
   let records = [];
-  let prefs = { range: "all", interval: "auto", start: "", end: "" };
+  let prefs = { range: "all", interval: "auto", start: "", end: "", calendarMetric: "sales", sankeyPackages: [] };
   let syncJob = null;
   let isOpen = false;
   let renderQueued = false;
-  let revenueChart = null;
-  let revenueChartResizeObserver = null;
+  const chartInstances = new Map();
+  const chartResizeObservers = new Map();
+  const chartShareMetadata = new Map();
   const pendingApiRequests = new Map();
 
   const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
@@ -320,9 +321,18 @@
     return ({ day: "Daily", week: "Weekly", month: "Monthly", quarter: "Quarterly", year: "Yearly" })[interval] || "Revenue";
   }
 
-  function disposeRevenueChart() {
-    revenueChartResizeObserver?.disconnect(); revenueChartResizeObserver = null;
-    revenueChart?.dispose(); revenueChart = null;
+  function disposeCharts() {
+    for (const observer of chartResizeObservers.values()) observer.disconnect();
+    for (const chart of chartInstances.values()) chart.dispose();
+    chartResizeObservers.clear(); chartInstances.clear();
+  }
+
+  function createChart(key, container) {
+    if (!container || !globalThis.UPAECharts?.init) return null;
+    const chart = globalThis.UPAECharts.init(container, null, { renderer: "svg" });
+    const observer = new ResizeObserver(() => chart.resize());
+    observer.observe(container); chartInstances.set(key, chart); chartResizeObservers.set(key, observer);
+    return chart;
   }
 
   function renderRevenueChart(viewModel) {
@@ -333,8 +343,8 @@
     const fullMoney = value => new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value || 0);
     const dateLabel = timestamp => new Intl.DateTimeFormat(undefined, ["day", "week"].includes(viewModel.interval) ? { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" } : { month: "short", year: "numeric", timeZone: "UTC" }).format(timestamp);
     const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    revenueChart = globalThis.UPAECharts.init(container, null, { renderer: "svg" });
-    revenueChart.setOption({
+    const chart = createChart("revenue", container); if (!chart) return;
+    chart.setOption({
       animation: !reducedMotion && viewModel.points.length < 260,
       aria: { enabled: true, description: `${intervalName(viewModel.interval)} gross revenue from ${dateLabel(viewModel.points[0][0])} to ${dateLabel(viewModel.points.at(-1)[0])}.` },
       grid: { left: 14, right: 18, top: 22, bottom: 72, containLabel: true },
@@ -354,14 +364,148 @@
         areaStyle: { color: new globalThis.UPAECharts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: "rgba(108,92,231,.23)" }, { offset: 1, color: "rgba(108,92,231,0)" }]) }, emphasis: { focus: "series" }
       }]
     });
-    revenueChartResizeObserver = new ResizeObserver(() => revenueChart?.resize());
-    revenueChartResizeObserver.observe(container);
+  }
+
+  function calendarMetric(metric) {
+    return ({
+      sales: { key: "sales", label: "Gross revenue", currency: true },
+      salesQty: { key: "salesQty", label: "Purchases and claims", currency: false },
+      pageViews: { key: "pageViews", label: "Pageviews", currency: false },
+      downloads: { key: "downloads", label: "Downloads", currency: false }
+    })[metric] || { key: "sales", label: "Gross revenue", currency: true };
+  }
+
+  function calendarViewModel(items, metricKey) {
+    const metric = calendarMetric(metricKey), byDate = new Map();
+    for (const item of items) byDate.set(item.date, (byDate.get(item.date) || 0) + toNumber(item[metric.key]));
+    const points = [...byDate].sort(([a], [b]) => a.localeCompare(b));
+    const years = [...new Set(points.map(([date]) => date.slice(0, 4)))];
+    const values = points.map(([, value]) => value).filter(value => value > 0).sort((a, b) => a - b);
+    const scaleMax = values.length ? values[Math.min(values.length - 1, Math.floor(values.length * .95))] : 1;
+    const peak = points.reduce((best, point) => !best || point[1] > best[1] ? point : best, null);
+    return { metric, points, years, scaleMax: Math.max(scaleMax, 1), peak, total: points.reduce((sum, point) => sum + point[1], 0) };
+  }
+
+  function renderCalendarChart(viewModel) {
+    const container = document.getElementById("upa-calendar-chart");
+    if (!container) return;
+    if (!viewModel.points.length) { container.innerHTML = '<div class="upa-empty-chart">No daily activity is available for this date range.</div>'; return; }
+    if (!globalThis.UPAECharts?.init) { container.innerHTML = '<div class="upa-empty-chart">The chart renderer could not be loaded.</div>'; return; }
+    const chart = createChart("calendar", container); if (!chart) return;
+    const formatValue = value => viewModel.metric.currency
+      ? new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value || 0)
+      : number(value);
+    const calendars = viewModel.years.map((year, index) => ({
+      range: year, top: 66 + index * 116, left: 62, right: 24, height: 82, cellSize: ["auto", 13],
+      splitLine: { show: true, lineStyle: { color: "#fff", width: 3 } },
+      itemStyle: { color: "#f3f4f7", borderColor: "#fff", borderWidth: 2 },
+      yearLabel: { show: true, position: "left", margin: 35, color: "#434b5d", fontSize: 12, fontWeight: 750 },
+      monthLabel: { color: "#858da0", fontSize: 9, margin: 7 }, dayLabel: { firstDay: 1, color: "#a0a6b5", fontSize: 8, margin: 7 }
+    }));
+    const series = viewModel.years.map((year, index) => ({
+      name: viewModel.metric.label, type: "heatmap", coordinateSystem: "calendar", calendarIndex: index,
+      data: viewModel.points.filter(([date]) => date.startsWith(year)), emphasis: { itemStyle: { borderColor: "#26213f", borderWidth: 1, shadowBlur: 5, shadowColor: "rgba(40,32,78,.25)" } }
+    }));
+    chart.setOption({
+      animation: false,
+      aria: { enabled: true, description: `${viewModel.metric.label} by day across ${viewModel.years.length} calendar years.` },
+      tooltip: { trigger: "item", confine: true, backgroundColor: "#151927", borderWidth: 0, padding: [10, 12], textStyle: { color: "#fff", fontSize: 11 }, formatter: parameter => `<strong>${escapeHtml(parameter.data[0])}</strong><br/><span style="color:#aaa3d8">${viewModel.metric.label}</span>&nbsp;&nbsp;${formatValue(parameter.data[1])}` },
+      visualMap: { min: 0, max: viewModel.scaleMax, calculable: true, orient: "horizontal", right: 20, top: 8, itemWidth: 9, itemHeight: 110, text: [formatValue(viewModel.scaleMax), "0"], textGap: 7, textStyle: { color: "#81899b", fontSize: 9 }, inRange: { color: ["#f1f0f8", "#d9d4f6", "#a99def", "#6c5ce7", "#372c83"] }, seriesIndex: series.map((_, index) => index) },
+      calendar: calendars, series
+    });
+  }
+
+  function sankeyPackageOptions(items) {
+    const packages = new Map();
+    for (const item of items) {
+      const key = String(item.packageId || item.package || "unknown"), current = packages.get(key) || { key, name: item.package || `Package ${key}`, gross: 0 };
+      current.gross += Math.max(0, item.gross); packages.set(key, current);
+    }
+    return [...packages.values()].filter(item => item.gross > 0).sort((a, b) => b.gross - a.gross);
+  }
+
+  function sankeyViewModel(items, selectedPackageKeys) {
+    const options = sankeyPackageOptions(items), availableKeys = new Set(options.map(item => item.key));
+    const explicitKeys = (selectedPackageKeys || []).filter(key => availableKeys.has(key));
+    const activePackages = explicitKeys.length ? options.filter(item => explicitKeys.includes(item.key)) : options.slice(0, 8);
+    const activeKeys = new Set(activePackages.map(item => item.key)), packageTierLinks = new Map(), tierTotals = new Map();
+    for (const item of items) {
+      const packageKey = String(item.packageId || item.package || "unknown"), gross = Math.max(0, item.gross);
+      if (!activeKeys.has(packageKey) || !gross) continue;
+      const tierKey = Number(item.price || 0).toFixed(2), linkKey = `${packageKey}|${tierKey}`;
+      packageTierLinks.set(linkKey, (packageTierLinks.get(linkKey) || 0) + gross); tierTotals.set(tierKey, (tierTotals.get(tierKey) || 0) + gross);
+    }
+    const priceLabel = value => new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: Number(value) % 1 ? 2 : 0, maximumFractionDigits: 2 }).format(value);
+    const palette = ["#6c5ce7", "#8b7cf0", "#4e8bd7", "#21a7bd", "#aa69c7", "#6170c7", "#6751aa", "#3f8fa4"];
+    const nodes = activePackages.map((item, index) => ({ name: `package:${item.key}`, label: item.name, kind: "package", itemStyle: { color: palette[index % palette.length] } }));
+    for (const tierKey of tierTotals.keys()) nodes.push({ name: `tier:${tierKey}`, label: `${priceLabel(Number(tierKey))} tier`, kind: "tier", itemStyle: { color: "#34a7b7" } });
+    nodes.push({ name: "revenue", label: "Gross revenue", kind: "total", itemStyle: { color: "#2f9c69" } });
+    const packageNames = new Map(activePackages.map(item => [item.key, item.name]));
+    const links = [];
+    for (const [key, value] of packageTierLinks) {
+      const [packageKey, tierKey] = key.split("|");
+      links.push({ source: `package:${packageKey}`, target: `tier:${tierKey}`, value, sourceLabel: packageNames.get(packageKey), targetLabel: `${priceLabel(Number(tierKey))} tier` });
+    }
+    for (const [tierKey, value] of tierTotals) links.push({ source: `tier:${tierKey}`, target: "revenue", value, sourceLabel: `${priceLabel(Number(tierKey))} tier`, targetLabel: "Gross revenue" });
+    return { options, explicitKeys, activePackages, nodes, links, total: [...tierTotals.values()].reduce((sum, value) => sum + value, 0), tiers: tierTotals.size };
+  }
+
+  function renderSankeyChart(viewModel) {
+    const container = document.getElementById("upa-sankey-chart");
+    if (!container) return;
+    if (!viewModel.links.length) { container.innerHTML = '<div class="upa-empty-chart">No package revenue is available for this date range.</div>'; return; }
+    if (!globalThis.UPAECharts?.init) { container.innerHTML = '<div class="upa-empty-chart">The chart renderer could not be loaded.</div>'; return; }
+    const chart = createChart("sankey", container); if (!chart) return;
+    const fullMoney = value => new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value || 0);
+    chart.setOption({
+      animationDuration: 550, animationDurationUpdate: 350,
+      aria: { enabled: true, description: `Gross revenue from ${viewModel.activePackages.length} packages through ${viewModel.tiers} price tiers.` },
+      tooltip: { trigger: "item", triggerOn: "mousemove", confine: true, backgroundColor: "#151927", borderWidth: 0, padding: [10, 12], textStyle: { color: "#fff", fontSize: 11 }, formatter: parameter => parameter.dataType === "edge" ? `<strong>${escapeHtml(parameter.data.sourceLabel)}</strong><br/><span style="color:#aaa3d8">to ${escapeHtml(parameter.data.targetLabel)}</span>&nbsp;&nbsp;${fullMoney(parameter.value)}` : `<strong>${escapeHtml(parameter.data.label)}</strong><br/>${fullMoney(parameter.value)}` },
+      series: [{
+        type: "sankey", left: 18, right: 18, top: 22, bottom: 20, nodeWidth: 14, nodeGap: 13, nodeAlign: "justify", draggable: true, layoutIterations: 36,
+        data: viewModel.nodes, links: viewModel.links, label: { color: "#343b4d", fontSize: 10, fontWeight: 650, formatter: parameter => parameter.data.label },
+        lineStyle: { color: "gradient", curveness: .52, opacity: .3 }, emphasis: { focus: "adjacency", lineStyle: { opacity: .65 } }, itemStyle: { borderWidth: 0, borderRadius: 3 }
+      }]
+    });
+  }
+
+  function chartActions(key, disabled = false) {
+    return `<div class="upa-chart-actions"><button data-chart-action="save" data-chart="${key}" title="Save this chart as a high-resolution PNG" ${disabled ? "disabled" : ""}>Save PNG</button><button data-chart-action="share" data-chart="${key}" title="Share this chart using your device" ${disabled ? "disabled" : ""}>Share</button></div>`;
+  }
+
+  function chartFilename(key) { return `unity-publisher-${key}-${new Date().toISOString().slice(0, 10)}.png`; }
+
+  async function chartImage(key) {
+    const chart = chartInstances.get(key), metadata = chartShareMetadata.get(key); if (!chart || !metadata) throw new Error("This chart is not ready yet.");
+    const source = chart.getDataURL({ type: "png", pixelRatio: 2, backgroundColor: "#ffffff" });
+    const image = new Image(); image.src = source; await image.decode();
+    const headerHeight = 150, canvas = document.createElement("canvas"); canvas.width = image.naturalWidth; canvas.height = image.naturalHeight + headerHeight;
+    const context = canvas.getContext("2d"); context.fillStyle = "#fff"; context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "#172033"; context.font = "700 32px Segoe UI, sans-serif"; context.fillText(metadata.title, 40, 56);
+    context.fillStyle = "#70798d"; context.font = "20px Segoe UI, sans-serif"; context.fillText(metadata.subtitle, 40, 91);
+    context.fillStyle = "#6c5ce7"; context.font = "700 18px Segoe UI, sans-serif"; context.textAlign = "right"; context.fillText("Analytics+", canvas.width - 40, 56); context.textAlign = "left";
+    context.drawImage(image, 0, headerHeight);
+    const blob = await new Promise((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error("Could not create the chart image.")), "image/png"));
+    return { blob, filename: chartFilename(key), metadata };
+  }
+
+  async function handleChartAction(action, key) {
+    try {
+      const image = await chartImage(key);
+      if (action === "share" && navigator.share) {
+        const file = new File([image.blob], image.filename, { type: "image/png" });
+        if (!navigator.canShare || navigator.canShare({ files: [file] })) { await navigator.share({ title: image.metadata.title, text: image.metadata.subtitle, files: [file] }); return; }
+      }
+      const url = URL.createObjectURL(image.blob);
+      const link = document.createElement("a"); link.href = url; link.download = image.filename; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast(action === "share" ? "Sharing is unavailable here, so the chart was downloaded instead." : "Chart saved as a high-resolution PNG.");
+    } catch (error) { if (error.name !== "AbortError") toast(error.message, "error"); }
   }
 
   function render() {
     renderQueued = false; const host = document.getElementById("upa-root"); if (!host) return;
-    disposeRevenueChart();
-    const sales = aggregateSales(filtered("sales"));
+    disposeCharts(); chartShareMetadata.clear();
+    const salesItems = filtered("sales"), sales = aggregateSales(salesItems);
     const daily = filtered("daily"), dailyAll = daily.filter(item => item.scope === "all"), packages = aggregatePackages(daily);
     const pageViews = dailyAll.reduce((sum, item) => sum + item.pageViews, 0), salesQty = dailyAll.reduce((sum, item) => sum + item.salesQty, 0);
     const paidUnits = dailyAll.reduce((sum, item) => sum + item.paidQty, 0), downloads = dailyAll.reduce((sum, item) => sum + item.downloads, 0);
@@ -370,6 +514,11 @@
     const daysTracked = new Set(dailyAll.map(item => item.date)).size;
     const hasData = records.length > 0;
     const availableBounds = availableDateBounds(), dateBounds = selectedDateBounds(), interval = resolvedInterval(dateBounds), revenueChartData = revenueViewModel(dailyAll, interval);
+    const calendarData = calendarViewModel(dailyAll, prefs.calendarMetric), sankeyData = sankeyViewModel(salesItems, prefs.sankeyPackages);
+    const calendarHeight = Math.max(250, calendarData.years.length * 116 + 64), sankeyHeight = Math.max(410, sankeyData.activePackages.length * 48 + 96);
+    chartShareMetadata.set("revenue", { title: "Gross revenue over time", subtitle: `${intervalName(interval)} totals · ${dateBounds.start} to ${dateBounds.end}` });
+    chartShareMetadata.set("calendar", { title: `${calendarData.metric.label} calendar`, subtitle: `${dateBounds.start} to ${dateBounds.end} · daily intensity across ${calendarData.years.length} ${calendarData.years.length === 1 ? "year" : "years"}` });
+    chartShareMetadata.set("sankey", { title: "Where revenue comes from", subtitle: `${sankeyData.activePackages.length} packages · ${sankeyData.tiers} price tiers · ${dateBounds.start} to ${dateBounds.end}` });
     const syncTitle = syncJob?.active ? syncJob.label : syncJob?.phase === "error" ? "Sync couldn't be completed" : records.length ? "Your data is up to date" : "Ready to sync your history";
     const syncDetail = syncJob?.active
       ? `${syncJob.completed || 0} of ${syncJob.total || "?"} steps complete`
@@ -387,7 +536,7 @@
       <div class="upa-shell">
         <nav class="upa-sidebar" aria-label="Dashboard sections">
           <div class="upa-brand"><span>A+</span><div><strong>Analytics+</strong><small>Unity Publisher</small></div></div>
-          ${hasData ? `<div class="upa-nav-group"><small>Workspace</small><button class="upa-nav-item upa-active" data-action="scroll-overview"><span>Overview</span><i>01</i></button><button class="upa-nav-item" data-action="scroll-performance"><span>Performance</span><i>02</i></button><button class="upa-nav-item" data-action="scroll-packages"><span>Packages</span><i>03</i></button></div>` : `<div class="upa-onboarding-nav"><small>Getting started</small><strong>Build your publisher history</strong><span>One sync brings your available analytics into this workspace.</span></div>`}
+          ${hasData ? `<div class="upa-nav-group"><small>Workspace</small><button class="upa-nav-item upa-active" data-action="scroll-overview"><span>Overview</span><i>01</i></button><button class="upa-nav-item" data-action="scroll-performance"><span>Performance</span><i>02</i></button><button class="upa-nav-item" data-action="scroll-packages"><span>Packages</span><i>03</i></button><button class="upa-nav-item" data-action="scroll-calendar"><span>Daily patterns</span><i>04</i></button><button class="upa-nav-item" data-action="scroll-sankey"><span>Revenue flow</span><i>05</i></button></div>` : `<div class="upa-onboarding-nav"><small>Getting started</small><strong>Build your publisher history</strong><span>One sync brings your available analytics into this workspace.</span></div>`}
           <div class="upa-sidebar-status"><small>${hasData ? "Data coverage" : "Your data"}</small><strong>${hasData ? `${sales.months.length} months` : "Stored locally"}</strong><span>${hasData ? `${daysTracked} complete days tracked` : "Private to this browser"}</span></div>
           ${hasData ? '<div class="upa-sidebar-actions"><button data-action="export">Export data</button><button class="upa-danger" data-action="clear">Clear data</button></div>' : ""}
         </nav>
@@ -396,13 +545,15 @@
           ${hasData ? `<div class="upa-toolbar"><label>Time range<select id="upa-range"><option value="all" ${prefs.range === "all" ? "selected" : ""}>All available history</option><option value="12" ${prefs.range === "12" ? "selected" : ""}>Last 12 months</option><option value="6" ${prefs.range === "6" ? "selected" : ""}>Last 6 months</option><option value="3" ${prefs.range === "3" ? "selected" : ""}>Last 3 months</option><option value="custom" ${prefs.range === "custom" ? "selected" : ""}>Custom range</option></select></label><div class="upa-date-range"><label>From<input id="upa-start" type="date" value="${dateBounds.start}" min="${availableBounds.start}" max="${availableBounds.end}"></label><span>to</span><label>Until<input id="upa-end" type="date" value="${dateBounds.end}" min="${availableBounds.start}" max="${availableBounds.end}"></label></div><label>Interval<select id="upa-interval"><option value="auto" ${prefs.interval === "auto" ? "selected" : ""}>Automatic (${intervalName(interval).toLowerCase()})</option><option value="day" ${prefs.interval === "day" ? "selected" : ""}>Daily</option><option value="week" ${prefs.interval === "week" ? "selected" : ""}>Weekly</option><option value="month" ${prefs.interval === "month" ? "selected" : ""}>Monthly</option><option value="quarter" ${prefs.interval === "quarter" ? "selected" : ""}>Quarterly</option><option value="year" ${prefs.interval === "year" ? "selected" : ""}>Yearly</option></select></label></div>` : ""}
           ${(hasData || syncJob?.active || syncJob?.phase === "error") ? `<section class="upa-sync ${syncJob?.active ? "upa-syncing" : ""}">${syncIcon}<div class="upa-sync-copy"><strong>${escapeHtml(syncTitle)}</strong><span>${escapeHtml(syncDetail)}</span>${syncJob?.active ? '<small class="upa-sync-note">Large catalogs can take several minutes. Keep this tab open; if interrupted, progress resumes when you return.</small>' : ""}</div><div class="upa-sync-actions">${syncJob?.active ? '<button data-action="stop-sync">Pause</button>' : hasData ? '<button class="upa-primary" data-action="sync-all">Resync full history</button>' : ""}</div>${syncJob?.active ? `<div class="upa-progress"><i style="width:${progress}%"></i></div>` : ""}</section>` : ""}
           <main class="upa-content" id="upa-overview">${records.length ? `<section class="upa-kpis"><article><div><small>Gross revenue</small><span class="upa-kpi-dot upa-violet"></span></div><strong>${money(revenueChartData.total)}</strong><span>${number(paidUnits)} paid units</span></article><article><div><small>Pageviews</small><span class="upa-kpi-dot upa-cyan"></span></div><strong>${number(pageViews)}</strong><span>${number(salesQty)} purchases and claims</span></article><article><div><small>Downloads</small><span class="upa-kpi-dot upa-amber"></span></div><strong>${number(downloads)}</strong><span>Across the selected period</span></article><article><div><small>Current balance</small><span class="upa-kpi-dot upa-green"></span></div><strong>${money(balance)}</strong><span>${number(daysTracked)} days tracked</span></article></section>
-            <section class="upa-dashboard-grid"><article class="upa-card upa-performance-card" id="upa-performance"><div class="upa-section-title"><div><small>PERFORMANCE</small><h2>Gross revenue over time</h2><p>${intervalName(interval)} totals from ${escapeHtml(dateBounds.start)} to ${escapeHtml(dateBounds.end)}.</p></div><span>${revenueChartData.points.length} periods</span></div><div class="upa-chart-summary"><div class="upa-chart-metric"><i></i><span>Gross revenue</span></div><dl><div><dt>Total</dt><dd>${money(revenueChartData.total)}</dd></div><div><dt>Average</dt><dd>${money(revenueChartData.average)}</dd></div><div><dt>Peak</dt><dd>${revenueChartData.peak ? money(revenueChartData.peak[1]) : money(0)}</dd></div></dl></div><div id="upa-revenue-chart" class="upa-revenue-chart" role="img" aria-label="Interactive gross revenue chart"></div><div class="upa-chart-hint"><span>Scroll or pinch to zoom</span><span>Drag to pan</span><span>Use the navigator handles for an exact window</span></div></article>
-            <article class="upa-card upa-packages-card" id="upa-packages"><div class="upa-section-title"><div><small>AUDIENCE &amp; CONVERSION</small><h2>Package performance</h2><p>Top packages ranked by gross sales.</p></div><span>${packages.length} packages</span></div><div class="upa-package-list">${packages.slice(0, 10).map((item, index) => `<div class="upa-package-row"><b>${String(index + 1).padStart(2, "0")}</b><div><strong>${escapeHtml(item.name)}</strong><span>${number(item.pageViews)} views · ${item.conversion.toFixed(2)}% conversion · ${number(item.downloads)} downloads</span></div><em>${money(item.sales)}</em></div>`).join("")}</div></article></section>` : `<section class="upa-welcome"><div class="upa-welcome-copy"><small>YOUR COMPLETE PICTURE</small><h2>Go beyond the<br>one-year window.</h2><p>Bring your available sales, downloads, revenue, pageviews, and conversion history into one configurable workspace.</p>${syncJob?.active ? '<div class="upa-welcome-running"><i></i><span>Your history is being prepared. You can leave this page open and follow the progress above.</span></div>' : '<button class="upa-primary upa-large" data-action="sync-all">Sync full history</button>'}</div><div class="upa-welcome-visual" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><span>Lifetime</span></div></section>`}</main>
+            <section class="upa-dashboard-grid"><article class="upa-card upa-performance-card" id="upa-performance"><div class="upa-section-title"><div><small>PERFORMANCE</small><h2>Gross revenue over time</h2><p>${intervalName(interval)} totals from ${escapeHtml(dateBounds.start)} to ${escapeHtml(dateBounds.end)}.</p></div><div class="upa-section-tools"><span>${revenueChartData.points.length} periods</span>${chartActions("revenue")}</div></div><div class="upa-chart-summary"><div class="upa-chart-metric"><i></i><span>Gross revenue</span></div><dl><div><dt>Total</dt><dd>${money(revenueChartData.total)}</dd></div><div><dt>Average</dt><dd>${money(revenueChartData.average)}</dd></div><div><dt>Peak</dt><dd>${revenueChartData.peak ? money(revenueChartData.peak[1]) : money(0)}</dd></div></dl></div><div id="upa-revenue-chart" class="upa-revenue-chart" role="img" aria-label="Interactive gross revenue chart"></div><div class="upa-chart-hint"><span>Scroll or pinch to zoom</span><span>Drag to pan</span><span>Use the navigator handles for an exact window</span></div></article>
+            <article class="upa-card upa-packages-card" id="upa-packages"><div class="upa-section-title"><div><small>AUDIENCE &amp; CONVERSION</small><h2>Package performance</h2><p>Top packages ranked by gross sales.</p></div><span>${packages.length} packages</span></div><div class="upa-package-list">${packages.slice(0, 10).map((item, index) => `<div class="upa-package-row"><b>${String(index + 1).padStart(2, "0")}</b><div><strong>${escapeHtml(item.name)}</strong><span>${number(item.pageViews)} views · ${item.conversion.toFixed(2)}% conversion · ${number(item.downloads)} downloads</span></div><em>${money(item.sales)}</em></div>`).join("")}</div></article></section>
+            <section class="upa-card upa-insight-card" id="upa-calendar"><div class="upa-section-title"><div><small>SEASONALITY &amp; OUTLIERS</small><h2>Daily activity calendar</h2><p>Compare daily intensity across years and spot recurring patterns at a glance.</p></div><div class="upa-section-tools"><span>${calendarData.years.length} ${calendarData.years.length === 1 ? "year" : "years"}</span>${chartActions("calendar")}</div></div><div class="upa-insight-toolbar"><label class="upa-inline-select">Show<select id="upa-calendar-metric"><option value="sales" ${prefs.calendarMetric === "sales" ? "selected" : ""}>Gross revenue</option><option value="salesQty" ${prefs.calendarMetric === "salesQty" ? "selected" : ""}>Purchases and claims</option><option value="pageViews" ${prefs.calendarMetric === "pageViews" ? "selected" : ""}>Pageviews</option><option value="downloads" ${prefs.calendarMetric === "downloads" ? "selected" : ""}>Downloads</option></select></label><div class="upa-insight-facts"><span><small>Total</small><strong>${calendarData.metric.currency ? money(calendarData.total) : number(calendarData.total)}</strong></span><span><small>Peak day</small><strong>${calendarData.peak ? escapeHtml(calendarData.peak[0]) : "—"}</strong></span><span><small>Peak value</small><strong>${calendarData.peak ? (calendarData.metric.currency ? money(calendarData.peak[1]) : number(calendarData.peak[1])) : "—"}</strong></span></div></div><div id="upa-calendar-chart" class="upa-calendar-chart" style="height:${calendarHeight}px" role="img" aria-label="Calendar heatmap with one row per year"></div><div class="upa-chart-hint"><span>Each row is one year</span><span>Darker days are higher</span><span>The color scale softens extreme outliers so everyday patterns stay visible</span></div></section>
+            <section class="upa-card upa-insight-card" id="upa-sankey"><div class="upa-section-title"><div><small>REVENUE COMPOSITION</small><h2>Where revenue comes from</h2><p>Follow gross revenue from packages through their price tiers.</p></div><div class="upa-section-tools"><span>${sankeyData.activePackages.length} shown</span>${chartActions("sankey")}</div></div><div class="upa-insight-toolbar upa-sankey-toolbar"><details class="upa-package-filter"><summary><span>Packages</span><strong>${sankeyData.explicitKeys.length ? `${sankeyData.explicitKeys.length} selected` : "Top 8 by revenue"}</strong></summary><div class="upa-package-filter-panel"><div class="upa-package-filter-head"><span>Choose packages to compare</span><button data-action="sankey-top">Use top 8</button></div><div class="upa-package-checklist">${sankeyData.options.map(item => `<label><input type="checkbox" data-sankey-package="${escapeHtml(item.key)}" ${sankeyData.activePackages.some(active => active.key === item.key) ? "checked" : ""}><span><strong>${escapeHtml(item.name)}</strong><small>${money(item.gross)}</small></span></label>`).join("")}</div></div></details><div class="upa-insight-facts"><span><small>Revenue shown</small><strong>${money(sankeyData.total)}</strong></span><span><small>Price tiers</small><strong>${number(sankeyData.tiers)}</strong></span><span><small>Packages</small><strong>${number(sankeyData.activePackages.length)}</strong></span></div></div><div id="upa-sankey-chart" class="upa-sankey-chart" style="height:${sankeyHeight}px" role="img" aria-label="Sankey diagram of package revenue through price tiers"></div><div class="upa-chart-hint"><span>Hover to isolate a flow</span><span>Drag nodes to arrange the view</span><span>Shows revenue composition, not individual customer journeys</span></div></section>` : `<section class="upa-welcome"><div class="upa-welcome-copy"><small>YOUR COMPLETE PICTURE</small><h2>Go beyond the<br>one-year window.</h2><p>Bring your available sales, downloads, revenue, pageviews, and conversion history into one configurable workspace.</p>${syncJob?.active ? '<div class="upa-welcome-running"><i></i><span>Your history is being prepared. You can leave this page open and follow the progress above.</span></div>' : '<button class="upa-primary upa-large" data-action="sync-all">Sync full history</button>'}</div><div class="upa-welcome-visual" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><span>Lifetime</span></div></section>`}</main>
         </section>
       </div>
       <div class="upa-toast" role="status" aria-live="polite"></div>
     </aside>`;
-    if (hasData && isOpen) renderRevenueChart(revenueChartData);
+    if (hasData && isOpen) { renderRevenueChart(revenueChartData); renderCalendarChart(calendarData); renderSankeyChart(sankeyData); }
   }
 
   function scheduleRender() { if (!renderQueued) { renderQueued = true; requestAnimationFrame(render); } }
@@ -412,12 +563,15 @@
   function bindEvents() {
     document.addEventListener("click", async event => {
       if (!event.target.closest("#upa-root")) return;
+      const chartButton = event.target.closest("[data-chart-action]");
+      if (chartButton) { await handleChartAction(chartButton.dataset.chartAction, chartButton.dataset.chart); return; }
       const action = event.target.closest("[data-action]")?.dataset.action;
       if (event.target.closest(".upa-fab")) { isOpen = true; render(); return; }
       if (action === "close") { isOpen = false; render(); }
       if (action?.startsWith("scroll-")) document.getElementById(`upa-${action.slice(7)}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
       if (action === "sync-all") await startFullSync();
       if (action === "stop-sync") { syncJob.active = false; syncJob.label = "Sync paused"; await saveJob(); render(); }
+      if (action === "sankey-top") { prefs.sankeyPackages = []; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); }
       if (action === "export") download(`unity-publisher-analytics-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), records }, null, 2));
       if (action === "clear" && window.confirm("Clear all locally synced publisher data? This can't be undone.")) { await database({ type: "UPA_DB_CLEAR" }); records = []; syncJob = null; render(); }
     });
@@ -432,13 +586,21 @@
         await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render();
       }
       if (event.target.id === "upa-interval") { prefs.interval = event.target.value; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); }
+      if (event.target.id === "upa-calendar-metric") { prefs.calendarMetric = event.target.value; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); }
+      if (event.target.matches("[data-sankey-package]")) {
+        prefs.sankeyPackages = [...document.querySelectorAll("#upa-root [data-sankey-package]:checked")].map(input => input.dataset.sankeyPackage);
+        await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); requestAnimationFrame(() => { const filter = document.querySelector("#upa-root .upa-package-filter"); if (filter) filter.open = true; });
+      }
     });
     chrome.runtime.onMessage.addListener(message => { if (message?.type === "UPA_TOGGLE") { isOpen = !isOpen; render(); } });
   }
 
   async function init() {
     const stored = await chrome.storage.local.get(PREFS_KEY);
-    prefs = { range: stored[PREFS_KEY]?.range || "all", interval: stored[PREFS_KEY]?.interval || "auto", start: stored[PREFS_KEY]?.start || "", end: stored[PREFS_KEY]?.end || "" };
+    prefs = {
+      range: stored[PREFS_KEY]?.range || "all", interval: stored[PREFS_KEY]?.interval || "auto", start: stored[PREFS_KEY]?.start || "", end: stored[PREFS_KEY]?.end || "",
+      calendarMetric: stored[PREFS_KEY]?.calendarMetric || "sales", sankeyPackages: Array.isArray(stored[PREFS_KEY]?.sankeyPackages) ? stored[PREFS_KEY].sankeyPackages : []
+    };
     await chrome.storage.local.set({ [PREFS_KEY]: prefs });
     records = await getAll(); syncJob = await getMeta(SYNC_KEY); isOpen = Boolean(syncJob?.active);
     const root = document.createElement("div"); root.id = "upa-root"; document.body.appendChild(root); bindEvents(); render();
