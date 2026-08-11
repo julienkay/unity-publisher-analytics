@@ -17,6 +17,13 @@
     if (url.pathname === "/publisher-v2-api/proxy" && method === "GET") {
       return ["/management/once-published-packages", "/management/categories"].includes(url.searchParams.get("path")) && url.searchParams.get("type") === "array";
     }
+    if (url.pathname === "/publisher-v2-api/management/packages" && method === "POST") {
+      const keys = Object.keys(body || {}), allowedKeys = ["limit", "offset", "order_by", "order"];
+      return body && typeof body === "object" && keys.every(key => allowedKeys.includes(key))
+        && /^\d+$/.test(body.limit || "") && Number(body.limit) > 0 && Number(body.limit) <= 200
+        && (body.offset === undefined || /^\d+$/.test(body.offset))
+        && body.order_by === "name" && body.order === "asc";
+    }
     if (/^\/publisher-v2-api\/monthly-(sales|downloads)$/.test(url.pathname) && method === "GET") return /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get("date") || "");
     if (url.pathname === "/publisher-v2-api/publisher-revenues" && method === "GET") return true;
     if (url.pathname === "/publisher-v2-api/dashboard/daily" && method === "POST") {

@@ -9,6 +9,7 @@
   const API = {
     packages: "/publisher-v2-api/proxy?path=%2Fmanagement%2Fonce-published-packages&type=array",
     categories: "/publisher-v2-api/proxy?path=%2Fmanagement%2Fcategories&type=array",
+    packageMetadata: "/publisher-v2-api/management/packages",
     sales: month => `/publisher-v2-api/monthly-sales?date=${month}-01`,
     downloads: month => `/publisher-v2-api/monthly-downloads?date=${month}-01`,
     revenue: "/publisher-v2-api/publisher-revenues",
@@ -135,12 +136,32 @@
     }
   });
 
+  async function fetchPackageCategoryIds() {
+    const categoryIds = new Map(), limit = 200;
+    let offset = 0;
+    while (true) {
+      const body = { limit: String(limit), order_by: "name", order: "asc" };
+      if (offset) body.offset = String(offset);
+      const response = await apiJson(API.packageMetadata, { method: "POST", body });
+      const rows = valueFrom(response, ["package_versions", "packageVersions"]);
+      if (!Array.isArray(rows) || !rows.length) break;
+      for (const item of rows) {
+        const packageId = String(valueFrom(item, ["package_id", "packageId"]) || ""), categoryId = String(valueFrom(item, ["category_id", "categoryId"]) || "");
+        if (packageId && categoryId) categoryIds.set(packageId, categoryId);
+      }
+      offset += rows.length;
+      const total = toNumber(valueFrom(response, ["total"]));
+      if (rows.length < limit || (total && offset >= total)) break;
+    }
+    return categoryIds;
+  }
+
   async function fetchPackages() {
-    const [raw, categoryRows] = await Promise.all([apiJson(API.packages), apiJson(API.categories)]);
+    const [raw, categoryRows, categoryIdsByPackage] = await Promise.all([apiJson(API.packages), apiJson(API.categories), fetchPackageCategoryIds()]);
     const categories = new Map((Array.isArray(categoryRows) ? categoryRows : []).map(item => [String(valueFrom(item, ["id", "category_id", "categoryId"]) || ""), compact(valueFrom(item, ["assetstore_name", "assetstoreName", "name", "title", "category_name", "categoryName"]))]).filter(([id, name]) => id && name));
     return (Array.isArray(raw) ? raw : []).map(item => {
       const id = String(valueFrom(item, ["package_id", "packageId", "id"]) || "");
-      const categoryId = String(valueFrom(item, ["category_id", "categoryId"]) || "");
+      const categoryId = String(valueFrom(item, ["category_id", "categoryId"]) || categoryIdsByPackage.get(id) || "");
       return { id, name: valueFrom(item, ["name", "title", "package_name"]) || `Package ${id}`, categoryId, category: packageCategory(item) || categories.get(categoryId) || "", firstPublished: parseDate(valueFrom(item, ["first_published_time", "firstPublishedTime", "first_published"])) };
     }).filter(item => item.id);
   }
