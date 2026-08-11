@@ -19,6 +19,8 @@
   let isRefreshing = false;
   let isOpen = false;
   let renderQueued = false;
+  let isRangePopoverOpen = false;
+  let isCustomRangeEditorOpen = false;
   const chartInstances = new Map();
   const chartResizeObservers = new Map();
   const chartShareMetadata = new Map();
@@ -33,6 +35,10 @@
   const dateTime = value => {
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? "Refresh time unavailable" : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+  };
+  const shortDate = value => {
+    const date = new Date(`${value}T00:00:00Z`);
+    return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(date);
   };
 
   function toNumber(value) {
@@ -648,9 +654,17 @@
     const refreshTooltip = `Refresh publisher data · ${lastRefreshedAt ? `Last refreshed ${dateTime(lastRefreshedAt)}` : "Not refreshed yet"}`;
     const showRefreshAction = hasData && !syncJob?.active && syncJob?.phase !== "error" && !syncIncomplete;
     const refreshAction = showRefreshAction ? `<button class="upa-refresh-action ${isRefreshing ? "upa-refreshing" : ""}" type="button" data-action="refresh" aria-label="${escapeHtml(refreshTooltip)}" ${isRefreshing ? "disabled" : ""}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 5.9A5.5 5.5 0 1 0 13 10.7"></path><path d="M13.4 2.8v3.5H9.9"></path></svg><span>${isRefreshing ? "Refreshing…" : "Refresh data"}</span><span class="upa-refresh-tooltip" role="tooltip">${escapeHtml(refreshTooltip)}</span></button>` : "";
-    const rangeControl = hasData ? `<label class="upa-header-control upa-header-range"><span>Time range</span><select id="upa-range" aria-label="Time range"><option value="all" ${prefs.range === "all" ? "selected" : ""}>All time</option><option value="30d" ${prefs.range === "30d" ? "selected" : ""}>Last 30 days</option><option value="3" ${prefs.range === "3" ? "selected" : ""}>Last 3 months</option><option value="6" ${prefs.range === "6" ? "selected" : ""}>Last 6 months</option><option value="12" ${prefs.range === "12" ? "selected" : ""}>Last 12 months</option><option value="mtd" ${prefs.range === "mtd" ? "selected" : ""}>Month to date</option><option value="ytd" ${prefs.range === "ytd" ? "selected" : ""}>Year to date</option><option value="custom" ${prefs.range === "custom" ? "selected" : ""}>Custom range</option></select></label>` : "";
+    const rangeOptions = [
+      { id: "all", label: "All time" }, { id: "30d", label: "Last 30 days" }, { id: "3", label: "Last 3 months" }, { id: "6", label: "Last 6 months" },
+      { id: "12", label: "Last 12 months" }, { id: "mtd", label: "Month to date" }, { id: "ytd", label: "Year to date" }
+    ];
+    const customRangeLabel = `${shortDate(dateBounds.start)} – ${shortDate(dateBounds.end)}`;
+    const selectedRangeLabel = prefs.range === "custom" ? customRangeLabel : rangeOptions.find(option => option.id === prefs.range)?.label || "All time";
+    const rangePopover = isRangePopoverOpen ? `<div class="upa-range-popover" role="dialog" aria-label="Choose time range">${isCustomRangeEditorOpen
+      ? `<div class="upa-custom-range"><div class="upa-custom-range-head"><button type="button" data-action="range-back" aria-label="Back to time ranges">←</button><div><strong>Custom range</strong><span>Choose exact start and end dates.</span></div></div><div class="upa-custom-range-fields"><label>From<input id="upa-custom-start" type="date" value="${dateBounds.start}" min="${availableBounds.start}" max="${availableBounds.end}"></label><label>Until<input id="upa-custom-end" type="date" value="${dateBounds.end}" min="${availableBounds.start}" max="${availableBounds.end}"></label></div><div class="upa-custom-range-actions"><button type="button" data-action="range-cancel">Cancel</button><button class="upa-primary" type="button" data-action="range-apply">Apply range</button></div></div>`
+      : `<div class="upa-range-menu" role="listbox">${rangeOptions.map(option => `<button type="button" role="option" aria-selected="${prefs.range === option.id}" data-range-option="${option.id}"><span>${option.label}</span>${prefs.range === option.id ? "<i>✓</i>" : ""}</button>`).join("")}<button class="upa-range-custom-option" type="button" role="option" aria-selected="${prefs.range === "custom"}" data-range-option="custom"><span><strong>Custom range</strong><small>${prefs.range === "custom" ? customRangeLabel : "Choose exact dates"}</small></span>${prefs.range === "custom" ? "<i>✓</i>" : ""}</button></div>`}</div>` : "";
+    const rangeControl = hasData ? `<div class="upa-header-control upa-header-range"><span>Time range</span><div class="upa-range-picker"><button class="upa-range-trigger" type="button" data-action="range-toggle" aria-haspopup="dialog" aria-expanded="${isRangePopoverOpen}"><b>${selectedRangeLabel}</b><svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3"></path></svg></button>${rangePopover}</div></div>` : "";
     const intervalControl = hasData && section === "analytics" && view === "revenue" ? `<label class="upa-header-control upa-header-interval"><span>Interval</span><select id="upa-interval" aria-label="Chart interval"><option value="auto" ${prefs.interval === "auto" ? "selected" : ""}>Automatic (${intervalName(interval).toLowerCase()})</option><option value="day" ${prefs.interval === "day" ? "selected" : ""}>Daily</option><option value="week" ${prefs.interval === "week" ? "selected" : ""}>Weekly</option><option value="month" ${prefs.interval === "month" ? "selected" : ""}>Monthly</option><option value="quarter" ${prefs.interval === "quarter" ? "selected" : ""}>Quarterly</option><option value="year" ${prefs.interval === "year" ? "selected" : ""}>Yearly</option></select></label>` : "";
-    const customRange = hasData && prefs.range === "custom" ? `<div class="upa-custom-range"><span>Custom range</span><label>From<input id="upa-start" type="date" value="${dateBounds.start}" min="${availableBounds.start}" max="${availableBounds.end}"></label><i>to</i><label>Until<input id="upa-end" type="date" value="${dateBounds.end}" min="${availableBounds.start}" max="${availableBounds.end}"></label></div>` : "";
     host.classList.toggle("upa-open", isOpen);
     document.documentElement.classList.toggle("upa-dashboard-open", isOpen);
     host.innerHTML = `<button class="upa-fab" aria-label="Open Unity Analytics+" title="Unity Analytics+"><span>A+</span></button><aside class="upa-panel" aria-label="Unity Analytics+ dashboard">
@@ -662,7 +676,7 @@
           ${hasData ? '<div class="upa-sidebar-actions"><button data-action="export">Export data</button><button class="upa-danger" data-action="clear">Clear data</button></div>' : ""}
         </aside>
         <section class="upa-workspace">
-          <header class="upa-header ${section === "dashboard" ? "upa-header-compact" : ""}"><div class="upa-header-main"><div class="upa-header-copy"><small>Publisher workspace</small><h1>${hasData ? sectionMeta.label : "Welcome"}</h1><div class="upa-header-subline"><p>${hasData ? sectionMeta.description : "Build a complete, configurable view of your publishing business."}</p>${refreshAction}</div></div><div class="upa-header-actions">${intervalControl}${rangeControl}<button class="upa-icon-button" data-action="close" aria-label="Close analytics">×</button></div></div>${customRange}${hasData ? `<nav class="upa-mobile-nav" aria-label="Workspace sections"><button class="${section === "dashboard" ? "upa-active" : ""}" type="button" data-section="dashboard">Dashboard</button><button class="${section === "analytics" ? "upa-active" : ""}" type="button" data-section="analytics">Analytics</button></nav>` : ""}${hasData && section === "analytics" ? `<nav class="upa-view-tabs" role="tablist" aria-label="Analytics views">${viewTabs}</nav>` : ""}</header>
+          <header class="upa-header ${section === "dashboard" ? "upa-header-compact" : ""}"><div class="upa-header-main"><div class="upa-header-copy"><small>Publisher workspace</small><h1>${hasData ? sectionMeta.label : "Welcome"}</h1><div class="upa-header-subline"><p>${hasData ? sectionMeta.description : "Build a complete, configurable view of your publishing business."}</p>${refreshAction}</div></div><div class="upa-header-actions">${intervalControl}${rangeControl}<button class="upa-icon-button" data-action="close" aria-label="Close analytics">×</button></div></div>${hasData ? `<nav class="upa-mobile-nav" aria-label="Workspace sections"><button class="${section === "dashboard" ? "upa-active" : ""}" type="button" data-section="dashboard">Dashboard</button><button class="${section === "analytics" ? "upa-active" : ""}" type="button" data-section="analytics">Analytics</button></nav>` : ""}${hasData && section === "analytics" ? `<nav class="upa-view-tabs" role="tablist" aria-label="Analytics views">${viewTabs}</nav>` : ""}</header>
           ${(syncJob?.active || syncJob?.phase === "error" || syncIncomplete) ? `<section class="upa-sync ${syncJob?.active ? "upa-syncing" : ""}">${syncIcon}<div class="upa-sync-copy"><strong>${escapeHtml(syncTitle)}</strong><span>${escapeHtml(syncDetail)}</span>${syncJob?.active ? '<small class="upa-sync-note">Large catalogs can take several minutes. Keep this tab open; if interrupted, progress resumes when you return.</small>' : ""}</div><div class="upa-sync-actions">${syncJob?.active ? '<button data-action="stop-sync">Pause</button>' : syncIncomplete ? '<button data-action="continue-sync">Continue</button>' : '<button data-action="sync-all">Try full sync again</button>'}</div>${syncJob?.active ? `<div class="upa-progress"><i style="width:${progress}%"></i></div>` : ""}</section>` : ""}
           <main class="upa-content" data-section="${section}" data-view="${view}">${records.length ? `<section class="upa-kpis upa-view-panel upa-view-dashboard" id="upa-view-dashboard"><article><div><small>Gross revenue</small><span class="upa-kpi-dot upa-violet"></span></div><strong>${money(revenueChartData.total)}</strong><span>${number(paidUnits)} paid units</span></article><article><div><small>Pageviews</small><span class="upa-kpi-dot upa-cyan"></span></div><strong>${number(pageViews)}</strong><span>${number(salesQty)} purchases and claims</span></article><article><div><small>Downloads</small><span class="upa-kpi-dot upa-amber"></span></div><strong>${number(downloads)}</strong><span>Across the selected period</span></article><article><div><small>Current balance</small><span class="upa-kpi-dot upa-green"></span></div><strong>${money(balance)}</strong><span>${number(daysTracked)} days tracked</span></article><article class="upa-dashboard-chart"><div class="upa-section-title"><div><small>PORTFOLIO PULSE</small><h2>Business activity over time</h2><p>${intervalName(overviewChartData.interval)} revenue, pageviews, and downloads on aligned timelines.</p></div><div class="upa-section-tools"><span>${overviewChartData.points.length} periods</span>${chartActions("overview")}</div></div><div class="upa-pulse-legend"><span><i class="upa-pulse-revenue"></i>Gross revenue</span><span><i class="upa-pulse-views"></i>Pageviews</span><span><i class="upa-pulse-downloads"></i>Downloads</span></div><div id="upa-overview-chart" class="upa-overview-chart" role="img" aria-label="Aligned gross revenue, pageviews, and downloads timelines"></div></article></section>
             <section class="upa-dashboard-grid"><article class="upa-card upa-performance-card upa-view-panel upa-view-revenue" id="upa-view-revenue"><div class="upa-section-title"><div><small>PERFORMANCE</small><h2>Gross revenue over time</h2><p>${intervalName(interval)} totals from ${escapeHtml(dateBounds.start)} to ${escapeHtml(dateBounds.end)}.</p></div><div class="upa-section-tools"><span>${revenueChartData.points.length} periods</span>${chartActions("revenue")}</div></div><div class="upa-chart-summary"><div class="upa-chart-metric"><i></i><span>Gross revenue</span></div><dl><div><dt>Total</dt><dd>${money(revenueChartData.total)}</dd></div><div><dt>Average</dt><dd>${money(revenueChartData.average)}</dd></div><div><dt>Peak</dt><dd>${revenueChartData.peak ? money(revenueChartData.peak[1]) : money(0)}</dd></div></dl></div><div id="upa-revenue-chart" class="upa-revenue-chart" role="img" aria-label="Interactive gross revenue chart"></div><div class="upa-chart-hint"><span>Scroll or pinch to zoom</span><span>Drag to pan</span><span>Use the navigator handles for an exact window</span></div></article>
@@ -688,13 +702,43 @@
   function bindEvents() {
     document.addEventListener("click", async event => {
       if (!event.target.closest("#upa-root")) return;
+      if (isRangePopoverOpen && !event.target.closest(".upa-range-picker")) {
+        isRangePopoverOpen = false; isCustomRangeEditorOpen = false;
+        document.querySelector("#upa-root .upa-range-popover")?.remove();
+        document.querySelector("#upa-root .upa-range-trigger")?.setAttribute("aria-expanded", "false");
+      }
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "range-toggle") {
+        isRangePopoverOpen = !isRangePopoverOpen; isCustomRangeEditorOpen = false; render(); return;
+      }
+      const rangeOption = event.target.closest("[data-range-option]")?.dataset.rangeOption;
+      if (rangeOption) {
+        if (rangeOption === "custom") {
+          isRangePopoverOpen = true; isCustomRangeEditorOpen = true; render();
+          requestAnimationFrame(() => document.querySelector("#upa-custom-start")?.focus());
+          return;
+        }
+        prefs.range = rangeOption; isRangePopoverOpen = false; isCustomRangeEditorOpen = false;
+        await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); return;
+      }
+      if (action === "range-back") { isRangePopoverOpen = true; isCustomRangeEditorOpen = false; render(); return; }
+      if (action === "range-cancel") { isRangePopoverOpen = false; isCustomRangeEditorOpen = false; render(); return; }
+      if (action === "range-apply") {
+        let start = document.querySelector("#upa-custom-start")?.value || "", end = document.querySelector("#upa-custom-end")?.value || "";
+        const available = availableDateBounds();
+        if (!start || !end || !available.start) { toast("Choose both a start and end date.", "error"); return; }
+        start = [[start, available.start].sort().at(-1), available.end].sort()[0];
+        end = [[end, available.start].sort().at(-1), available.end].sort()[0];
+        if (start > end) [start, end] = [end, start];
+        prefs.range = "custom"; prefs.start = start; prefs.end = end; isRangePopoverOpen = false; isCustomRangeEditorOpen = false;
+        await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); return;
+      }
       const chartButton = event.target.closest("[data-chart-action]");
       if (chartButton) { await handleChartAction(chartButton.dataset.chartAction, chartButton.dataset.chart); return; }
       const sectionButton = event.target.closest("button[data-section]");
       if (sectionButton) { prefs.section = sectionButton.dataset.section; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); return; }
       const viewButton = event.target.closest("button[data-view]");
       if (viewButton) { prefs.section = "analytics"; prefs.view = viewButton.dataset.view; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); return; }
-      const action = event.target.closest("[data-action]")?.dataset.action;
       if (event.target.closest(".upa-fab")) { isOpen = true; render(); return; }
       if (action === "close") { isOpen = false; render(); }
       if (action === "sync-all") await startFullSync();
@@ -706,15 +750,6 @@
       if (action === "clear" && window.confirm("Clear all locally synced publisher data? This can't be undone.")) { await database({ type: "UPA_DB_CLEAR" }); records = []; syncJob = null; render(); }
     });
     document.addEventListener("change", async event => {
-      if (event.target.id === "upa-range") {
-        const currentBounds = selectedDateBounds(); prefs.range = event.target.value;
-        if (prefs.range === "custom") { prefs.start = currentBounds.start; prefs.end = currentBounds.end; }
-        await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render();
-      }
-      if (event.target.id === "upa-start" || event.target.id === "upa-end") {
-        prefs.range = "custom"; prefs[event.target.id === "upa-start" ? "start" : "end"] = event.target.value;
-        await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render();
-      }
       if (event.target.id === "upa-interval") { prefs.interval = event.target.value; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); }
       if (event.target.id === "upa-calendar-metric") { prefs.calendarMetric = event.target.value; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); }
       if (event.target.matches("[data-sankey-package]")) {
@@ -722,7 +757,17 @@
         await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); requestAnimationFrame(() => { const filter = document.querySelector("#upa-root .upa-package-filter"); if (filter) filter.open = true; });
       }
     });
-    chrome.runtime.onMessage.addListener(message => { if (message?.type === "UPA_TOGGLE") { isOpen = !isOpen; render(); } });
+    document.addEventListener("keydown", event => {
+      if (event.key !== "Escape" || !isRangePopoverOpen) return;
+      isRangePopoverOpen = false; isCustomRangeEditorOpen = false; render();
+      requestAnimationFrame(() => document.querySelector("#upa-root .upa-range-trigger")?.focus());
+    });
+    chrome.runtime.onMessage.addListener(message => {
+      if (message?.type !== "UPA_TOGGLE") return;
+      isOpen = !isOpen;
+      if (!isOpen) { isRangePopoverOpen = false; isCustomRangeEditorOpen = false; }
+      render();
+    });
   }
 
   async function init() {
