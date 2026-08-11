@@ -28,10 +28,12 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 .upa-onboarding-nav small { color:#776be3;font-size:8px;font-weight:850;letter-spacing:1.2px;text-transform:uppercase; }
 .upa-onboarding-nav strong { margin-top:8px;font-size:12px;line-height:1.35; }
 .upa-onboarding-nav span { margin-top:6px;color:#858da2;font-size:9px;line-height:1.5; }
-.upa-sidebar-context { display:flex;flex-direction:column;margin:2px 4px;padding:17px 14px;border:1px solid #282d3e;border-radius:13px;background:linear-gradient(145deg,#191e2d,#171b28); }
-.upa-sidebar-context small { color:#776be3;font-size:8px;font-weight:850;letter-spacing:1.2px;text-transform:uppercase; }
-.upa-sidebar-context strong { margin-top:8px;font-size:12px;line-height:1.35; }
-.upa-sidebar-context span { margin-top:6px;color:#858da2;font-size:9px;line-height:1.5; }
+.upa-primary-nav { display:flex;flex-direction:column;gap:6px;margin:2px 0; }
+.upa-primary-nav>small { padding:0 10px;margin-bottom:6px;color:#656d82;font-size:9px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase; }
+.upa-primary-nav button { display:flex;align-items:center;gap:11px;width:100%;height:43px;padding:0 11px;border:0;border-radius:10px;background:transparent;color:#969eb2;font:700 12px inherit;cursor:pointer;text-align:left;transition:.15s background,.15s color; }
+.upa-primary-nav button:hover { background:#191e2d;color:#fff; }
+.upa-primary-nav button.upa-active { background:#222638;color:#fff;box-shadow:inset 3px 0 0 #7b6cff; }
+.upa-primary-nav svg { width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round; }
 .upa-sidebar-status { display:flex;flex-direction:column;margin-top:auto;padding:18px 10px;border-top:1px solid #242938; }
 .upa-sidebar-status>small { padding:0;margin:0 0 9px; }
 .upa-sidebar-status strong { font-size:17px;letter-spacing:-.4px; }
@@ -42,10 +44,12 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 .upa-sidebar-actions .upa-danger:hover { color:#ff8c98; }
 .upa-workspace { display:flex;flex-direction:column;min-width:0;height:100%;overflow:hidden; }
 .upa-header { display:flex;min-height:148px;flex-direction:column;align-items:stretch;background:#fff;border-bottom:1px solid var(--upa-line); }
+.upa-header-compact { min-height:112px; }
 .upa-header-main { display:flex;align-items:center;justify-content:space-between;padding:25px clamp(24px,4vw,58px) 17px; }
 .upa-header-main>div>small { color:var(--upa-accent);font-size:9px;font-weight:850;letter-spacing:1.4px;text-transform:uppercase; }
 .upa-header h1 { margin:4px 0 3px;font-size:31px;line-height:1;letter-spacing:-1.2px; }
 .upa-header p { margin:0;color:var(--upa-muted);font-size:12px; }
+.upa-mobile-nav { display:none; }
 .upa-view-tabs { display:flex;min-width:0;gap:28px;padding:0 clamp(24px,4vw,58px);overflow-x:auto;scrollbar-width:none; }
 .upa-view-tabs::-webkit-scrollbar { display:none; }
 .upa-view-tab { position:relative;flex:0 0 auto;height:40px;padding:0 2px 13px;border:0;background:transparent;color:#858da0;font:700 11px inherit;cursor:pointer;white-space:nowrap; }
@@ -93,9 +97,9 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 .upa-kpi-dot { width:7px;height:7px;border-radius:50%;box-shadow:0 0 0 5px rgba(108,92,231,.09); }
 .upa-violet { background:#7161e8; }.upa-cyan { background:#21a7bd;box-shadow:0 0 0 5px rgba(33,167,189,.09); }.upa-amber { background:#e3a22a;box-shadow:0 0 0 5px rgba(227,162,42,.1); }.upa-green { background:#31a46c;box-shadow:0 0 0 5px rgba(49,164,108,.09); }
 .upa-dashboard-grid,.upa-view-panel { display:none; }
-.upa-content[data-view="overview"] .upa-view-overview { display:grid; }
-.upa-content[data-view="revenue"] .upa-dashboard-grid,.upa-content[data-view="packages"] .upa-dashboard-grid { display:block; }
-.upa-content[data-view="revenue"] .upa-view-revenue,.upa-content[data-view="packages"] .upa-view-packages,.upa-content[data-view="calendar"] .upa-view-calendar,.upa-content[data-view="sankey"] .upa-view-sankey { display:block; }
+.upa-content[data-section="dashboard"] .upa-view-dashboard { display:grid; }
+.upa-content[data-section="analytics"][data-view="revenue"] .upa-dashboard-grid,.upa-content[data-section="analytics"][data-view="packages"] .upa-dashboard-grid { display:block; }
+.upa-content[data-section="analytics"][data-view="revenue"] .upa-view-revenue,.upa-content[data-section="analytics"][data-view="packages"] .upa-view-packages,.upa-content[data-section="analytics"][data-view="calendar"] .upa-view-calendar,.upa-content[data-section="analytics"][data-view="sankey"] .upa-view-sankey { display:block; }
 .upa-card { min-width:0;padding:22px;border-radius:17px;scroll-margin-top:22px; }
 .upa-section-title { display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:15px; }
 .upa-section-title h2 { margin:4px 0 3px;font-size:18px;letter-spacing:-.45px; }
@@ -107,6 +111,14 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 .upa-chart-actions button { height:29px;padding:0 10px;border:1px solid #e0e3ea;border-radius:8px;background:#fff;color:#60697b;font:700 9px inherit;cursor:pointer;transition:border-color .15s,background .15s,color .15s; }
 .upa-chart-actions button:hover { border-color:#c9c4ee;background:#f8f7ff;color:#5142bb; }
 .upa-chart-actions button:disabled { cursor:not-allowed;opacity:.45; }
+.upa-kpis .upa-dashboard-chart { display:block;grid-column:1/-1;min-height:468px;padding:22px;border-radius:17px; }
+.upa-dashboard-chart .upa-section-title { display:flex;margin-bottom:4px; }
+.upa-dashboard-chart .upa-section-title>div:first-child { display:block; }
+.upa-pulse-legend { display:flex!important;flex-wrap:wrap;justify-content:flex-start!important;gap:20px;padding:11px 0 0;border-top:1px solid #eef0f4;color:#60697b;font-size:9px;font-weight:700; }
+.upa-pulse-legend span { display:flex;align-items:center;gap:6px; }
+.upa-pulse-legend i { width:7px;height:7px;border-radius:50%;box-shadow:0 0 0 4px rgba(108,92,231,.08); }
+.upa-pulse-revenue { background:#6c5ce7; }.upa-pulse-views { background:#21a7bd;box-shadow:0 0 0 4px rgba(33,167,189,.08)!important; }.upa-pulse-downloads { background:#d99721;box-shadow:0 0 0 4px rgba(217,151,33,.08)!important; }
+.upa-overview-chart { width:100%;height:355px; }
 .upa-performance-card { min-height:540px; }
 .upa-chart-summary { display:flex;align-items:center;justify-content:space-between;gap:20px;padding:12px 0 2px;border-top:1px solid #eef0f4; }
 .upa-chart-metric { display:flex;align-items:center;gap:8px;color:#4e5669;font-size:10px;font-weight:700; }
@@ -165,6 +177,6 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 .upa-toast { position:absolute;right:28px;bottom:28px;z-index:3;max-width:420px;padding:12px 15px;border-radius:11px;background:#183124;color:#fff;font-size:11px;box-shadow:0 12px 34px rgba(0,0,0,.2);opacity:0;transform:translateY(8px);pointer-events:none;transition:.2s; }
 .upa-toast[data-type="error"] { background:#4b1820; }.upa-toast.upa-show { opacity:1;transform:translateY(0); }
 @media (max-width:1180px) { .upa-toolbar{flex-wrap:wrap}.upa-toolbar>label:last-child{margin-left:0}.upa-dashboard-grid{grid-template-columns:1fr}.upa-kpis{grid-template-columns:1fr 1fr}.upa-welcome{grid-template-columns:1fr}.upa-welcome-visual{height:250px} }
-@media (max-width:760px) { .upa-shell{grid-template-columns:1fr}.upa-sidebar{display:none}.upa-header{min-height:136px}.upa-header-main{padding:20px 20px 16px}.upa-view-tabs{gap:22px;padding:0 20px}.upa-toolbar{padding:12px 20px}.upa-sync{margin:14px 20px 0}.upa-content{padding:18px 20px 40px}.upa-date-range{order:3;width:100%}.upa-date-range label{flex:1}.upa-toolbar input{width:100%}.upa-section-title{flex-direction:column}.upa-section-tools{width:100%;justify-content:space-between}.upa-insight-toolbar{align-items:stretch;flex-direction:column}.upa-insight-facts{justify-content:space-between}.upa-insight-facts>span{align-items:flex-start}.upa-package-filter summary{width:100%}.upa-package-filter-panel{width:min(390px,calc(100vw - 66px))} }
+@media (max-width:760px) { .upa-shell{grid-template-columns:1fr}.upa-sidebar{display:none}.upa-header{min-height:0}.upa-header-main{padding:20px 20px 16px}.upa-mobile-nav{display:flex;gap:5px;padding:0 20px 11px}.upa-mobile-nav button{height:31px;padding:0 12px;border:1px solid #e0e3ea;border-radius:8px;background:#fff;color:#737b8e;font:750 10px inherit}.upa-mobile-nav button.upa-active{border-color:#c9c3f1;background:#f5f3ff;color:#5546c4}.upa-view-tabs{gap:22px;padding:0 20px}.upa-toolbar{padding:12px 20px}.upa-sync{margin:14px 20px 0}.upa-content{padding:18px 20px 40px}.upa-date-range{order:3;width:100%}.upa-date-range label{flex:1}.upa-toolbar input{width:100%}.upa-section-title{flex-direction:column}.upa-section-tools{width:100%;justify-content:space-between}.upa-insight-toolbar{align-items:stretch;flex-direction:column}.upa-insight-facts{justify-content:space-between}.upa-insight-facts>span{align-items:flex-start}.upa-package-filter summary{width:100%}.upa-package-filter-panel{width:min(390px,calc(100vw - 66px))} }
 @media (max-width:540px) { .upa-kpis{grid-template-columns:1fr}.upa-toolbar{align-items:flex-end}.upa-toolbar>label{flex:1}.upa-toolbar select{width:100%;min-width:145px}.upa-sync{align-items:flex-start;flex-wrap:wrap}.upa-sync-actions{width:100%}.upa-sync-actions button{width:100%}.upa-chart-summary{align-items:flex-start;flex-direction:column}.upa-chart-summary dl{width:100%;justify-content:space-between}.upa-chart-summary dl>div{align-items:flex-start}.upa-revenue-chart{height:330px}.upa-chart-hint{align-items:flex-start;flex-direction:column;gap:4px}.upa-chart-hint span:not(:first-child)::before{content:none}.upa-insight-facts{gap:12px;flex-wrap:wrap}.upa-inline-select{align-items:flex-start;flex-direction:column}.upa-inline-select select{width:100%}.upa-calendar-chart,.upa-sankey-chart{overflow-x:auto}.upa-welcome{padding:30px 24px}.upa-welcome h2{font-size:38px;letter-spacing:-2px}.upa-welcome-visual{display:none}.upa-fab{right:14px;bottom:14px} }
 @media (prefers-reduced-motion:reduce) { .upa-panel,.upa-fab,.upa-toast,.upa-progress i{transition:none} }

@@ -1,6 +1,6 @@
 # Rendering architecture
 
-Status: active. A modular ECharts bundle powers the revenue timeline, daily calendar, and revenue-flow views.
+Status: active. A modular ECharts bundle powers the Dashboard portfolio pulse, revenue timeline, daily calendar, and revenue-flow views.
 
 ## Decision
 
