@@ -611,7 +611,7 @@
     const chart = createChart("sankey", container); if (!chart) return;
     const fullMoney = value => new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value || 0);
     chart.setOption({
-      animationDuration: 550, animationDurationUpdate: 350,
+      animation: false,
       aria: { enabled: true, description: `Gross revenue split across ${viewModel.activePackages.length} packages${viewModel.groupBy === "category" ? ` in ${viewModel.categories} categories` : ""}.` },
       tooltip: { trigger: "item", triggerOn: "mousemove", confine: true, backgroundColor: "#151927", borderWidth: 0, padding: [10, 12], textStyle: { color: "#fff", fontSize: 11 }, formatter: parameter => parameter.dataType === "edge" ? `<strong>${escapeHtml(parameter.data.sourceLabel)}</strong><br/><span style="color:#aaa3d8">to ${escapeHtml(parameter.data.targetLabel)}</span>&nbsp;&nbsp;${fullMoney(parameter.value)}` : `<strong>${escapeHtml(parameter.data.displayLabel)}</strong><br/>${fullMoney(parameter.value)}` },
       series: [{
