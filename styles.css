@@ -140,7 +140,7 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 .upa-kpis article { display:flex;flex-direction:column;min-height:132px;padding:18px;border-radius:16px; }
 .upa-kpis article>div { display:flex;align-items:center;justify-content:space-between; }
 .upa-kpis small,.upa-section-title small,.upa-welcome small { color:var(--upa-muted);font-size:var(--upa-font-label);font-weight:800;letter-spacing:1.1px;text-transform:uppercase; }
-.upa-kpis strong { margin:19px 0 4px;font-size:27px;letter-spacing:-1px; }
+.upa-kpis>article>strong { margin:19px 0 4px;font-size:27px;letter-spacing:-1px; }
 .upa-kpis article>span { color:var(--upa-muted);font-size:var(--upa-font-support);line-height:1.4; }
 .upa-kpi-dot { width:7px;height:7px;border-radius:50%;box-shadow:0 0 0 5px rgba(108,92,231,.09); }
 .upa-violet { background:#7161e8; }.upa-cyan { background:#21a7bd;box-shadow:0 0 0 5px rgba(33,167,189,.09); }.upa-amber { background:#e3a22a;box-shadow:0 0 0 5px rgba(227,162,42,.1); }.upa-green { background:#31a46c;box-shadow:0 0 0 5px rgba(49,164,108,.09); }.upa-rose { background:#d45c70;box-shadow:0 0 0 5px rgba(212,92,112,.09); }
@@ -182,7 +182,7 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 .upa-package-table tbody tr:hover { background:#fafafe; }
 .upa-package-identity { display:flex;align-items:center;gap:10px;min-width:0;cursor:help; }
 .upa-package-avatar { display:grid;place-items:center;flex:0 0 auto;width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#eeeaff,#f7f5ff);color:#5b4bc8;font-size:var(--upa-font-support);font-weight:850; }
-.upa-package-name { overflow:hidden;color:#2c3446;font-size:var(--upa-font-body);font-weight:700;text-overflow:ellipsis;white-space:nowrap; }
+.upa-package-name { min-width:0;overflow:hidden;color:#2c3446;font-size:var(--upa-font-body);font-weight:700;line-height:1.43;text-overflow:ellipsis;white-space:nowrap; }
 .upa-package-table td { min-width:0;color:#2c3446;font-size:var(--upa-font-body);font-weight:700;white-space:nowrap; }
 .upa-table-value { font:inherit; }
 .upa-table-inline-detail { margin-left:6px;color:#8a91a1;font-size:var(--upa-font-caption);font-weight:650; }
