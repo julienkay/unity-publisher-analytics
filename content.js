@@ -468,7 +468,7 @@
       const cellSize = Math.max(5, Math.min(18, Math.floor((width - sideRoom) / 53)));
       const rowHeight = cellSize * 7;
       const rowGap = Math.max(30, Math.round(cellSize * 1.8));
-      const firstRowTop = 66;
+      const firstRowTop = 90;
       const rowStep = rowHeight + rowGap;
       const calendarWidth = cellSize * 53;
       const left = Math.max(36, Math.round((width - calendarWidth) / 2));
