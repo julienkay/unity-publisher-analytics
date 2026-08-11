@@ -49,7 +49,7 @@ The type tokens live on `#upa-root` in `styles.css`.
 ## Charts
 
 - Start with the question the chart answers, then choose the visualization.
-- Use the shared semantic colors: violet for revenue, cyan for pageviews, amber for downloads, and green for positive balance/status.
+- Use the shared semantic colors: violet for revenue, cyan for pageviews, amber for downloads, and green for positive performance/status.
 - Keep axes and legends at 10px or larger when space allows; tooltips use at least 11px.
 - Put units in labels or tooltips, format values consistently, and make the active date range explicit near the chart.
 - Avoid visual noise: hide meaningless zero hover states, soften grid lines, and keep legends separated from plotted data.
