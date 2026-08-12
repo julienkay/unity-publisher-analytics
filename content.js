@@ -290,7 +290,7 @@
         await saveJob(); records = await getAll(); render(); toast("Your complete publisher history is ready.");
       }
     } catch (error) {
-      console.error("Unity Publisher Analytics+ sync failed:", error);
+      console.error("Publisher Analytics+ sync failed:", error);
       syncJob = { ...(syncJob || {}), active: false, phase: "error", error: error.message, label: "Sync couldn't be completed" }; await saveJob(); render(); toast("We couldn't finish syncing your history. Please try again.", "error");
     }
   }
@@ -324,7 +324,7 @@
       await saveJob();
       if (announce) notice = "Your publisher data has been refreshed.";
     } catch (error) {
-      console.warn("Unity Publisher Analytics+ incremental API sync failed:", error.message);
+      console.warn("Publisher Analytics+ incremental API sync failed:", error.message);
       if (announce) { notice = "We couldn't refresh your publisher data. Please try again."; noticeType = "error"; }
     } finally { isRefreshing = false; render(); if (notice) toast(notice, noticeType); }
   }
@@ -806,7 +806,7 @@
     return `<div class="upa-chart-actions"><button data-chart-action="save" data-chart="${key}" title="Save this chart as a high-resolution PNG" ${disabled ? "disabled" : ""}>Save PNG</button><button data-chart-action="share" data-chart="${key}" title="Share this chart using your device" ${disabled ? "disabled" : ""}>Share</button></div>`;
   }
 
-  function chartFilename(key) { return `unity-publisher-${key}-${new Date().toISOString().slice(0, 10)}.png`; }
+  function chartFilename(key) { return `publisher-analytics-${key}-${new Date().toISOString().slice(0, 10)}.png`; }
 
   async function chartImage(key) {
     const chart = chartInstances.get(key), metadata = chartShareMetadata.get(key); if (!chart || !metadata) throw new Error("This chart is not ready yet.");
@@ -816,7 +816,7 @@
     const context = canvas.getContext("2d"); context.fillStyle = "#fff"; context.fillRect(0, 0, canvas.width, canvas.height);
     context.fillStyle = "#172033"; context.font = "700 32px Segoe UI, sans-serif"; context.fillText(metadata.title, 40, 56);
     context.fillStyle = "#70798d"; context.font = "20px Segoe UI, sans-serif"; context.fillText(metadata.subtitle, 40, 91);
-    context.fillStyle = "#6c5ce7"; context.font = "700 18px Segoe UI, sans-serif"; context.textAlign = "right"; context.fillText("Analytics+", canvas.width - 40, 56); context.textAlign = "left";
+    context.fillStyle = "#6c5ce7"; context.font = "700 18px Segoe UI, sans-serif"; context.textAlign = "right"; context.fillText("Publisher Analytics+", canvas.width - 40, 56); context.textAlign = "left";
     context.drawImage(image, 0, headerHeight);
     const blob = await new Promise((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error("Could not create the chart image.")), "image/png"));
     return { blob, filename: chartFilename(key), metadata };
@@ -924,10 +924,10 @@
     const dashboardPackageTable = `<article class="upa-dashboard-packages"><div class="upa-section-title"><div><small>PACKAGE BREAKDOWN</small><h2>Package performance</h2><p>Selected-range results ranked by gross revenue, with trailing revenue context.</p></div><div class="upa-section-tools"><span>${number(packages.length)} packages</span><button class="upa-table-link" type="button" data-view="packages">Explore packages</button></div></div>${dashboardPackages.length ? `<div class="upa-package-table-wrap"><table class="upa-package-table"><thead><tr><th scope="col">Package</th><th scope="col">Revenue / share</th><th scope="col">Monthly avg. (12m)</th><th scope="col">Growth (12m)</th><th scope="col">Conversion</th><th scope="col">Pageviews</th><th scope="col">Downloads</th></tr></thead><tbody>${dashboardPackages.map(item => `<tr><th scope="row"><div class="upa-package-identity" title="${number(item.paidQty)} paid units${item.freeQty ? ` · ${number(item.freeQty)} claims` : ""}"><span class="upa-package-avatar" aria-hidden="true">${escapeHtml(item.name?.trim().slice(0, 1).toUpperCase() || "P")}</span><strong class="upa-package-name">${escapeHtml(item.name)}</strong></div></th><td><span class="upa-table-value">${money(item.sales)}</span><span class="upa-table-inline-detail">${percent(item.share)}</span></td><td><span class="upa-table-value">${item.trailing.monthCount ? money(item.trailing.monthlyAverage) : "—"}</span></td><td><span class="upa-table-value ${revenueGrowthClass(item.trailing)}">${revenueGrowthLabel(item.trailing)}</span></td><td><span class="upa-table-value">${item.pageViews ? percent(item.conversion) : "—"}</span></td><td><span class="upa-table-value">${number(item.pageViews)}</span></td><td><span class="upa-table-value">${number(item.downloads)}</span></td></tr>`).join("")}</tbody></table></div><div class="upa-package-table-footer"><span>${packages.length > dashboardPackages.length ? `Showing the top ${dashboardPackages.length} of ${packages.length} packages` : `Showing all ${packages.length} packages in this range`}</span></div>` : '<div class="upa-package-table-empty">No package activity is available for this date range.</div>'}</article>`;
     host.classList.toggle("upa-open", isOpen);
     document.documentElement.classList.toggle("upa-dashboard-open", isOpen);
-    host.innerHTML = `<button class="upa-fab" aria-label="Open Unity Analytics+" title="Unity Analytics+"><span>A+</span></button><aside class="upa-panel" aria-label="Unity Analytics+ dashboard">
+    host.innerHTML = `<button class="upa-fab" aria-label="Open Publisher Analytics+" title="Publisher Analytics+"><span>A+</span></button><aside class="upa-panel" aria-label="Publisher Analytics+ dashboard">
       <div class="upa-shell">
         <aside class="upa-sidebar" aria-label="Analytics workspace">
-          <div class="upa-brand"><span>A+</span><div><strong>Analytics+</strong><small>Unity Publisher</small></div></div>
+          <div class="upa-brand"><span>A+</span><div><strong>Publisher Analytics+</strong><small>Asset Store Insights</small></div></div>
           ${hasData ? `<div class="upa-primary-nav"><small>Workspace</small><button class="${section === "dashboard" ? "upa-active" : ""}" type="button" data-section="dashboard"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="2.5" width="6" height="6" rx="1.5"></rect><rect x="11.5" y="2.5" width="6" height="6" rx="1.5"></rect><rect x="2.5" y="11.5" width="6" height="6" rx="1.5"></rect><rect x="11.5" y="11.5" width="6" height="6" rx="1.5"></rect></svg><span>Dashboard</span></button><button class="${section === "analytics" ? "upa-active" : ""}" type="button" data-section="analytics"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 16.5V11m5 5.5V7m5 9.5V9m4 7.5V3.5"></path><path d="m3 8 5-4 5 2 4-3"></path></svg><span>Analytics</span></button></div>` : `<div class="upa-onboarding-nav"><small>Getting started</small><strong>Build your publisher history</strong><span>One sync brings your available analytics into this workspace.</span></div>`}
           <div class="upa-sidebar-status"><small>${hasData ? "Data coverage" : "Your data"}</small><strong>${hasData ? `${sales.months.length} months` : "Stored locally"}</strong><span>${hasData ? `${daysTracked} complete days tracked` : "Private to this browser"}</span></div>
           ${hasData ? '<div class="upa-sidebar-actions"><button data-action="export">Export data</button><button class="upa-danger" data-action="clear">Clear data</button></div>' : ""}
@@ -1017,7 +1017,7 @@
       if (action === "continue-sync") { syncJob.active = true; await saveJob(); render(); await runFullSync(); }
       if (action === "lifetime-top") { prefs.lifetimePackages = []; prefs.lifetimeHiddenPackages = []; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); }
       if (action === "sankey-top") { prefs.sankeyPackages = []; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); }
-      if (action === "export") download(`unity-publisher-analytics-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), records }, null, 2));
+      if (action === "export") download(`publisher-analytics-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), records }, null, 2));
       if (action === "clear" && window.confirm("Clear all locally synced publisher data? This can't be undone.")) { await database({ type: "UPA_DB_CLEAR" }); records = []; syncJob = null; render(); }
     });
     document.addEventListener("change", async event => {
@@ -1068,5 +1068,5 @@
     if (syncJob?.active) runFullSync(); else if (records.length) incrementalSync();
   }
 
-  init().catch(error => console.error("Unity Publisher Analytics+ failed to initialize:", error));
+  init().catch(error => console.error("Publisher Analytics+ failed to initialize:", error));
 })();

@@ -1,6 +1,6 @@
 # Interface design
 
-This is the shared visual contract for every Analytics+ surface. New views should reuse these rules before introducing a new pattern.
+This is the shared visual contract for every Publisher Analytics+ surface. New views should reuse these rules before introducing a new pattern.
 
 ## Principles
 

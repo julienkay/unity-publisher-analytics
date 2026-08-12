@@ -1,6 +1,6 @@
 # Vision
 
-Unity Publisher Analytics+ should give every Asset Store publisher a clear, trustworthy, and configurable view of how their catalog performs over its full available lifetime—without spreadsheets, manual exports, or analytics infrastructure of their own.
+Publisher Analytics+ should give every Asset Store publisher a clear, trustworthy, and configurable view of how their catalog performs over its full available lifetime—without spreadsheets, manual exports, or analytics infrastructure of their own.
 
 ## The problem
 

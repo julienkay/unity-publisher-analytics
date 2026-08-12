@@ -1,4 +1,4 @@
-# Unity Publisher Analytics+
+# Publisher Analytics+
 
 A Chrome extension that turns Unity Publisher Portal data into a clearer historical dashboard.
 

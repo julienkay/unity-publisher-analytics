@@ -28,7 +28,7 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 .upa-brand { display:flex;align-items:center;gap:12px;padding:0 8px 32px; }
 .upa-brand>span { display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,#8577ff,#5f50d9);box-shadow:0 8px 22px rgba(108,92,231,.32);font-size:14px;font-weight:850; }
 .upa-brand>div { display:flex;flex-direction:column; }
-.upa-brand strong { font-size:15px;letter-spacing:-.25px; }
+.upa-brand strong { font-size:13px;letter-spacing:-.25px;white-space:nowrap; }
 .upa-brand small { margin-top:2px;color:#858da2;font-size:10px; }
 .upa-sidebar-status>small { padding:0 10px;margin-bottom:5px;color:#656d82;font-size:var(--upa-font-label);font-weight:800;letter-spacing:1.4px;text-transform:uppercase; }
 .upa-onboarding-nav { display:flex;flex-direction:column;margin:2px 4px;padding:17px 14px;border:1px solid #282d3e;border-radius:13px;background:#191e2d; }

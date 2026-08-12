@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
-  "name": "Unity Publisher Analytics+",
+  "name": "Publisher Analytics+ — Asset Store Insights",
+  "short_name": "Analytics+",
   "version": "0.1.0",
-  "description": "Clearer sales, audience, download, and revenue insights for Unity publishers.",
+  "description": "Better analytics for Asset Store publishers.",
   "permissions": ["storage", "activeTab"],
   "host_permissions": ["https://publisher.unity.com/*"],
   "action": {
-    "default_title": "Open Unity Analytics+"
+    "default_title": "Open Publisher Analytics+"
   },
   "background": {
     "service_worker": "background.js"
