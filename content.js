@@ -6,6 +6,7 @@
   const PREFS_KEY = "unityPublisherAnalyticsApiPrefsV1";
   const SYNC_KEY = "apiSyncV1";
   const DAILY_API_MIN_DATE = "2019-01-01";
+  const DAILY_API_WINDOW_DAYS = 365;
   const API = {
     packages: "/publisher-v2-api/proxy?path=%2Fmanagement%2Fonce-published-packages&type=array",
     categories: "/publisher-v2-api/proxy?path=%2Fmanagement%2Fcategories&type=array",
@@ -249,7 +250,7 @@
     const revenue = normalizeRevenue(revenueRaw); await putMany(revenue);
     const start = earliestAccountDate(packages, revenue), endInclusive = latestCompleteDailyDate(), months = monthSequence(start, new Date().toISOString().slice(0, 10));
     const scopes = [{ id: null, name: "All assets" }, ...packages];
-    const chunksPerScope = Math.max(1, Math.ceil((new Date(`${addDays(endInclusive, 1)}T00:00:00Z`) - new Date(`${start}T00:00:00Z`)) / 86400000 / 60));
+    const chunksPerScope = Math.max(1, Math.ceil((new Date(`${addDays(endInclusive, 1)}T00:00:00Z`) - new Date(`${start}T00:00:00Z`)) / 86400000 / DAILY_API_WINDOW_DAYS));
     syncJob = { active: true, phase: "months", startedAt: new Date().toISOString(), packages, start, endExclusive: addDays(endInclusive, 1), months, monthIndex: 0,
       scopes, scopeIndex: 0, cursor: start, completed: 1, total: 1 + months.length * 2 + scopes.length * chunksPerScope, label: "Getting your history ready" };
     await saveJob(); render();
@@ -272,7 +273,7 @@
         while (syncJob.active && syncJob.scopeIndex < syncJob.scopes.length) {
           const scope = syncJob.scopes[syncJob.scopeIndex];
           while (syncJob.active && syncJob.cursor < syncJob.endExclusive) {
-            const chunkEnd = [addDays(syncJob.cursor, 60), syncJob.endExclusive].sort()[0];
+            const chunkEnd = [addDays(syncJob.cursor, DAILY_API_WINDOW_DAYS), syncJob.endExclusive].sort()[0];
             syncJob.label = `Syncing daily performance · ${scope.name} · ${syncJob.cursor}–${addDays(chunkEnd, -1)}`; render();
             let raw;
             try { raw = await apiJson(API.daily, { method: "POST", body: { start_date: apiTimestamp(syncJob.cursor), end_date: apiTimestamp(chunkEnd), package_ids: scope.id ? [scope.id] : [] } }); }
@@ -313,7 +314,7 @@
         const endExclusive = addDays(latestCompleteDailyDate(), 1);
         let cursor = last;
         while (cursor < endExclusive) {
-          const chunkEnd = [addDays(cursor, 60), endExclusive].sort()[0];
+          const chunkEnd = [addDays(cursor, DAILY_API_WINDOW_DAYS), endExclusive].sort()[0];
           const raw = await apiJson(API.daily, { method: "POST", body: { start_date: apiTimestamp(cursor), end_date: apiTimestamp(chunkEnd), package_ids: scope.id ? [scope.id] : [] } });
           await putMany(normalizeDaily(raw, scope)); cursor = chunkEnd;
         }
