@@ -37,7 +37,7 @@ Additional views reveal patterns that are hard to see in a timeline:
 - A filterable Sankey diagram groups total gross revenue by the Asset Store categories assigned in the Publisher Portal, then splits each category into package contributions. Publishers can switch to a direct package split.
 - Every chart can be saved as a high-resolution PNG or shared through the device's native share surface when available.
 
-The left navigation separates a general Dashboard from the deeper Analytics workspace. Dashboard combines six headline metrics with aligned revenue, pageview, and download timelines, followed by a ranked package table. Within Analytics, focused tabs switch between Revenue, Lifetime growth, Daily patterns, Revenue composition, and Packages. Lifetime growth always uses all available history; the selected date range remains shared across the other views.
+The left navigation separates a general Dashboard from the deeper Analytics workspace. Dashboard combines six headline metrics with a lifetime revenue-allocation view, portfolio concentration metrics, aligned revenue, pageview, and download timelines, and a ranked package table. Within Analytics, focused tabs switch between Revenue, Lifetime growth, Daily patterns, Revenue composition, and Packages. Lifetime growth always uses all available history; the selected date range remains shared across the other views.
 
 Progress is saved as the history is synced. If the page is refreshed, the extension continues from where it left off. Once the full history is ready, recent results are refreshed automatically whenever the Publisher Portal is visited.
 

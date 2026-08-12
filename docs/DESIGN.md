@@ -35,7 +35,7 @@ The type tokens live on `#upa-root` in `styles.css`.
 - Keep page gutters responsive with the existing `clamp(24px, 4vw, 58px)` pattern.
 - Use white cards on the neutral workspace background, a subtle border, and restrained shadow.
 - Keep the page title and global controls in the header. Place the time range at the top right and preserve it across views.
-- Show one analytics view at a time. Dashboard may combine headline metrics with one general overview visualization.
+- Show one analytics view at a time. Dashboard may combine headline metrics with a small set of complementary overview visualizations.
 - On narrow screens, stack content and controls before reducing text size.
 
 ## Components
