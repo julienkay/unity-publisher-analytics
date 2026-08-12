@@ -148,21 +148,17 @@
   }
 
   async function fetchPackageCategoryMetadata() {
-    const categoriesByIdentifier = new Map(), categoriesByName = new Map(), responseFields = new Set(), metadataFields = new Set(), limit = 200;
-    let offset = 0, rowCount = 0, assignmentCount = 0;
+    const categoriesByIdentifier = new Map(), categoriesByName = new Map(), limit = 200;
+    let offset = 0;
     while (true) {
       const body = { limit: String(limit), order_by: "name", order: "asc" };
       if (offset) body.offset = String(offset);
       const response = await apiJson(API.packageMetadata, { method: "POST", body });
-      Object.keys(response || {}).forEach(field => responseFields.add(field));
       const rows = valueFrom(response, ["package_versions", "packageVersions"]);
       if (!Array.isArray(rows) || !rows.length) break;
       for (const item of rows) {
-        rowCount += 1;
-        Object.keys(item || {}).forEach(field => metadataFields.add(field));
         const category = categoryReference(item);
         if (!category) continue;
-        assignmentCount += 1;
         for (const identifier of [valueFrom(item, ["package_id", "packageId"]), valueFrom(item, ["genesis_product_id", "genesisProductId", "product_id", "productId"]), valueFrom(item, ["id"])]) {
           if (identifier !== "" && identifier !== null && identifier !== undefined) categoriesByIdentifier.set(String(identifier), category);
         }
@@ -173,23 +169,19 @@
       const total = toNumber(valueFrom(response, ["total"]));
       if (rows.length < limit || (total && offset >= total)) break;
     }
-    return { categoriesByIdentifier, categoriesByName, responseFields: [...responseFields].sort(), metadataFields: [...metadataFields].sort(), rowCount, assignmentCount };
+    return { categoriesByIdentifier, categoriesByName };
   }
 
   async function fetchPackages() {
     const [raw, categoryRows, metadata] = await Promise.all([apiJson(API.packages), apiJson(API.categories), fetchPackageCategoryMetadata()]);
     const categories = new Map((Array.isArray(categoryRows) ? categoryRows : []).map(item => [String(valueFrom(item, ["id", "category_id", "categoryId"]) || ""), compact(valueFrom(item, ["assetstore_name", "assetstoreName", "name", "title", "category_name", "categoryName"]))]).filter(([id, name]) => id && name));
-    const packages = (Array.isArray(raw) ? raw : []).map(item => {
+    return (Array.isArray(raw) ? raw : []).map(item => {
       const id = String(valueFrom(item, ["package_id", "packageId", "id"]) || "");
       const name = valueFrom(item, ["name", "title", "package_name"]) || `Package ${id}`;
       const metadataCategory = metadata.categoriesByIdentifier.get(id) || metadata.categoriesByName.get(compact(name).toLocaleLowerCase());
       const categoryId = String(valueFrom(item, ["category_id", "categoryId"]) || metadataCategory?.id || "");
       return { id, name, categoryId, category: categories.get(categoryId) || packageCategory(item) || metadataCategory?.name || "", firstPublished: parseDate(valueFrom(item, ["first_published_time", "firstPublishedTime", "first_published"])) };
     }).filter(item => item.id);
-    if (packages.length && !packages.some(item => item.category)) {
-      console.warn(`Unity Publisher Analytics+ category metadata unavailable: ${JSON.stringify({ publishedPackages: packages.length, metadataRows: metadata.rowCount, metadataAssignments: metadata.assignmentCount, categoryDefinitions: categories.size, responseFields: metadata.responseFields, metadataFields: metadata.metadataFields })}`);
-    }
-    return packages;
   }
 
   function normalizeSales(raw, period) {
