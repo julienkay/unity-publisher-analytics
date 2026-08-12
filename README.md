@@ -33,10 +33,10 @@ The main revenue chart supports automatic or explicit daily, weekly, monthly, qu
 Additional views reveal patterns that are hard to see in a timeline:
 
 - A stacked calendar compares daily revenue, purchases, pageviews, or downloads across every available year.
-- A filterable Sankey diagram splits total gross revenue into package contributions, with optional grouping by the Asset Store categories assigned in the Publisher Portal.
+- A filterable Sankey diagram groups total gross revenue by the Asset Store categories assigned in the Publisher Portal, then splits each category into package contributions. Publishers can switch to a direct package split.
 - Every chart can be saved as a high-resolution PNG or shared through the device's native share surface when available.
 
-The left navigation separates a general Dashboard from the deeper Analytics workspace. Dashboard combines six headline metrics with aligned revenue, pageview, and download timelines, followed by a ranked package table. Within Analytics, focused tabs switch between Revenue, Daily patterns, Revenue flow, and Packages while the selected date range remains shared across the workspace.
+The left navigation separates a general Dashboard from the deeper Analytics workspace. Dashboard combines six headline metrics with aligned revenue, pageview, and download timelines, followed by a ranked package table. Within Analytics, focused tabs switch between Revenue, Daily patterns, Revenue composition, and Packages while the selected date range remains shared across the workspace.
 
 Progress is saved as the history is synced. If the page is refreshed, the extension continues from where it left off. Once the full history is ready, recent results are refreshed automatically whenever the Publisher Portal is visited.
 

@@ -16,7 +16,7 @@
     daily: "/publisher-v2-api/dashboard/daily"
   };
   let records = [];
-  let prefs = { section: "dashboard", view: "revenue", range: "all", interval: "auto", start: "", end: "", calendarMetric: "sales", sankeyPackages: [], sankeyGroupBy: "none" };
+  let prefs = { section: "dashboard", view: "revenue", range: "all", interval: "auto", start: "", end: "", calendarMetric: "sales", sankeyPackages: [], sankeyGroupBy: "category", sankeyCategoryDefaultApplied: true };
   let syncJob = null;
   let isRefreshing = false;
   let isOpen = false;
@@ -745,7 +745,7 @@
     const views = [
       { id: "revenue", label: "Revenue", description: "Explore gross revenue over time with flexible intervals." },
       { id: "calendar", label: "Daily patterns", description: "Compare daily intensity and seasonality across years." },
-      { id: "sankey", label: "Revenue flow", description: "Break down gross revenue by package." },
+      { id: "sankey", label: "Revenue composition", description: "Break down gross revenue by category and package." },
       { id: "packages", label: "Packages", description: "Compare attention, conversion, downloads, and gross sales." }
     ];
     const section = ["dashboard", "analytics"].includes(prefs.section) ? prefs.section : "dashboard";
@@ -892,10 +892,11 @@
   async function init() {
     const stored = await chrome.storage.local.get(PREFS_KEY);
     const storedPrefs = stored[PREFS_KEY] || {}, analyticsViews = ["revenue", "calendar", "sankey", "packages"], ranges = ["all", "30d", "3", "6", "12", "mtd", "ytd", "custom"];
+    const storedSankeyGroupBy = ["none", "category"].includes(storedPrefs.sankeyGroupBy) ? storedPrefs.sankeyGroupBy : "category";
     prefs = {
       section: storedPrefs.section || (storedPrefs.view && storedPrefs.view !== "overview" ? "analytics" : "dashboard"),
       view: analyticsViews.includes(storedPrefs.view) ? storedPrefs.view : "revenue", range: ranges.includes(storedPrefs.range) ? storedPrefs.range : "all", interval: storedPrefs.interval || "auto", start: storedPrefs.start || "", end: storedPrefs.end || "",
-      calendarMetric: storedPrefs.calendarMetric || "sales", sankeyPackages: Array.isArray(storedPrefs.sankeyPackages) ? storedPrefs.sankeyPackages : [], sankeyGroupBy: storedPrefs.sankeyGroupBy === "category" ? "category" : "none"
+      calendarMetric: storedPrefs.calendarMetric || "sales", sankeyPackages: Array.isArray(storedPrefs.sankeyPackages) ? storedPrefs.sankeyPackages : [], sankeyGroupBy: storedPrefs.sankeyCategoryDefaultApplied === true ? storedSankeyGroupBy : "category", sankeyCategoryDefaultApplied: true
     };
     await chrome.storage.local.set({ [PREFS_KEY]: prefs });
     records = await getAll(); syncJob = await getMeta(SYNC_KEY); isOpen = Boolean(syncJob?.active);
