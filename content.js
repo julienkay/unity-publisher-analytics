@@ -136,8 +136,19 @@
     }
   });
 
+  function categoryReference(item) {
+    const raw = valueFrom(item, ["category_id", "categoryId", "category"]);
+    if (raw === "" || raw === null || raw === undefined) return null;
+    if (typeof raw === "object") {
+      const id = String(valueFrom(raw, ["id", "category_id", "categoryId"]) || ""), name = compact(valueFrom(raw, ["assetstore_name", "assetstoreName", "name", "title", "label"]));
+      return id || name ? { id: id || name, name } : null;
+    }
+    const value = compact(raw);
+    return value ? { id: value, name: value } : null;
+  }
+
   async function fetchPackageCategoryMetadata() {
-    const categoryIdsByIdentifier = new Map(), categoryIdsByName = new Map(), responseFields = new Set(), metadataFields = new Set(), limit = 200;
+    const categoriesByIdentifier = new Map(), categoriesByName = new Map(), responseFields = new Set(), metadataFields = new Set(), limit = 200;
     let offset = 0, rowCount = 0, assignmentCount = 0;
     while (true) {
       const body = { limit: String(limit), order_by: "name", order: "asc" };
@@ -149,20 +160,20 @@
       for (const item of rows) {
         rowCount += 1;
         Object.keys(item || {}).forEach(field => metadataFields.add(field));
-        const categoryId = String(valueFrom(item, ["category_id", "categoryId"]) || "");
-        if (!categoryId) continue;
+        const category = categoryReference(item);
+        if (!category) continue;
         assignmentCount += 1;
         for (const identifier of [valueFrom(item, ["package_id", "packageId"]), valueFrom(item, ["genesis_product_id", "genesisProductId", "product_id", "productId"]), valueFrom(item, ["id"])]) {
-          if (identifier !== "" && identifier !== null && identifier !== undefined) categoryIdsByIdentifier.set(String(identifier), categoryId);
+          if (identifier !== "" && identifier !== null && identifier !== undefined) categoriesByIdentifier.set(String(identifier), category);
         }
         const name = compact(valueFrom(item, ["name", "package_name", "packageName"])).toLocaleLowerCase();
-        if (name) categoryIdsByName.set(name, categoryId);
+        if (name) categoriesByName.set(name, category);
       }
       offset += rows.length;
       const total = toNumber(valueFrom(response, ["total"]));
       if (rows.length < limit || (total && offset >= total)) break;
     }
-    return { categoryIdsByIdentifier, categoryIdsByName, responseFields: [...responseFields].sort(), metadataFields: [...metadataFields].sort(), rowCount, assignmentCount };
+    return { categoriesByIdentifier, categoriesByName, responseFields: [...responseFields].sort(), metadataFields: [...metadataFields].sort(), rowCount, assignmentCount };
   }
 
   async function fetchPackages() {
@@ -171,8 +182,9 @@
     const packages = (Array.isArray(raw) ? raw : []).map(item => {
       const id = String(valueFrom(item, ["package_id", "packageId", "id"]) || "");
       const name = valueFrom(item, ["name", "title", "package_name"]) || `Package ${id}`;
-      const categoryId = String(valueFrom(item, ["category_id", "categoryId"]) || metadata.categoryIdsByIdentifier.get(id) || metadata.categoryIdsByName.get(compact(name).toLocaleLowerCase()) || "");
-      return { id, name, categoryId, category: packageCategory(item) || categories.get(categoryId) || "", firstPublished: parseDate(valueFrom(item, ["first_published_time", "firstPublishedTime", "first_published"])) };
+      const metadataCategory = metadata.categoriesByIdentifier.get(id) || metadata.categoriesByName.get(compact(name).toLocaleLowerCase());
+      const categoryId = String(valueFrom(item, ["category_id", "categoryId"]) || metadataCategory?.id || "");
+      return { id, name, categoryId, category: categories.get(categoryId) || packageCategory(item) || metadataCategory?.name || "", firstPublished: parseDate(valueFrom(item, ["first_published_time", "firstPublishedTime", "first_published"])) };
     }).filter(item => item.id);
     if (packages.length && !packages.some(item => item.category)) {
       console.warn(`Unity Publisher Analytics+ category metadata unavailable: ${JSON.stringify({ publishedPackages: packages.length, metadataRows: metadata.rowCount, metadataAssignments: metadata.assignmentCount, categoryDefinitions: categories.size, responseFields: metadata.responseFields, metadataFields: metadata.metadataFields })}`);
