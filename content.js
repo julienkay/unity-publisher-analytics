@@ -341,6 +341,7 @@
       return start <= end ? { start, end } : { start: end, end: start };
     }
     if (prefs.range === "all") return available;
+    if (prefs.range === "7d") return { start: [addDays(available.end, -6), available.start].sort().at(-1), end: available.end };
     if (prefs.range === "30d") return { start: [addDays(available.end, -29), available.start].sort().at(-1), end: available.end };
     if (prefs.range === "mtd") return { start: [`${available.end.slice(0, 7)}-01`, available.start].sort().at(-1), end: available.end };
     if (prefs.range === "ytd") return { start: [`${available.end.slice(0, 4)}-01-01`, available.start].sort().at(-1), end: available.end };
@@ -908,8 +909,9 @@
     const showRefreshAction = hasData && !syncJob?.active && syncJob?.phase !== "error" && !syncIncomplete;
     const refreshAction = showRefreshAction ? `<button class="upa-refresh-action ${isRefreshing ? "upa-refreshing" : ""}" type="button" data-action="refresh" aria-label="${escapeHtml(refreshTooltip)}" ${isRefreshing ? "disabled" : ""}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 5.9A5.5 5.5 0 1 0 13 10.7"></path><path d="M13.4 2.8v3.5H9.9"></path></svg><span>${isRefreshing ? "Refreshing…" : "Refresh data"}</span><span class="upa-refresh-tooltip" role="tooltip">${escapeHtml(refreshTooltip)}</span></button>` : "";
     const rangeOptions = [
-      { id: "all", label: "All time" }, { id: "30d", label: "Last 30 days" }, { id: "3", label: "Last 3 months" }, { id: "6", label: "Last 6 months" },
-      { id: "12", label: "Last 12 months" }, { id: "mtd", label: "Month to date" }, { id: "ytd", label: "Year to date" }
+      { id: "all", label: "All time" }, { id: "7d", label: "Last 7 days" }, { id: "30d", label: "Last 30 days" }, { id: "3", label: "Last 3 months" },
+      { id: "6", label: "Last 6 months" }, { id: "12", label: "Last 1 year" }, { id: "36", label: "Last 3 years" }, { id: "60", label: "Last 5 years" },
+      { id: "mtd", label: "Month to date" }, { id: "ytd", label: "Year to date" }
     ];
     const customRangeLabel = `${shortDate(dateBounds.start)} – ${shortDate(dateBounds.end)}`;
     const selectedRangeLabel = prefs.range === "custom" ? customRangeLabel : rangeOptions.find(option => option.id === prefs.range)?.label || "All time";
@@ -1049,7 +1051,7 @@
 
   async function init() {
     const stored = await chrome.storage.local.get(PREFS_KEY);
-    const storedPrefs = stored[PREFS_KEY] || {}, analyticsViews = ["revenue", "lifetime", "calendar", "sankey", "packages"], ranges = ["all", "30d", "3", "6", "12", "mtd", "ytd", "custom"];
+    const storedPrefs = stored[PREFS_KEY] || {}, analyticsViews = ["revenue", "lifetime", "calendar", "sankey", "packages"], ranges = ["all", "7d", "30d", "3", "6", "12", "36", "60", "mtd", "ytd", "custom"];
     const storedSankeyGroupBy = ["none", "category"].includes(storedPrefs.sankeyGroupBy) ? storedPrefs.sankeyGroupBy : "category";
     const storedLifetimeAlign = storedPrefs.lifetimeAlign === "age" ? "age" : "calendar";
     const storedLifetimeStyle = storedPrefs.lifetimeStyle === "area" && storedLifetimeAlign === "calendar" ? "area" : "lines";
