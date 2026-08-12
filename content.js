@@ -137,12 +137,13 @@
   });
 
   async function fetchPackageCategoryMetadata() {
-    const categoryIdsByIdentifier = new Map(), categoryIdsByName = new Map(), metadataFields = new Set(), limit = 200;
+    const categoryIdsByIdentifier = new Map(), categoryIdsByName = new Map(), responseFields = new Set(), metadataFields = new Set(), limit = 200;
     let offset = 0, rowCount = 0, assignmentCount = 0;
     while (true) {
       const body = { limit: String(limit), order_by: "name", order: "asc" };
       if (offset) body.offset = String(offset);
       const response = await apiJson(API.packageMetadata, { method: "POST", body });
+      Object.keys(response || {}).forEach(field => responseFields.add(field));
       const rows = valueFrom(response, ["package_versions", "packageVersions"]);
       if (!Array.isArray(rows) || !rows.length) break;
       for (const item of rows) {
@@ -161,7 +162,7 @@
       const total = toNumber(valueFrom(response, ["total"]));
       if (rows.length < limit || (total && offset >= total)) break;
     }
-    return { categoryIdsByIdentifier, categoryIdsByName, metadataFields: [...metadataFields].sort(), rowCount, assignmentCount };
+    return { categoryIdsByIdentifier, categoryIdsByName, responseFields: [...responseFields].sort(), metadataFields: [...metadataFields].sort(), rowCount, assignmentCount };
   }
 
   async function fetchPackages() {
@@ -174,7 +175,7 @@
       return { id, name, categoryId, category: packageCategory(item) || categories.get(categoryId) || "", firstPublished: parseDate(valueFrom(item, ["first_published_time", "firstPublishedTime", "first_published"])) };
     }).filter(item => item.id);
     if (packages.length && !packages.some(item => item.category)) {
-      console.warn("Unity Publisher Analytics+ category metadata unavailable:", { publishedPackages: packages.length, metadataRows: metadata.rowCount, metadataAssignments: metadata.assignmentCount, categoryDefinitions: categories.size, metadataFields: metadata.metadataFields });
+      console.warn(`Unity Publisher Analytics+ category metadata unavailable: ${JSON.stringify({ publishedPackages: packages.length, metadataRows: metadata.rowCount, metadataAssignments: metadata.assignmentCount, categoryDefinitions: categories.size, responseFields: metadata.responseFields, metadataFields: metadata.metadataFields })}`);
     }
     return packages;
   }
