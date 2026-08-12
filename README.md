@@ -26,18 +26,18 @@ The dashboard brings together:
 - Downloads and users.
 - Debits, credits, payouts, and current balance.
 - Daily sales, purchases and claims, pageviews, conversion, downloads, wishlist changes, refunds, ratings, quick looks, and cart activity.
-- Portfolio-wide and per-package performance.
+- Catalog-wide and per-package performance.
 
 The main revenue chart supports automatic or explicit daily, weekly, monthly, quarterly, and yearly intervals. Choose a preset or exact start and end dates, then scroll or pinch to zoom, drag to pan, or use the navigator handles to focus on a precise window.
 
 Additional views reveal patterns that are hard to see in a timeline:
 
-- A lifetime growth chart compares cumulative gross revenue, sales quantity, downloads, or pageviews by package. It defaults to a calendar-time stacked area view of portfolio composition; publishers can switch to separate lines, align packages at their first activity to compare trajectories, and toggle series directly from the legend.
+- A lifetime growth chart compares cumulative gross revenue, sales quantity, downloads, or pageviews by package. It defaults to a calendar-time stacked area view of asset composition; publishers can switch to separate lines, align packages at their first activity to compare trajectories, and toggle series directly from the legend.
 - A stacked calendar compares daily revenue, purchases, pageviews, or downloads across every available year.
 - A filterable Sankey diagram groups total gross revenue by the Asset Store categories assigned in the Publisher Portal, then splits each category into package contributions. Publishers can switch to a direct package split.
 - Every chart can be saved as a high-resolution PNG or shared through the device's native share surface when available.
 
-The left navigation separates a general Dashboard from the deeper Analytics workspace. Dashboard combines six headline metrics with a lifetime revenue-allocation view, portfolio concentration metrics, aligned revenue, pageview, and download timelines, and a ranked package table. Within Analytics, focused tabs switch between Revenue, Lifetime growth, Daily patterns, Revenue composition, and Packages. Lifetime growth always uses all available history; the selected date range remains shared across the other views.
+The left navigation separates a general Dashboard from the deeper Analytics workspace. Dashboard combines six headline metrics with a lifetime asset-allocation view, revenue concentration metrics, aligned revenue, pageview, and download timelines, and a ranked package table. Within Analytics, focused tabs switch between Revenue, Lifetime growth, Daily patterns, Revenue composition, and Packages. Lifetime growth always uses all available history; the selected date range remains shared across the other views.
 
 Progress is saved as the history is synced. If the page is refreshed, the extension continues from where it left off. Once the full history is ready, recent results are refreshed automatically whenever the Publisher Portal is visited.
 
@@ -51,7 +51,7 @@ Removing the extension or selecting **Clear data** deletes the locally synced da
 
 The extension uses the signed-in portal session and the reporting endpoints already used by the Unity Publisher Portal. Normalized data is stored in an extension-owned IndexedDB database; preferences and the resumable checkpoint use `chrome.storage.local`.
 
-Daily history is collected for the complete portfolio and for each package in date windows supported by the portal. The available account history is discovered dynamically and is limited only by Unity's own analytics retention boundary.
+Daily history is collected for the complete catalog and for each package in date windows supported by the portal. The available account history is discovered dynamically and is limited only by Unity's own analytics retention boundary.
 
 Apache ECharts is bundled locally with the extension; no runtime code is loaded from a CDN. To rebuild the committed chart bundle after changing `scripts/echarts-entry.js`, run `npm install` and `npm run build:charts`.
 

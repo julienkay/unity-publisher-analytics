@@ -1,6 +1,6 @@
 # Rendering architecture
 
-Status: active. A modular ECharts bundle powers the Dashboard revenue-allocation donut and portfolio pulse, revenue timeline, package lifetime-growth chart, daily calendar, and revenue-composition views.
+Status: active. A modular ECharts bundle powers the Dashboard asset-allocation donut and business-activity view, revenue timeline, package lifetime-growth chart, daily calendar, and revenue-composition views.
 
 ## Decision
 
