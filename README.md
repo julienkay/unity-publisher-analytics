@@ -32,7 +32,7 @@ The main revenue chart supports automatic or explicit daily, weekly, monthly, qu
 
 Additional views reveal patterns that are hard to see in a timeline:
 
-- A lifetime growth chart compares cumulative gross revenue, sales quantity, downloads, or pageviews by package. Publishers can use separate lines to spot plateaus, align packages at their first activity to compare trajectories, switch calendar-time data to a stacked area view of portfolio composition, and toggle series directly from the legend.
+- A lifetime growth chart compares cumulative gross revenue, sales quantity, downloads, or pageviews by package. It defaults to a calendar-time stacked area view of portfolio composition; publishers can switch to separate lines, align packages at their first activity to compare trajectories, and toggle series directly from the legend.
 - A stacked calendar compares daily revenue, purchases, pageviews, or downloads across every available year.
 - A filterable Sankey diagram groups total gross revenue by the Asset Store categories assigned in the Publisher Portal, then splits each category into package contributions. Publishers can switch to a direct package split.
 - Every chart can be saved as a high-resolution PNG or shared through the device's native share surface when available.
