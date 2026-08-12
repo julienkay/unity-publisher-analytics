@@ -32,11 +32,12 @@ The main revenue chart supports automatic or explicit daily, weekly, monthly, qu
 
 Additional views reveal patterns that are hard to see in a timeline:
 
+- A lifetime growth chart compares cumulative gross revenue by package. Publishers can use separate lines to spot plateaus, align packages at their first paid sale to compare launch trajectories, or switch calendar-time data to a stacked area view of portfolio composition.
 - A stacked calendar compares daily revenue, purchases, pageviews, or downloads across every available year.
 - A filterable Sankey diagram groups total gross revenue by the Asset Store categories assigned in the Publisher Portal, then splits each category into package contributions. Publishers can switch to a direct package split.
 - Every chart can be saved as a high-resolution PNG or shared through the device's native share surface when available.
 
-The left navigation separates a general Dashboard from the deeper Analytics workspace. Dashboard combines six headline metrics with aligned revenue, pageview, and download timelines, followed by a ranked package table. Within Analytics, focused tabs switch between Revenue, Daily patterns, Revenue composition, and Packages while the selected date range remains shared across the workspace.
+The left navigation separates a general Dashboard from the deeper Analytics workspace. Dashboard combines six headline metrics with aligned revenue, pageview, and download timelines, followed by a ranked package table. Within Analytics, focused tabs switch between Revenue, Lifetime growth, Daily patterns, Revenue composition, and Packages. Lifetime growth always uses all available history; the selected date range remains shared across the other views.
 
 Progress is saved as the history is synced. If the page is refreshed, the extension continues from where it left off. Once the full history is ready, recent results are refreshed automatically whenever the Publisher Portal is visited.
 
