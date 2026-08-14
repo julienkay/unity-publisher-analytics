@@ -153,7 +153,9 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 .upa-revenue-mix-center { position:absolute;top:50%;left:50%;display:flex;align-items:center;flex-direction:column;max-width:58%;transform:translate(-50%,-50%);pointer-events:none; }
 .upa-revenue-mix-center small { display:-webkit-box;max-width:140px;overflow:hidden;color:#8b92a3;font-size:var(--upa-font-label);font-weight:800;letter-spacing:.6px;line-height:1.3;text-align:center;text-transform:uppercase;-webkit-box-orient:vertical;-webkit-line-clamp:2; }
 .upa-revenue-mix-center strong { margin-top:4px;color:#282f40;font-size:21px;letter-spacing:-.7px;white-space:nowrap; }
-.upa-revenue-mix-list { display:flex;min-width:0;flex-direction:column; }
+.upa-revenue-mix-list { display:flex;min-width:0;max-height:250px;padding-right:6px;overflow-y:auto;flex-direction:column;scrollbar-color:#cfd2dc transparent;scrollbar-gutter:stable;scrollbar-width:thin; }
+.upa-revenue-mix-list::-webkit-scrollbar { width:6px; }
+.upa-revenue-mix-list::-webkit-scrollbar-thumb { border-radius:6px;background:#cfd2dc; }
 .upa-revenue-mix-row { display:grid;grid-template-columns:8px minmax(0,1fr) auto auto;gap:9px;align-items:center;min-width:0;padding:10px 0;border-top:1px solid #eceef3; }
 .upa-revenue-mix-row:first-child { border-top:0; }
 .upa-revenue-mix-row i { width:8px;height:8px;border-radius:50%; }

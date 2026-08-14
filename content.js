@@ -539,16 +539,13 @@
     }
     const ranked = [...packages.values()].filter(item => item.value > 0).sort((a, b) => b.value - a.value);
     const total = ranked.reduce((sum, item) => sum + item.value, 0);
-    const visible = ranked.length > 6
-      ? [...ranked.slice(0, 5), { key: "other", name: "Other assets", value: ranked.slice(5).reduce((sum, item) => sum + item.value, 0) }]
-      : ranked;
-    const palette = ["#6c5ce7", "#21a7bd", "#d99721", "#d45c70", "#3ca56f", "#4e8bd7"];
+    const palette = ["#6c5ce7", "#21a7bd", "#d99721", "#d45c70", "#3ca56f", "#4e8bd7", "#aa69c7", "#6751aa"];
     return {
       total,
       packageCount: ranked.length,
       largest: ranked[0] || null,
       topThreeShare: total ? ranked.slice(0, 3).reduce((sum, item) => sum + item.value, 0) / total * 100 : 0,
-      items: visible.map((item, index) => ({ ...item, share: total ? item.value / total * 100 : 0, color: palette[index % palette.length] }))
+      items: ranked.map((item, index) => ({ ...item, share: total ? item.value / total * 100 : 0, color: palette[index % palette.length] }))
     };
   }
 
