@@ -45,6 +45,7 @@ The type tokens live on `#upa-root` in `styles.css`.
 - Primary actions use the violet accent; destructive actions require explicit wording and confirmation.
 - Cards begin with an eyebrow, title, one-sentence explanation, and optional tools aligned on the right.
 - Dense package tables use a strong identity column, single-line values, clear row separators, and horizontal scrolling instead of compressed text.
+- Keep metric comparisons secondary to the current value, state the preceding period explicitly, and omit them when the baseline is incomplete or zero.
 - Empty, loading, error, and success states use publisher-facing language and keep the next action obvious.
 
 ## Charts
