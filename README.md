@@ -39,6 +39,8 @@ Additional views reveal patterns that are hard to see in a timeline:
 
 The left navigation separates a general Dashboard from the deeper Analytics workspace. Dashboard combines six headline metrics with a lifetime asset-allocation view, revenue concentration metrics, aligned revenue, pageview, and download timelines, and a ranked package table. Within Analytics, focused tabs switch between Revenue, Lifetime growth, Daily patterns, Revenue composition, and Packages. Lifetime growth always uses all available history; the selected date range remains shared across the other views.
 
+The publisher block at the bottom of the navigation follows the publisher currently active in the signed-in portal. It uses the store profile name and picture when available. Its upward menu opens Settings or returns to the Publisher Portal; data coverage, JSON export, and local-data clearing are kept separate from the analytics workspace.
+
 Progress is saved as the history is synced. If the page is refreshed, the extension continues from where it left off. Once the full history is ready, recent results are refreshed automatically whenever the Publisher Portal is visited.
 
 ## Storage and privacy

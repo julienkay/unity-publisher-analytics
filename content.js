@@ -4,6 +4,7 @@
   window.__unityPublisherAnalyticsLoaded = true;
 
   const PREFS_KEY = "unityPublisherAnalyticsApiPrefsV1";
+  const PUBLISHER_KEY = "unityPublisherAnalyticsPublisherV1";
   const SYNC_KEY = "apiSyncV1";
   const DAILY_API_MIN_DATE = "2019-01-01";
   const DAILY_API_WINDOW_DAYS = 365;
@@ -21,6 +22,8 @@
   let syncJob = null;
   let isRefreshing = false;
   let isOpen = false;
+  let accountMenuOpen = false;
+  let publisherIdentity = { portalLabel: "", name: "Publisher", icon: "" };
   let renderQueued = false;
   let isRangePopoverOpen = false;
   let isCustomRangeEditorOpen = false;
@@ -35,6 +38,69 @@
   const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[character]);
   const number = value => new Intl.NumberFormat().format(Number(value) || 0);
   const money = value => new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Number(value) || 0);
+
+  function publisherFromHeader() {
+    const button = [...document.querySelectorAll("button")].find(item => /User menu/i.test(item.getAttribute("aria-label") || "")) || document.querySelector('nav[aria-label="User"] button:last-of-type');
+    if (!button) return null;
+    const lines = String(button.innerText || "").split(/\n+/).map(compact).filter(Boolean);
+    const labelParts = (button.getAttribute("aria-label") || "").split(",").map(compact).filter(Boolean);
+    const portalLabel = lines.at(-1) || labelParts.at(-2) || "";
+    const username = lines.at(-2) || labelParts[0] || "";
+    return { portalLabel, username, name: portalLabel.replace(/\s+Publisher$/i, "") || username || "Publisher" };
+  }
+
+  function profileValue(doc, labelText) {
+    const label = [...doc.querySelectorAll("div, span, p")].find(item => !item.children.length && compact(item.textContent) === labelText);
+    if (!label) return "";
+    let node = label.parentElement;
+    while (node && node !== doc.body) {
+      const text = compact(node.innerText);
+      if (text.startsWith(labelText) && text.length > labelText.length && text.length < 180) return compact(text.slice(labelText.length));
+      node = node.parentElement;
+    }
+    return "";
+  }
+
+  function publisherFromProfile(doc) {
+    const image = doc.querySelector('img[alt="Profile picture"]');
+    const name = profileValue(doc, "Profile name"), icon = image?.currentSrc || image?.src || "";
+    return name || icon ? { name, icon } : null;
+  }
+
+  async function loadPublisherProfile() {
+    if (location.pathname === "/account/profile") {
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        const profile = publisherFromProfile(document); if (profile) return profile;
+        await sleep(200);
+      }
+      return null;
+    }
+    const frame = document.createElement("iframe");
+    frame.className = "upa-profile-frame"; frame.src = "/account/profile"; frame.tabIndex = -1; frame.setAttribute("aria-hidden", "true");
+    document.body.appendChild(frame);
+    try {
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        await sleep(200);
+        try { const profile = frame.contentDocument && publisherFromProfile(frame.contentDocument); if (profile) return profile; } catch { return null; }
+      }
+      return null;
+    } finally { frame.remove(); }
+  }
+
+  async function refreshPublisherIdentity(force = false) {
+    const header = publisherFromHeader();
+    if (!header) return;
+    if (!force && publisherIdentity.portalLabel === header.portalLabel && publisherIdentity.icon) return;
+    const stored = await chrome.storage.local.get(PUBLISHER_KEY), cached = stored[PUBLISHER_KEY];
+    const fresh = cached && cached.portalLabel === header.portalLabel && Date.now() - Number(cached.updatedAt || 0) < 86400000;
+    publisherIdentity = fresh ? cached : { ...header, icon: "" };
+    scheduleRender();
+    if (fresh) return;
+    const profile = await loadPublisherProfile();
+    publisherIdentity = { ...header, name: profile?.name || header.name, icon: profile?.icon || "", updatedAt: Date.now() };
+    await chrome.storage.local.set({ [PUBLISHER_KEY]: publisherIdentity });
+    scheduleRender();
+  }
   const LIFETIME_METRICS = {
     revenue: { id: "revenue", label: "Gross revenue", noun: "revenue", rankingLabel: "revenue", field: "gross", source: "sales", currency: true, ageLabel: "Since first sale", ageDescription: "first sale", emptyLabel: "No package revenue is available yet." },
     sales: { id: "sales", label: "Sales quantity", noun: "sales", rankingLabel: "sales", field: "qty", source: "sales", currency: false, ageLabel: "Since first sale", ageDescription: "first sale", emptyLabel: "No package sales are available yet." },
@@ -832,10 +898,24 @@
     } catch (error) { if (error.name !== "AbortError") toast(error.message, "error"); }
   }
 
+  function publisherAccount() {
+    const initial = escapeHtml((publisherIdentity.name || "P").trim().charAt(0).toUpperCase() || "P");
+    const avatar = publisherIdentity.icon ? `<img src="${escapeHtml(publisherIdentity.icon)}" alt="">` : `<span>${initial}</span>`;
+    return `<div class="upa-publisher-account">${accountMenuOpen ? `<div class="upa-account-menu" role="menu"><button type="button" data-action="open-settings" role="menuitem"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="3"></circle><path d="M10 2.5v2m0 11v2m7.5-7.5h-2m-11 0h-2m12.8-5.3-1.4 1.4m-7.8 7.8-1.4 1.4m10.6 0-1.4-1.4M6.1 6.1 4.7 4.7"></path></svg><span>Settings</span></button><button type="button" data-action="exit-analytics" role="menuitem"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8.5 3.5h-4v13h4"></path><path d="M11.5 6.5 15 10l-3.5 3.5M15 10H7"></path></svg><span>Exit to Publisher Portal</span></button></div>` : ""}<button class="upa-account-trigger" type="button" data-action="toggle-account" aria-haspopup="menu" aria-expanded="${accountMenuOpen}"><span class="upa-publisher-avatar">${avatar}</span><span class="upa-publisher-copy"><strong>${escapeHtml(publisherIdentity.name || "Publisher")}</strong><small>Publisher</small></span><svg class="upa-account-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="m3 7.5 3-3 3 3"></path></svg></button></div>`;
+  }
+
+  function settingsPanel() {
+    const salesMonths = new Set(records.filter(item => item.type === "sales").map(item => item.period)).size;
+    const downloadMonths = new Set(records.filter(item => item.type === "downloads").map(item => item.period)).size;
+    const performanceDays = new Set(records.filter(item => item.type === "daily" && item.scope === "all").map(item => item.date)).size;
+    const revenueEntries = records.filter(item => item.type === "revenue").length;
+    return `<section class="upa-settings-page"><article class="upa-card upa-settings-card"><div class="upa-section-title"><div><small>LOCAL DATA</small><h2>Data coverage</h2><p>Available history stored for the active publisher in this browser.</p></div></div><div class="upa-coverage-grid"><div><span>Sales</span><strong>${number(salesMonths)}</strong><small>months</small></div><div><span>Downloads</span><strong>${number(downloadMonths)}</strong><small>months</small></div><div><span>Performance</span><strong>${number(performanceDays)}</strong><small>days</small></div><div><span>Revenue</span><strong>${number(revenueEntries)}</strong><small>entries</small></div></div></article><article class="upa-card upa-settings-card"><div class="upa-section-title"><div><small>DATA MANAGEMENT</small><h2>Browser storage</h2><p>Your analytics stays in this browser and is never sent to an external service.</p></div></div><button class="upa-data-action" type="button" data-action="export" ${records.length ? "" : "disabled"}><span><strong>Export data</strong><small>Download a JSON backup of your analytics.</small></span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5v10m-4-4 4 4 4-4"></path><path d="M3.5 14v2.5h13V14"></path></svg></button><div class="upa-danger-zone"><div><strong>Clear local data</strong><span>Deletes synced analytics and the saved sync checkpoint.</span></div><button type="button" data-action="clear" ${records.length || syncJob ? "" : "disabled"}>Clear data</button></div></article></section>`;
+  }
+
   function render() {
     renderQueued = false; const host = document.getElementById("upa-root"); if (!host) return;
     disposeCharts(); chartShareMetadata.clear();
-    const salesItems = filtered("sales"), sales = aggregateSales(salesItems);
+    const salesItems = filtered("sales");
     const lifetimeMetric = lifetimeMetricDefinition(prefs.lifetimeMetric);
     const lifetimeItems = records.filter(item => item.type === lifetimeMetric.source && (lifetimeMetric.source !== "daily" || item.scope === "package"));
     const daily = filtered("daily"), dailyAll = daily.filter(item => item.scope === "all"), packages = aggregatePackages(daily);
@@ -843,7 +923,6 @@
     const paidUnits = dailyAll.reduce((sum, item) => sum + item.paidQty, 0), downloads = dailyAll.reduce((sum, item) => sum + item.downloads, 0);
     const conversionRate = pageViews ? salesQty / pageViews * 100 : 0;
     const progress = syncJob?.active ? Math.min(100, Math.round((syncJob.completed || 0) / Math.max(syncJob.total || 1, 1) * 100)) : 0;
-    const daysTracked = new Set(dailyAll.map(item => item.date)).size;
     const hasData = records.length > 0;
     const availableBounds = availableDateBounds(), dateBounds = selectedDateBounds(), interval = resolvedInterval(dateBounds), revenueChartData = revenueViewModel(dailyAll, interval);
     const allDaily = records.filter(item => item.type === "daily" && item.scope === "all"), trailingRevenue = trailingRevenueMetrics(allDaily, availableBounds);
@@ -883,11 +962,13 @@
       { id: "sankey", label: "Revenue composition", description: "Break down gross revenue by category and package." },
       { id: "packages", label: "Packages", description: "Compare attention, conversion, downloads, and gross sales." }
     ];
-    const section = ["dashboard", "analytics"].includes(prefs.section) ? prefs.section : "dashboard";
+    const section = ["dashboard", "analytics", "settings"].includes(prefs.section) ? prefs.section : "dashboard";
     const view = views.some(item => item.id === prefs.view) ? prefs.view : "revenue";
     const sectionMeta = section === "dashboard"
       ? { label: "Dashboard", description: "Your publishing business at a glance." }
-      : { label: "Analytics", description: "Explore trends, patterns, and package performance." };
+      : section === "analytics"
+        ? { label: "Analytics", description: "Explore trends, patterns, and package performance." }
+        : { label: "Settings", description: "Manage data coverage and local browser storage." };
     const viewTabs = views.map(item => `<button class="upa-view-tab ${item.id === view ? "upa-active" : ""}" type="button" role="tab" aria-selected="${item.id === view}" aria-controls="upa-view-${item.id}" data-view="${item.id}">${item.label}</button>`).join("");
     const syncIncomplete = Boolean(syncJob && !syncJob.active && ["months", "daily"].includes(syncJob.phase));
     const syncTitle = syncJob?.active ? syncJob.label : syncJob?.phase === "error" ? "Sync couldn't be completed" : "Sync paused";
@@ -916,7 +997,7 @@
     const rangePopover = isRangePopoverOpen ? `<div class="upa-range-popover" role="dialog" aria-label="Choose time range">${isCustomRangeEditorOpen
       ? `<div class="upa-custom-range"><div class="upa-custom-range-head"><button type="button" data-action="range-back" aria-label="Back to time ranges">←</button><div><strong>Custom range</strong><span>Choose exact start and end dates.</span></div></div><div class="upa-custom-range-fields"><label>From<input id="upa-custom-start" type="date" value="${dateBounds.start}" min="${availableBounds.start}" max="${availableBounds.end}"></label><label>Until<input id="upa-custom-end" type="date" value="${dateBounds.end}" min="${availableBounds.start}" max="${availableBounds.end}"></label></div><div class="upa-custom-range-actions"><button type="button" data-action="range-cancel">Cancel</button><button class="upa-primary" type="button" data-action="range-apply">Apply range</button></div></div>`
       : `<div class="upa-range-menu" role="listbox">${rangeOptions.map(option => `<button type="button" role="option" aria-selected="${prefs.range === option.id}" data-range-option="${option.id}"><span>${option.label}</span>${prefs.range === option.id ? "<i>✓</i>" : ""}</button>`).join("")}<button class="upa-range-custom-option" type="button" role="option" aria-selected="${prefs.range === "custom"}" data-range-option="custom"><span><strong>Custom range</strong><small>${prefs.range === "custom" ? customRangeLabel : "Choose exact dates"}</small></span>${prefs.range === "custom" ? "<i>✓</i>" : ""}</button></div>`}</div>` : "";
-    const rangeControl = hasData && !(section === "analytics" && view === "lifetime") ? `<div class="upa-header-control upa-header-range"><span>Time range</span><div class="upa-range-picker"><button class="upa-range-trigger" type="button" data-action="range-toggle" aria-haspopup="dialog" aria-expanded="${isRangePopoverOpen}"><b>${selectedRangeLabel}</b><svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3"></path></svg></button>${rangePopover}</div></div>` : "";
+    const rangeControl = hasData && section !== "settings" && !(section === "analytics" && view === "lifetime") ? `<div class="upa-header-control upa-header-range"><span>Time range</span><div class="upa-range-picker"><button class="upa-range-trigger" type="button" data-action="range-toggle" aria-haspopup="dialog" aria-expanded="${isRangePopoverOpen}"><b>${selectedRangeLabel}</b><svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3"></path></svg></button>${rangePopover}</div></div>` : "";
     const intervalControl = hasData && section === "analytics" && view === "revenue" ? `<label class="upa-header-control upa-header-interval"><span>Interval</span><select id="upa-interval" aria-label="Chart interval"><option value="auto" ${prefs.interval === "auto" ? "selected" : ""}>Automatic (${intervalName(interval).toLowerCase()})</option><option value="day" ${prefs.interval === "day" ? "selected" : ""}>Daily</option><option value="week" ${prefs.interval === "week" ? "selected" : ""}>Weekly</option><option value="month" ${prefs.interval === "month" ? "selected" : ""}>Monthly</option><option value="quarter" ${prefs.interval === "quarter" ? "selected" : ""}>Quarterly</option><option value="year" ${prefs.interval === "year" ? "selected" : ""}>Yearly</option></select></label>` : "";
     const dashboardPackageTable = `<article class="upa-dashboard-packages"><div class="upa-section-title"><div><small>PACKAGE BREAKDOWN</small><h2>Package performance</h2><p>Selected-range results ranked by gross revenue, with trailing revenue context.</p></div><div class="upa-section-tools"><span>${number(packages.length)} packages</span><button class="upa-table-link" type="button" data-view="packages">Explore packages</button></div></div>${dashboardPackages.length ? `<div class="upa-package-table-wrap"><table class="upa-package-table"><thead><tr><th scope="col">Package</th><th scope="col">Revenue / share</th><th scope="col">Monthly avg. (12m)</th><th scope="col">Growth (12m)</th><th scope="col">Conversion</th><th scope="col">Pageviews</th><th scope="col">Downloads</th></tr></thead><tbody>${dashboardPackages.map(item => `<tr><th scope="row"><div class="upa-package-identity" title="${number(item.paidQty)} paid units${item.freeQty ? ` · ${number(item.freeQty)} claims` : ""}"><span class="upa-package-avatar" aria-hidden="true">${escapeHtml(item.name?.trim().slice(0, 1).toUpperCase() || "P")}</span><strong class="upa-package-name">${escapeHtml(item.name)}</strong></div></th><td><span class="upa-table-value">${money(item.sales)}</span><span class="upa-table-inline-detail">${percent(item.share)}</span></td><td><span class="upa-table-value">${item.trailing.monthCount ? money(item.trailing.monthlyAverage) : "—"}</span></td><td><span class="upa-table-value ${revenueGrowthClass(item.trailing)}">${revenueGrowthLabel(item.trailing)}</span></td><td><span class="upa-table-value">${item.pageViews ? percent(item.conversion) : "—"}</span></td><td><span class="upa-table-value">${number(item.pageViews)}</span></td><td><span class="upa-table-value">${number(item.downloads)}</span></td></tr>`).join("")}</tbody></table></div><div class="upa-package-table-footer"><span>${packages.length > dashboardPackages.length ? `Showing the top ${dashboardPackages.length} of ${packages.length} packages` : `Showing all ${packages.length} packages in this range`}</span></div>` : '<div class="upa-package-table-empty">No package activity is available for this date range.</div>'}</article>`;
     host.classList.toggle("upa-open", isOpen);
@@ -926,13 +1007,12 @@
         <aside class="upa-sidebar" aria-label="Analytics workspace">
           <div class="upa-brand"><span>A+</span><div><strong>Publisher Analytics+</strong><small>Asset Store Insights</small></div></div>
           ${hasData ? `<div class="upa-primary-nav"><small>Workspace</small><button class="${section === "dashboard" ? "upa-active" : ""}" type="button" data-section="dashboard"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="2.5" width="6" height="6" rx="1.5"></rect><rect x="11.5" y="2.5" width="6" height="6" rx="1.5"></rect><rect x="2.5" y="11.5" width="6" height="6" rx="1.5"></rect><rect x="11.5" y="11.5" width="6" height="6" rx="1.5"></rect></svg><span>Dashboard</span></button><button class="${section === "analytics" ? "upa-active" : ""}" type="button" data-section="analytics"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 16.5V11m5 5.5V7m5 9.5V9m4 7.5V3.5"></path><path d="m3 8 5-4 5 2 4-3"></path></svg><span>Analytics</span></button></div>` : `<div class="upa-onboarding-nav"><small>Getting started</small><strong>Build your publisher history</strong><span>One sync brings your available analytics into this workspace.</span></div>`}
-          <div class="upa-sidebar-status"><small>${hasData ? "Data coverage" : "Your data"}</small><strong>${hasData ? `${sales.months.length} months` : "Stored locally"}</strong><span>${hasData ? `${daysTracked} complete days tracked` : "Private to this browser"}</span></div>
-          ${hasData ? '<div class="upa-sidebar-actions"><button data-action="export">Export data</button><button class="upa-danger" data-action="clear">Clear data</button></div>' : ""}
+          ${publisherAccount()}
         </aside>
         <section class="upa-workspace">
-          <header class="upa-header ${section === "dashboard" ? "upa-header-compact" : ""}"><div class="upa-header-main"><div class="upa-header-copy"><small>Publisher workspace</small><h1>${hasData ? sectionMeta.label : "Welcome"}</h1><div class="upa-header-subline"><p>${hasData ? sectionMeta.description : "Build a complete, configurable view of your publishing business."}</p>${refreshAction}</div></div><div class="upa-header-actions">${intervalControl}${rangeControl}<button class="upa-icon-button" data-action="close" aria-label="Close analytics">×</button></div></div>${hasData ? `<nav class="upa-mobile-nav" aria-label="Workspace sections"><button class="${section === "dashboard" ? "upa-active" : ""}" type="button" data-section="dashboard">Dashboard</button><button class="${section === "analytics" ? "upa-active" : ""}" type="button" data-section="analytics">Analytics</button></nav>` : ""}${hasData && section === "analytics" ? `<nav class="upa-view-tabs" role="tablist" aria-label="Analytics views">${viewTabs}</nav>` : ""}</header>
+          <header class="upa-header ${section === "dashboard" || section === "settings" ? "upa-header-compact" : ""}"><div class="upa-header-main"><div class="upa-header-copy"><small>Publisher workspace</small><h1>${hasData || section === "settings" ? sectionMeta.label : "Welcome"}</h1><div class="upa-header-subline"><p>${hasData || section === "settings" ? sectionMeta.description : "Build a complete, configurable view of your publishing business."}</p>${refreshAction}</div></div><div class="upa-header-actions">${intervalControl}${rangeControl}</div></div>${hasData ? `<nav class="upa-mobile-nav" aria-label="Workspace sections"><button class="${section === "dashboard" ? "upa-active" : ""}" type="button" data-section="dashboard">Dashboard</button><button class="${section === "analytics" ? "upa-active" : ""}" type="button" data-section="analytics">Analytics</button><button class="${section === "settings" ? "upa-active" : ""}" type="button" data-section="settings">Settings</button></nav>` : ""}${hasData && section === "analytics" ? `<nav class="upa-view-tabs" role="tablist" aria-label="Analytics views">${viewTabs}</nav>` : ""}</header>
           ${(syncJob?.active || syncJob?.phase === "error" || syncIncomplete) ? `<section class="upa-sync ${syncJob?.active ? "upa-syncing" : ""}">${syncIcon}<div class="upa-sync-copy"><strong>${escapeHtml(syncTitle)}</strong><span>${escapeHtml(syncDetail)}</span>${syncJob?.active ? '<small class="upa-sync-note">Large catalogs can take several minutes. Keep this tab open; if interrupted, progress resumes when you return.</small>' : ""}</div><div class="upa-sync-actions">${syncJob?.active ? '<button data-action="stop-sync">Pause</button>' : syncIncomplete ? '<button data-action="continue-sync">Continue</button>' : '<button data-action="sync-all">Try full sync again</button>'}</div>${syncJob?.active ? `<div class="upa-progress"><i style="width:${progress}%"></i></div>` : ""}</section>` : ""}
-          <main class="upa-content" data-section="${section}" data-view="${view}">${records.length ? `<section class="upa-kpis upa-view-panel upa-view-dashboard" id="upa-view-dashboard"><article><div><small>Gross revenue</small><span class="upa-kpi-dot upa-violet"></span></div><strong>${money(revenueChartData.total)}</strong><span>${number(paidUnits)} paid units in the selected period</span></article><article><div><small>Average monthly revenue</small><span class="upa-kpi-dot upa-violet"></span></div><strong>${money(trailingRevenue.monthlyAverage)}</strong><span>${trailingRevenue.monthCount === 12 ? "Last 12 complete months" : trailingRevenue.monthCount ? `Based on ${number(trailingRevenue.monthCount)} available months` : "No complete month available"}</span></article><article><div><small>Revenue growth</small><span class="upa-kpi-dot ${revenueGrowthDot}"></span></div><strong>${revenueGrowthValue}</strong><span>${trailingRevenue.hasBaseline ? "Last 12 months versus previous 12" : "Needs 24 months of history"}</span></article><article><div><small>Pageviews</small><span class="upa-kpi-dot upa-cyan"></span></div><strong>${number(pageViews)}</strong><span>${number(salesQty)} purchases and claims</span></article><article><div><small>Conversion rate</small><span class="upa-kpi-dot upa-green"></span></div><strong>${percent(conversionRate)}</strong><span>Views that became purchases or claims</span></article><article><div><small>Downloads</small><span class="upa-kpi-dot upa-amber"></span></div><strong>${number(downloads)}</strong><span>Across the selected period</span></article><div class="upa-dashboard-insights"><section class="upa-dashboard-mix-card"><div class="upa-section-title"><div><small>ASSET ALLOCATION</small><h2>Revenue mix</h2></div></div>${revenueMixData.items.length ? `<div class="upa-revenue-mix-layout"><div class="upa-revenue-mix-visual"><div id="upa-revenue-mix-chart" class="upa-revenue-mix-chart" role="img" aria-label="Lifetime gross revenue contribution by asset"></div><div class="upa-revenue-mix-center"><small id="upa-revenue-mix-label">Lifetime</small><strong id="upa-revenue-mix-value">${money(revenueMixData.total)}</strong></div></div><div class="upa-revenue-mix-list">${revenueMixData.items.map(item => `<div class="upa-revenue-mix-row"><i style="background:${item.color}"></i><span title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</span><strong>${percent(item.share)}</strong><em>${money(item.value)}</em></div>`).join("")}</div></div>` : '<div class="upa-revenue-mix-empty">No gross revenue is available yet.</div>'}</section><section class="upa-dashboard-profile-card"><div class="upa-section-title"><div><small>ASSET MIX</small><h2>Revenue concentration</h2></div></div><dl><div><dt>Largest asset share</dt><dd>${revenueMixData.largest ? percent(revenueMixData.largest.value / revenueMixData.total * 100) : "—"}</dd><span>${revenueMixData.largest ? escapeHtml(revenueMixData.largest.name) : "No revenue yet"}</span></div><div><dt>Top 3 share</dt><dd>${revenueMixData.items.length ? percent(revenueMixData.topThreeShare) : "—"}</dd><span>Of lifetime gross revenue</span></div><div><dt>Revenue-generating assets</dt><dd>${number(revenueMixData.packageCount)}</dd><span>With recorded gross revenue</span></div></dl></section></div><article class="upa-dashboard-chart"><div class="upa-section-title"><div><small>BUSINESS ACTIVITY</small><h2>Performance over time</h2><p>${intervalName(overviewChartData.interval)} revenue, pageviews, and downloads on aligned timelines.</p></div><div class="upa-section-tools"><span>${overviewChartData.points.length} periods</span>${chartActions("overview")}</div></div><div class="upa-pulse-legend"><span><i class="upa-pulse-revenue"></i>Gross revenue</span><span><i class="upa-pulse-views"></i>Pageviews</span><span><i class="upa-pulse-downloads"></i>Downloads</span></div><div id="upa-overview-chart" class="upa-overview-chart" role="img" aria-label="Aligned gross revenue, pageviews, and downloads timelines"></div></article>${dashboardPackageTable}</section>
+          <main class="upa-content" data-section="${section}" data-view="${view}">${section === "settings" ? settingsPanel() : records.length ? `<section class="upa-kpis upa-view-panel upa-view-dashboard" id="upa-view-dashboard"><article><div><small>Gross revenue</small><span class="upa-kpi-dot upa-violet"></span></div><strong>${money(revenueChartData.total)}</strong><span>${number(paidUnits)} paid units in the selected period</span></article><article><div><small>Average monthly revenue</small><span class="upa-kpi-dot upa-violet"></span></div><strong>${money(trailingRevenue.monthlyAverage)}</strong><span>${trailingRevenue.monthCount === 12 ? "Last 12 complete months" : trailingRevenue.monthCount ? `Based on ${number(trailingRevenue.monthCount)} available months` : "No complete month available"}</span></article><article><div><small>Revenue growth</small><span class="upa-kpi-dot ${revenueGrowthDot}"></span></div><strong>${revenueGrowthValue}</strong><span>${trailingRevenue.hasBaseline ? "Last 12 months versus previous 12" : "Needs 24 months of history"}</span></article><article><div><small>Pageviews</small><span class="upa-kpi-dot upa-cyan"></span></div><strong>${number(pageViews)}</strong><span>${number(salesQty)} purchases and claims</span></article><article><div><small>Conversion rate</small><span class="upa-kpi-dot upa-green"></span></div><strong>${percent(conversionRate)}</strong><span>Views that became purchases or claims</span></article><article><div><small>Downloads</small><span class="upa-kpi-dot upa-amber"></span></div><strong>${number(downloads)}</strong><span>Across the selected period</span></article><div class="upa-dashboard-insights"><section class="upa-dashboard-mix-card"><div class="upa-section-title"><div><small>ASSET ALLOCATION</small><h2>Revenue mix</h2></div></div>${revenueMixData.items.length ? `<div class="upa-revenue-mix-layout"><div class="upa-revenue-mix-visual"><div id="upa-revenue-mix-chart" class="upa-revenue-mix-chart" role="img" aria-label="Lifetime gross revenue contribution by asset"></div><div class="upa-revenue-mix-center"><small id="upa-revenue-mix-label">Lifetime</small><strong id="upa-revenue-mix-value">${money(revenueMixData.total)}</strong></div></div><div class="upa-revenue-mix-list">${revenueMixData.items.map(item => `<div class="upa-revenue-mix-row"><i style="background:${item.color}"></i><span title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</span><strong>${percent(item.share)}</strong><em>${money(item.value)}</em></div>`).join("")}</div></div>` : '<div class="upa-revenue-mix-empty">No gross revenue is available yet.</div>'}</section><section class="upa-dashboard-profile-card"><div class="upa-section-title"><div><small>ASSET MIX</small><h2>Revenue concentration</h2></div></div><dl><div><dt>Largest asset share</dt><dd>${revenueMixData.largest ? percent(revenueMixData.largest.value / revenueMixData.total * 100) : "—"}</dd><span>${revenueMixData.largest ? escapeHtml(revenueMixData.largest.name) : "No revenue yet"}</span></div><div><dt>Top 3 share</dt><dd>${revenueMixData.items.length ? percent(revenueMixData.topThreeShare) : "—"}</dd><span>Of lifetime gross revenue</span></div><div><dt>Revenue-generating assets</dt><dd>${number(revenueMixData.packageCount)}</dd><span>With recorded gross revenue</span></div></dl></section></div><article class="upa-dashboard-chart"><div class="upa-section-title"><div><small>BUSINESS ACTIVITY</small><h2>Performance over time</h2><p>${intervalName(overviewChartData.interval)} revenue, pageviews, and downloads on aligned timelines.</p></div><div class="upa-section-tools"><span>${overviewChartData.points.length} periods</span>${chartActions("overview")}</div></div><div class="upa-pulse-legend"><span><i class="upa-pulse-revenue"></i>Gross revenue</span><span><i class="upa-pulse-views"></i>Pageviews</span><span><i class="upa-pulse-downloads"></i>Downloads</span></div><div id="upa-overview-chart" class="upa-overview-chart" role="img" aria-label="Aligned gross revenue, pageviews, and downloads timelines"></div></article>${dashboardPackageTable}</section>
             <section class="upa-dashboard-grid"><article class="upa-card upa-performance-card upa-view-panel upa-view-revenue" id="upa-view-revenue"><div class="upa-section-title"><div><small>PERFORMANCE</small><h2>Gross revenue over time</h2><p>${intervalName(interval)} totals from ${escapeHtml(dateBounds.start)} to ${escapeHtml(dateBounds.end)}.</p></div><div class="upa-section-tools"><span>${revenueChartData.points.length} periods</span>${chartActions("revenue")}</div></div><div class="upa-chart-summary"><div class="upa-chart-metric"><i></i><span>Gross revenue</span></div><dl><div><dt>Total</dt><dd>${money(revenueChartData.total)}</dd></div><div><dt>Average</dt><dd>${money(revenueChartData.average)}</dd></div><div><dt>Peak</dt><dd>${revenueChartData.peak ? money(revenueChartData.peak[1]) : money(0)}</dd></div></dl></div><div id="upa-revenue-chart" class="upa-revenue-chart" role="img" aria-label="Interactive gross revenue chart"></div><div class="upa-chart-hint"><span>Scroll or pinch to zoom</span><span>Drag to pan</span><span>Use the navigator handles for an exact window</span></div></article>
             <article class="upa-card upa-packages-card upa-view-panel upa-view-packages" id="upa-view-packages"><div class="upa-section-title"><div><small>AUDIENCE &amp; CONVERSION</small><h2>Package performance</h2><p>Top packages ranked by gross sales.</p></div><span>${packages.length} packages</span></div><div class="upa-package-list">${packages.slice(0, 10).map((item, index) => `<div class="upa-package-row"><b>${String(index + 1).padStart(2, "0")}</b><div><strong>${escapeHtml(item.name)}</strong><span>${number(item.pageViews)} views · ${item.conversion.toFixed(2)}% conversion · ${number(item.downloads)} downloads</span></div><em>${money(item.sales)}</em></div>`).join("")}</div></article></section>
             <section class="upa-card upa-insight-card upa-view-panel upa-view-lifetime" id="upa-view-lifetime"><div class="upa-section-title"><div><small>LIFETIME GROWTH</small><h2>How packages accumulate ${escapeHtml(lifetimeData.metric.noun)}</h2><p>Cumulative ${escapeHtml(lifetimeData.metric.label.toLowerCase())} across all available history makes momentum and plateaus visible.</p></div><div class="upa-section-tools"><span>${lifetimeData.pointCount} months</span>${chartActions("lifetime", !lifetimeData.series.length)}</div></div><div class="upa-insight-toolbar upa-lifetime-toolbar"><div class="upa-lifetime-controls"><label class="upa-inline-select">View<select id="upa-lifetime-style"><option value="area" ${lifetimeData.style === "area" ? "selected" : ""}>Stacked area</option><option value="lines" ${lifetimeData.style === "lines" ? "selected" : ""}>Cumulative lines</option></select></label><label class="upa-inline-select">Metric<select id="upa-lifetime-metric">${Object.values(LIFETIME_METRICS).map(metric => `<option value="${metric.id}" ${lifetimeData.metric.id === metric.id ? "selected" : ""}>${metric.label}</option>`).join("")}</select></label>${lifetimeData.style === "lines" ? `<label class="upa-inline-select">Align<select id="upa-lifetime-align"><option value="calendar" ${lifetimeData.align === "calendar" ? "selected" : ""}>Calendar time</option><option value="age" ${lifetimeData.align === "age" ? "selected" : ""}>${lifetimeData.metric.ageLabel}</option></select></label>` : ""}<details class="upa-package-filter"><summary><span>Packages</span><strong>${lifetimeData.explicitKeys.length ? `${lifetimeData.explicitKeys.length} selected` : `Top 8 by ${lifetimeData.metric.rankingLabel}`}</strong></summary><div class="upa-package-filter-panel"><div class="upa-package-filter-head"><span>Choose packages to compare</span><button data-action="lifetime-top">Use top 8</button></div><div class="upa-package-checklist">${lifetimeData.options.map(item => `<label><input type="checkbox" data-lifetime-package="${escapeHtml(item.key)}" ${lifetimeData.activePackages.some(active => active.key === item.key) ? "checked" : ""}><span><strong>${escapeHtml(item.name)}</strong><small>${lifetimeValue(lifetimeData.metric, item.total)}</small></span></label>`).join("")}</div></div></details></div></div><div class="upa-lifetime-legend">${lifetimeData.legend.map(item => `<button type="button" data-lifetime-legend-package="${escapeHtml(item.key)}" aria-pressed="${item.visible}" title="${item.visible ? "Hide" : "Show"} ${escapeHtml(item.name)}"><i style="background:${item.color}"></i><strong>${escapeHtml(item.name)}</strong><em>${lifetimeValue(lifetimeData.metric, item.total)}</em></button>`).join("")}</div><div id="upa-lifetime-chart" class="upa-lifetime-chart" role="img" aria-label="Cumulative ${escapeHtml(lifetimeData.metric.label.toLowerCase())} by package"></div></section>
@@ -958,6 +1038,8 @@
   function bindEvents() {
     document.addEventListener("click", async event => {
       if (!event.target.closest("#upa-root")) return;
+      const outsideAccountMenu = accountMenuOpen && !event.target.closest(".upa-publisher-account");
+      if (outsideAccountMenu) accountMenuOpen = false;
       if (isRangePopoverOpen && !event.target.closest(".upa-range-picker")) {
         isRangePopoverOpen = false; isCustomRangeEditorOpen = false;
         document.querySelector("#upa-root .upa-range-popover")?.remove();
@@ -999,7 +1081,7 @@
         await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); return;
       }
       const sectionButton = event.target.closest("button[data-section]");
-      if (sectionButton) { prefs.section = sectionButton.dataset.section; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); return; }
+      if (sectionButton) { prefs.section = sectionButton.dataset.section; accountMenuOpen = false; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); return; }
       const viewButton = event.target.closest("button[data-view]");
       if (viewButton) {
         prefs.section = "analytics"; prefs.view = viewButton.dataset.view;
@@ -1007,15 +1089,18 @@
         await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); return;
       }
       if (event.target.closest(".upa-fab")) { isOpen = true; render(); return; }
-      if (action === "close") { isOpen = false; render(); }
+      if (action === "toggle-account") { accountMenuOpen = !accountMenuOpen; render(); return; }
+      if (action === "open-settings") { prefs.section = "settings"; accountMenuOpen = false; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); return; }
+      if (action === "exit-analytics") { isOpen = false; accountMenuOpen = false; render(); return; }
       if (action === "sync-all") await startFullSync();
       if (action === "refresh") await incrementalSync(true);
       if (action === "stop-sync") { syncJob.active = false; syncJob.label = "Sync paused"; await saveJob(); render(); }
       if (action === "continue-sync") { syncJob.active = true; await saveJob(); render(); await runFullSync(); }
       if (action === "lifetime-top") { prefs.lifetimePackages = []; prefs.lifetimeHiddenPackages = []; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); }
       if (action === "sankey-top") { prefs.sankeyPackages = []; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); }
-      if (action === "export") download(`publisher-analytics-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), records }, null, 2));
-      if (action === "clear" && window.confirm("Clear all locally synced publisher data? This can't be undone.")) { await database({ type: "UPA_DB_CLEAR" }); records = []; syncJob = null; render(); }
+      if (action === "export") { download(`publisher-analytics-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), records }, null, 2)); toast("Your analytics backup is downloading."); }
+      if (action === "clear" && window.confirm("Clear all locally synced publisher data? This can't be undone.")) { await database({ type: "UPA_DB_CLEAR" }); records = []; syncJob = null; render(); toast("Local analytics data was cleared."); }
+      if (!action && outsideAccountMenu) render();
     });
     document.addEventListener("change", async event => {
       if (event.target.id === "upa-interval") { prefs.interval = event.target.value; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); }
@@ -1035,14 +1120,16 @@
       }
     });
     document.addEventListener("keydown", event => {
-      if (event.key !== "Escape" || !isRangePopoverOpen) return;
+      if (event.key !== "Escape") return;
+      if (accountMenuOpen) { accountMenuOpen = false; render(); requestAnimationFrame(() => document.querySelector("#upa-root .upa-account-trigger")?.focus()); return; }
+      if (!isRangePopoverOpen) return;
       isRangePopoverOpen = false; isCustomRangeEditorOpen = false; render();
       requestAnimationFrame(() => document.querySelector("#upa-root .upa-range-trigger")?.focus());
     });
     chrome.runtime.onMessage.addListener(message => {
       if (message?.type !== "UPA_TOGGLE") return;
       isOpen = !isOpen;
-      if (!isOpen) { isRangePopoverOpen = false; isCustomRangeEditorOpen = false; }
+      if (!isOpen) { isRangePopoverOpen = false; isCustomRangeEditorOpen = false; accountMenuOpen = false; }
       render();
     });
   }
@@ -1055,13 +1142,18 @@
     const storedLifetimeStyle = storedPrefs.lifetimeStyle === "area" && storedLifetimeAlign === "calendar" ? "area" : "lines";
     const lifetimeStyle = storedPrefs.lifetimeStackDefaultApplied === true ? storedLifetimeStyle : "area";
     prefs = {
-      section: storedPrefs.section || (storedPrefs.view && storedPrefs.view !== "overview" ? "analytics" : "dashboard"),
+      section: ["dashboard", "analytics", "settings"].includes(storedPrefs.section) ? storedPrefs.section : (storedPrefs.view && storedPrefs.view !== "overview" ? "analytics" : "dashboard"),
       view: analyticsViews.includes(storedPrefs.view) ? storedPrefs.view : "revenue", range: ranges.includes(storedPrefs.range) ? storedPrefs.range : "all", interval: storedPrefs.interval || "auto", start: storedPrefs.start || "", end: storedPrefs.end || "",
       calendarMetric: storedPrefs.calendarMetric || "sales", lifetimeMetric: LIFETIME_METRICS[storedPrefs.lifetimeMetric] ? storedPrefs.lifetimeMetric : "revenue", lifetimeStyle, lifetimeAlign: lifetimeStyle === "area" ? "calendar" : storedLifetimeAlign, lifetimeStackDefaultApplied: true, lifetimePackages: Array.isArray(storedPrefs.lifetimePackages) ? storedPrefs.lifetimePackages : [], lifetimeHiddenPackages: Array.isArray(storedPrefs.lifetimeHiddenPackages) ? storedPrefs.lifetimeHiddenPackages : [], sankeyPackages: Array.isArray(storedPrefs.sankeyPackages) ? storedPrefs.sankeyPackages : [], sankeyGroupBy: storedPrefs.sankeyCategoryDefaultApplied === true ? storedSankeyGroupBy : "category", sankeyCategoryDefaultApplied: true
     };
     await chrome.storage.local.set({ [PREFS_KEY]: prefs });
     records = await getAll(); syncJob = await getMeta(SYNC_KEY); isOpen = Boolean(syncJob?.active);
     const root = document.createElement("div"); root.id = "upa-root"; document.body.appendChild(root); bindEvents(); render();
+    refreshPublisherIdentity().catch(error => console.warn("Publisher Analytics+ could not load the publisher profile:", error.message));
+    setInterval(() => {
+      const header = publisherFromHeader();
+      if (header?.portalLabel && header.portalLabel !== publisherIdentity.portalLabel) refreshPublisherIdentity(true).catch(error => console.warn("Publisher Analytics+ could not refresh the publisher profile:", error.message));
+    }, 10000);
     if (syncJob?.active) runFullSync(); else if (records.length) incrementalSync();
   }
 
