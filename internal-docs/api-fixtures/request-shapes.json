@@ -1,0 +1,64 @@
+{
+  "warning": "Reconstructed working requests, not captured response fixtures. Authentication headers are intentionally omitted.",
+  "requests": {
+    "oncePublishedPackages": {
+      "method": "GET",
+      "path": "/publisher-v2-api/proxy?path=%2Fmanagement%2Fonce-published-packages&type=array"
+    },
+    "categories": {
+      "method": "GET",
+      "path": "/publisher-v2-api/proxy?path=%2Fmanagement%2Fcategories&type=array"
+    },
+    "packageMetadataFirstPage": {
+      "method": "POST",
+      "path": "/publisher-v2-api/management/packages",
+      "body": {
+        "limit": "200",
+        "order_by": "name",
+        "order": "asc"
+      }
+    },
+    "packageMetadataLaterPage": {
+      "method": "POST",
+      "path": "/publisher-v2-api/management/packages",
+      "body": {
+        "limit": "200",
+        "offset": "200",
+        "order_by": "name",
+        "order": "asc"
+      }
+    },
+    "monthlySales": {
+      "method": "GET",
+      "path": "/publisher-v2-api/monthly-sales?date=YYYY-MM-01"
+    },
+    "monthlyDownloads": {
+      "method": "GET",
+      "path": "/publisher-v2-api/monthly-downloads?date=YYYY-MM-01"
+    },
+    "publisherRevenues": {
+      "method": "GET",
+      "path": "/publisher-v2-api/publisher-revenues"
+    },
+    "dailyCatalog": {
+      "method": "POST",
+      "path": "/publisher-v2-api/dashboard/daily",
+      "body": {
+        "start_date": "YYYY-MM-DDT00:00:00Z",
+        "end_date": "YYYY-MM-DDT00:00:00Z",
+        "package_ids": []
+      }
+    },
+    "dailyPackage": {
+      "method": "POST",
+      "path": "/publisher-v2-api/dashboard/daily",
+      "body": {
+        "start_date": "YYYY-MM-DDT00:00:00Z",
+        "end_date": "YYYY-MM-DDT00:00:00Z",
+        "package_ids": [
+          "PACKAGE_ID_AS_STRING"
+        ]
+      }
+    }
+  }
+}

@@ -3,8 +3,9 @@
 A Chrome extension that turns Unity Publisher Portal data into a clearer historical dashboard.
 
 See [VISION.md](VISION.md) for the product direction and guiding principles.
-See [docs/DESIGN.md](docs/DESIGN.md) for the shared interface system.
-See [docs/RENDERING.md](docs/RENDERING.md) for the visualization architecture.
+
+Maintainer documentation, including the interface system, rendering architecture,
+data evidence, and decision log, lives in [internal-docs](internal-docs/README.md).
 
 ## Install locally
 
@@ -49,11 +50,13 @@ Your analytics data and preferences stay in this browser. The extension communic
 
 Removing the extension or selecting **Clear data** deletes the locally synced dashboard. Use **Export data** to create a local JSON backup.
 
+The current prototype does not isolate local records by publisher account. Clear the local data before switching to another publisher; otherwise the previous publisher's records can remain visible or be combined with new data. Maintainers should treat publisher isolation as required before broader release.
+
 ## Technical notes
 
 The extension uses the signed-in portal session and the reporting endpoints already used by the Unity Publisher Portal. Normalized data is stored in an extension-owned IndexedDB database; preferences and the resumable checkpoint use `chrome.storage.local`.
 
-Daily history is collected for the complete catalog and for each package in date windows supported by the portal. The available account history is discovered dynamically and is limited only by Unity's own analytics retention boundary.
+Daily history is requested for the complete catalog and for each package. The start is derived from the earliest package-publication or ledger date, but the current prototype clamps daily collection to `2019-01-01`. Unity's actual retention boundary, date semantics, revision behavior, currency contract, and completeness guarantees remain undocumented and are tracked in [internal-docs/DATA-EVIDENCE.md](internal-docs/DATA-EVIDENCE.md).
 
 Apache ECharts is bundled locally with the extension; no runtime code is loaded from a CDN. To rebuild the committed chart bundle after changing `scripts/echarts-entry.js`, run `npm install` and `npm run build:charts`.
 
