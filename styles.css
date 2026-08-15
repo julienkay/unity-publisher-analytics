@@ -175,8 +175,13 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 .upa-kpis article .upa-change-positive { color:#27865a; }
 .upa-kpis article .upa-change-negative { color:#c44e62; }
 .upa-kpis article .upa-change-neutral { color:#858c9d; }
-.upa-kpi-dot { width:7px;height:7px;border-radius:50%;box-shadow:0 0 0 5px rgba(108,92,231,.09); }
-.upa-violet { background:#7161e8; }.upa-cyan { background:#21a7bd;box-shadow:0 0 0 5px rgba(33,167,189,.09); }.upa-amber { background:#e3a22a;box-shadow:0 0 0 5px rgba(227,162,42,.1); }.upa-green { background:#31a46c;box-shadow:0 0 0 5px rgba(49,164,108,.09); }.upa-rose { background:#d45c70;box-shadow:0 0 0 5px rgba(212,92,112,.09); }
+.upa-kpi-help { position:relative;display:grid;place-items:center;flex:0 0 auto;width:26px;height:26px;margin:-5px -5px -5px 0;padding:0;border:0;border-radius:8px;background:transparent;color:#9aa1af;cursor:help; }
+.upa-kpi-help:hover { background:#f4f5f8;color:#666f82; }
+.upa-kpi-help:focus-visible { outline:2px solid #bdb6ef;outline-offset:1px; }
+.upa-kpi-help svg { width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.35;stroke-linecap:round;stroke-linejoin:round; }
+.upa-kpi-tooltip { position:absolute;top:calc(100% + 8px);right:0;z-index:20;width:220px;padding:10px 11px;border:1px solid #2f3546;border-radius:9px;background:#1c2130;color:#f5f6fa;font-size:var(--upa-font-support);font-weight:550;line-height:1.5;text-align:left;box-shadow:0 10px 28px rgba(25,30,44,.22);opacity:0;visibility:hidden;transform:translateY(-3px);pointer-events:none;transition:opacity .15s,transform .15s,visibility .15s; }
+.upa-kpi-tooltip::before { content:"";position:absolute;right:8px;bottom:100%;border:5px solid transparent;border-bottom-color:#2f3546; }
+.upa-kpi-help:hover .upa-kpi-tooltip,.upa-kpi-help:focus-visible .upa-kpi-tooltip { opacity:1;visibility:visible;transform:translateY(0); }
 .upa-dashboard-mix-card { min-width:0;padding:22px;border:1px solid var(--upa-line);border-radius:17px;background:var(--upa-card);box-shadow:0 5px 22px rgba(28,36,55,.045); }
 .upa-dashboard-mix-card .upa-section-title { margin-bottom:10px; }
 .upa-revenue-mix-layout { display:grid;grid-template-columns:minmax(210px,.92fr) minmax(220px,1.08fr);gap:18px;align-items:center; }
@@ -317,4 +322,4 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 @media (max-width:540px) { .upa-header-main{gap:17px}.upa-header-actions{gap:7px}.upa-range-popover{right:-45px}.upa-kpis{grid-template-columns:1fr}.upa-sync{align-items:flex-start;flex-wrap:wrap}.upa-sync-actions{width:100%}.upa-sync-actions button{width:100%}.upa-chart-summary{align-items:flex-start;flex-direction:column}.upa-chart-summary dl{width:100%;justify-content:space-between}.upa-chart-summary dl>div{align-items:flex-start}.upa-revenue-chart,.upa-lifetime-chart{height:330px}.upa-chart-hint{align-items:flex-start;flex-direction:column;gap:4px}.upa-chart-hint span:not(:first-child)::before{content:none}.upa-insight-facts{gap:12px;flex-wrap:wrap}.upa-inline-select{align-items:flex-start;flex-direction:column}.upa-inline-select select{width:100%}.upa-sankey-controls{width:100%;align-items:stretch;flex-direction:column}.upa-calendar-chart,.upa-sankey-chart{overflow-x:auto}.upa-welcome{padding:30px 24px}.upa-welcome h2{font-size:38px;letter-spacing:-2px}.upa-welcome-visual{display:none}.upa-fab{right:14px;bottom:14px} }
 @media (max-width:1180px) { .upa-settings-page{grid-template-columns:1fr} }
 @media (max-width:760px) { .upa-coverage-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.upa-settings-page{gap:14px}.upa-danger-zone{align-items:flex-start;flex-direction:column}.upa-danger-zone button{width:100%} }
-@media (prefers-reduced-motion:reduce) { .upa-panel,.upa-fab,.upa-toast,.upa-progress i,.upa-refresh-action,.upa-refresh-tooltip,.upa-lifetime-legend button,.upa-account-trigger,.upa-account-chevron{transition:none}.upa-refresh-action.upa-refreshing svg{animation:none} }
+@media (prefers-reduced-motion:reduce) { .upa-panel,.upa-fab,.upa-toast,.upa-progress i,.upa-refresh-action,.upa-refresh-tooltip,.upa-kpi-tooltip,.upa-lifetime-legend button,.upa-account-trigger,.upa-account-chevron{transition:none}.upa-refresh-action.upa-refreshing svg{animation:none} }
