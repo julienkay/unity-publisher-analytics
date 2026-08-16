@@ -1,6 +1,6 @@
 # Unity data evidence and semantics
 
-Status: evidence audit completed 2026-08-15.
+Status: evidence audit updated 2026-08-16.
 
 This document records what is known about the undocumented Unity Publisher Portal APIs used by Publisher Analytics+. It deliberately distinguishes working prototype behavior from a verified data contract.
 
@@ -20,7 +20,7 @@ No raw API response was retained. An attempt during this audit to obtain respons
 - Daily `end_date` is treated as exclusive, but exclusivity is **not confirmed** by a retained boundary test.
 - Whether inactive days are omitted or returned as explicit zero-valued objects is **unknown**. The normalizer does not synthesize missing dates.
 - The 2019 retention floor, two-day freshness delay, 365-day window, USD currency, and one-day incremental overlap are **provisional policies**, not verified platform contracts.
-- The dashboard is not publisher-isolated. Switching the active publisher can mix or display another publisher's local data. This is a high-priority correctness issue.
+- Publisher ownership is derived from the Portal's `publisherId`. Records, sync checkpoints, and preferences are isolated by that value; a missing identity fails closed.
 - “Complete history” currently means that all scheduled request loops finished without throwing. It does not mean that dates, scopes, or totals were reconciled.
 
 ## Endpoint inventory
@@ -29,6 +29,7 @@ All calls are same-origin requests to `https://publisher.unity.com`, using the s
 
 | Purpose | Request used | Expected response container | Evidence |
 |---|---|---|---|
+| Active publisher identity | `GET /publisher-v2-api/user` | Object containing `publisherId` and publisher display/organization fields | **Portal-bundle backed**; response shape observed in the official production JavaScript on 2026-08-16, but no raw signed-in response was retained |
 | Published package discovery | `GET /publisher-v2-api/proxy?path=/management/once-published-packages&type=array` | Array of package objects | **Observed once** |
 | Category definitions | `GET /publisher-v2-api/proxy?path=/management/categories&type=array` | Array of category objects | **Observed once** during category work |
 | Package metadata and category assignments | `POST /publisher-v2-api/management/packages` with string-valued `limit`, optional `offset`, `order_by: name`, and `order: asc` | Object containing a `package_versions` array and apparently `total` | **Observed once** during category work |
@@ -43,6 +44,14 @@ The original session also records two rejected variants:
 - `/publisher-v2-api/dashboard/daily` returned HTTP 400 before the working request form was reached. The response body and precise change that resolved it were not retained.
 
 These failures establish that routing and payload shape matter, but they are not sufficient to document Unity's full validation rules.
+
+## Publisher identity
+
+The official Publisher Portal production bundle inspected on 2026-08-16 requests `GET /publisher-v2-api/user` and maps `publisherId`, `publisherName`, `publisherOrgId`, `publisherOrgName`, and `defaultOrgId` from its result. In the same bundle, `publisherId` is used for Asset Store publisher-profile URLs, while `publisherOrgId` or `defaultOrgId` represents Unity organization context.
+
+Publisher Analytics+ therefore uses the non-empty string form of `publisherId` as the local ownership key. Organization IDs are retained only as descriptive identity metadata and never select analytics storage. Every normalized record includes its publisher ID; IndexedDB queries and deletes require that ID; sync metadata and preferences use the same boundary. The extension rechecks the active identity before committing each fetched batch. If identity cannot be established, it does not load or sync a publisher workspace.
+
+**Evidence limit:** this is stronger than DOM-name matching because it follows the Portal's own account model, but it is still based on the public production bundle rather than a retained sanitized response. A second publisher account has not yet been used to validate switching behavior or ID stability.
 
 ## Field-name provenance
 
@@ -157,19 +166,13 @@ The original account's CSV exports used `$`, so USD was **observed once on one p
 
 ## Publisher identity and isolation
 
-The interface reads the currently active publisher name and icon, but identity is not part of the data boundary:
+The interface requires `publisherId` before opening a local workspace. IndexedDB remains one physical database, but every record contains the publisher ID and all record queries are filtered through its index. Sync checkpoints use publisher-qualified keys, and `chrome.storage.local` preferences and cached presentation metadata are keyed per publisher.
 
-- IndexedDB uses one global database name and one `records` store.
-- Records contain no publisher ID.
-- The sync checkpoint and preferences use global `chrome.storage.local` keys.
-- `PUBLISHER_KEY` stores presentation identity, not a storage namespace or ownership assertion.
-- Changing publisher accounts does not automatically clear, migrate, or hide existing records.
+Changing publishers increments a workspace generation, hides the previous workspace immediately, and loads only the new publisher's records. In-flight sync work checks both the generation and the current Portal identity before committing a batch. Identity lookup failure hides local analytics until ownership can be established again.
 
-**Current behavior:** switching publishers can display the previous publisher's records and can combine new rows with old rows. Starting a full sync clears the entire database, but merely switching the portal publisher does not.
+Clearing local data deletes records and the sync checkpoint only for the active publisher. It deliberately does not clear preferences; future package groups must likewise use a separate durable key or store that the analytics-clear operation does not touch.
 
-The original session contains no evidence that multi-publisher use was consciously designed or tested. It should be treated as not considered in the prototype, not as a deliberate automatic-clear policy.
-
-Until namespacing exists, the extension should not claim trustworthy multi-publisher behavior. The preferred future design is to obtain a stable publisher identifier, namespace records/meta/preferences by it, and make publisher switching explicit. If a stable identifier cannot be obtained, fail closed on identity changes rather than mix data.
+This behavior is implemented but has not yet been exercised against a second live publisher account. Until that test is retained, the endpoint-derived boundary is supported by Portal-bundle evidence rather than multi-account observation.
 
 ## Meaning of “complete history”
 
@@ -233,5 +236,5 @@ Before treating the numbers as production-trustworthy:
 3. Prove daily range boundaries and missing-day behavior with paired requests around known active and inactive dates.
 4. Reconcile at least three complete months—paid-only, free-heavy, and refund-bearing—between daily, monthly, and portal-export totals.
 5. Measure data revisions by snapshotting recent days and months over several weeks.
-6. Validate currency and publisher identity across at least two publisher accounts before enabling account switching.
+6. Validate currency and `publisherId` stability across at least two publisher accounts, including a live switch with separate local histories.
 7. Replace request-loop “complete” with persisted, publisher-scoped coverage assertions.

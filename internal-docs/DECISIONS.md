@@ -81,13 +81,14 @@ This log makes data policies reviewable. “Provisional” means the code uses t
 - **Risk:** Incorrect presentation or aggregation for publishers settled or reported in another currency.
 - **Target decision:** Read and persist a verified reporting currency. If Unity guarantees USD, retain authoritative evidence. Never aggregate different currencies without conversion semantics.
 
-## D-011 — Store all publishers in one local namespace
+## D-011 — Isolate local workspaces by Asset Store publisher ID
 
-- **Status:** Open, priority P0.
-- **Current behavior:** One IndexedDB database, one record store, and global preference/checkpoint keys are shared regardless of active publisher. The displayed identity is not an ownership boundary.
-- **Basis:** No multi-publisher policy was considered or validated in the original session.
-- **Risk:** Data from different publishers can be displayed or combined, undermining every metric.
-- **Target decision:** Namespace by a stable publisher ID. On identity change, switch namespaces or fail closed and ask the user to initialize that publisher. Do not silently clear another publisher's data.
+- **Status:** Accepted; multi-account validation remains required.
+- **Current behavior:** `publisherId` from the Portal user response is required before local data is loaded. Records, sync checkpoints, display metadata, and preferences are publisher-scoped. An identity change replaces the visible workspace without clearing the previous publisher. Missing identity fails closed. Clearing data affects only the active publisher's analytics and checkpoint, not preferences.
+- **Basis:** The official production Portal bundle maps `publisherId` separately from `publisherOrgId`/`defaultOrgId` and uses `publisherId` for the Asset Store publisher profile. Analytics and packages belong to that publisher profile, so it is the appropriate ownership boundary.
+- **Consequence:** A publisher can exist within an organization without coupling analytics ownership to the organization's lifecycle or selection. Every write batch rechecks the active publisher before committing. Future durable data such as package groups must use the same publisher boundary and remain outside analytics clearing.
+- **Migration:** None. This is unreleased development software, and old unscoped records cannot be assigned safely; the IndexedDB v2 upgrade discards them. Legacy global preference keys are ignored.
+- **Review trigger:** A live second-account test shows that `publisherId` changes unexpectedly, collides, or does not follow the active Asset Store publisher.
 
 ## D-012 — Define “complete history” as successful request loops
 

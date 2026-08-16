@@ -48,9 +48,9 @@ Progress is saved as the history is synced. If the page is refreshed, the extens
 
 Your analytics data and preferences stay in this browser. The extension communicates only with the Unity Publisher Portal and has no telemetry, remote scripts, or external server.
 
-Removing the extension or selecting **Clear data** deletes the locally synced dashboard. Use **Export data** to create a local JSON backup.
+The signed-in Asset Store publisher ID selects an independent local workspace. Switching publishers loads that publisher's records, sync progress, and preferences without showing or combining another publisher's data.
 
-The current prototype does not isolate local records by publisher account. Clear the local data before switching to another publisher; otherwise the previous publisher's records can remain visible or be combined with new data. Maintainers should treat publisher isolation as required before broader release.
+Removing the extension deletes every local workspace. Selecting **Clear data** deletes only the active publisher's synced analytics and saved sync progress; it keeps preferences and does not affect data saved for other publishers. Use **Export data** to create a local JSON backup for the active publisher.
 
 ## Technical notes
 

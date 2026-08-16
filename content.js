@@ -3,12 +3,13 @@
   if (window.__unityPublisherAnalyticsLoaded) return;
   window.__unityPublisherAnalyticsLoaded = true;
 
-  const PREFS_KEY = "unityPublisherAnalyticsApiPrefsV1";
-  const PUBLISHER_KEY = "unityPublisherAnalyticsPublisherV1";
+  const PREFS_KEY_PREFIX = "unityPublisherAnalyticsPrefsV2";
+  const PUBLISHER_KEY_PREFIX = "unityPublisherAnalyticsPublisherV2";
   const SYNC_KEY = "apiSyncV1";
   const DAILY_API_MIN_DATE = "2019-01-01";
   const DAILY_API_WINDOW_DAYS = 365;
   const API = {
+    user: "/publisher-v2-api/user",
     packages: "/publisher-v2-api/proxy?path=%2Fmanagement%2Fonce-published-packages&type=array",
     categories: "/publisher-v2-api/proxy?path=%2Fmanagement%2Fcategories&type=array",
     packageMetadata: "/publisher-v2-api/management/packages",
@@ -23,7 +24,10 @@
   let isRefreshing = false;
   let isOpen = false;
   let accountMenuOpen = false;
-  let publisherIdentity = { portalLabel: "", name: "Publisher", icon: "" };
+  let publisherIdentity = { id: "", organizationId: "", portalLabel: "", name: "Publisher", icon: "" };
+  let publisherIdentityState = "loading";
+  let workspaceGeneration = 0;
+  let identityRefreshInFlight = false;
   let renderQueued = false;
   let isRangePopoverOpen = false;
   let isCustomRangeEditorOpen = false;
@@ -39,6 +43,7 @@
   const number = value => new Intl.NumberFormat().format(Number(value) || 0);
   const money = value => new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Number(value) || 0);
   const metricValue = (metric, value) => metric.currency ? money(value) : number(value);
+  const publisherStorageKey = (prefix, publisherId = publisherIdentity.id) => `${prefix}:${encodeURIComponent(publisherId)}`;
 
   function publisherFromHeader() {
     const button = [...document.querySelectorAll("button")].find(item => /User menu/i.test(item.getAttribute("aria-label") || "")) || document.querySelector('nav[aria-label="User"] button:last-of-type');
@@ -88,19 +93,28 @@
     } finally { frame.remove(); }
   }
 
-  async function refreshPublisherIdentity(force = false) {
+  async function fetchPublisherIdentity(force = false) {
+    const user = await apiJson(API.user);
+    const id = compact(user?.publisherId);
+    if (!id) throw new Error("The active Publisher Portal account did not provide a publisher identity.");
     const header = publisherFromHeader();
-    if (!header) return;
-    if (!force && publisherIdentity.portalLabel === header.portalLabel && publisherIdentity.icon) return;
-    const stored = await chrome.storage.local.get(PUBLISHER_KEY), cached = stored[PUBLISHER_KEY];
-    const fresh = cached && cached.portalLabel === header.portalLabel && Date.now() - Number(cached.updatedAt || 0) < 86400000;
-    publisherIdentity = fresh ? cached : { ...header, icon: "" };
-    scheduleRender();
-    if (fresh) return;
-    const profile = await loadPublisherProfile();
-    publisherIdentity = { ...header, name: profile?.name || header.name, icon: profile?.icon || "", updatedAt: Date.now() };
-    await chrome.storage.local.set({ [PUBLISHER_KEY]: publisherIdentity });
-    scheduleRender();
+    const key = publisherStorageKey(PUBLISHER_KEY_PREFIX, id);
+    const stored = await chrome.storage.local.get(key), cached = stored[key];
+    const fresh = !force && cached?.id === id && Date.now() - Number(cached.updatedAt || 0) < 86400000;
+    if (fresh) return cached;
+    const apiIcon = typeof user.avatar === "string" ? user.avatar : "";
+    const apiName = compact(user.publisherName || user.publisherOrgName);
+    const profile = apiIcon && apiName ? null : await loadPublisherProfile();
+    const identity = {
+      id,
+      organizationId: compact(user.publisherOrgId || user.defaultOrgId),
+      portalLabel: header?.portalLabel || "",
+      name: apiName || profile?.name || header?.name || "Publisher",
+      icon: apiIcon || profile?.icon || "",
+      updatedAt: Date.now()
+    };
+    await chrome.storage.local.set({ [key]: identity });
+    return identity;
   }
   const LIFETIME_METRICS = {
     revenue: { id: "revenue", label: "Gross revenue", noun: "revenue", rankingLabel: "revenue", field: "gross", source: "sales", currency: true, ageLabel: "Since first sale", ageDescription: "first sale", emptyLabel: "No package revenue is available yet." },
@@ -186,11 +200,12 @@
   }
 
   function recordId(record) {
-    return `${record.type}|${hash([record.type, record.date, record.period, record.packageId, record.package, record.price, record.description, record.scope].join("|"))}`;
+    return `${record.publisherId}|${record.type}|${hash([record.publisherId, record.type, record.date, record.period, record.packageId, record.package, record.price, record.description, record.scope].join("|"))}`;
   }
 
-  function normalize(record) {
-    return { ...record, id: recordId(record), source: "publisher-api", capturedAt: new Date().toISOString() };
+  function normalize(record, publisherId) {
+    const ownedRecord = { ...record, publisherId };
+    return { ...ownedRecord, id: recordId(ownedRecord), source: "publisher-api", capturedAt: new Date().toISOString() };
   }
 
   async function database(message) {
@@ -199,10 +214,11 @@
     return response.result;
   }
 
-  const getAll = () => database({ type: "UPA_DB_GET_ALL" });
-  const putMany = rows => rows.length ? database({ type: "UPA_DB_PUT_MANY", records: rows }) : Promise.resolve(0);
-  const getMeta = key => database({ type: "UPA_DB_GET_META", key });
-  const setMeta = (key, value) => database({ type: "UPA_DB_SET_META", key, value });
+  const getAll = (publisherId = publisherIdentity.id) => database({ type: "UPA_DB_GET_ALL", publisherId });
+  const putMany = (rows, publisherId = publisherIdentity.id) => rows.length ? database({ type: "UPA_DB_PUT_MANY", publisherId, records: rows }) : Promise.resolve(0);
+  const getMeta = (key, publisherId = publisherIdentity.id) => database({ type: "UPA_DB_GET_META", publisherId, key });
+  const setMeta = (key, value, publisherId = publisherIdentity.id) => database({ type: "UPA_DB_SET_META", publisherId, key, value });
+  const clearPublisherData = (publisherId = publisherIdentity.id) => database({ type: "UPA_DB_CLEAR", publisherId });
 
   async function apiJson(path, options = {}) {
     const requestId = crypto.randomUUID(), method = options.method || "GET";
@@ -273,15 +289,15 @@
     }).filter(item => item.id);
   }
 
-  function normalizeSales(raw, period) {
+  function normalizeSales(raw, period, publisherId) {
     return (Array.isArray(raw) ? raw : []).map(item => normalize({
       type: "sales", period, date: `${period}-01`, packageId: String(valueFrom(item, ["package_id", "packageId"]) || ""), package: valueFrom(item, ["name", "package_name"]), category: packageCategory(item),
       price: toNumber(item.price), qty: toNumber(valueFrom(item, ["sales", "quantity"])), refunds: toNumber(item.refunds), chargebacks: toNumber(item.chargebacks),
       gross: toNumber(item.gross), net: toNumber(item.revenue), first: parseDate(item.first), last: parseDate(item.last), currency: "USD"
-    }));
+    }, publisherId));
   }
 
-  function normalizeDownloads(raw, period) {
+  function normalizeDownloads(raw, period, publisherId) {
     return (Array.isArray(raw) ? raw : []).map(item => {
       const data = item.downloads || {};
       const freeDownloads = toNumber(valueFrom(data, ["free_downloads", "freeDownloads"])), entitledDownloads = toNumber(valueFrom(data, ["entitled_downloads", "entitledDownloads"]));
@@ -289,18 +305,18 @@
       return normalize({ type: "downloads", period, date: `${period}-01`, packageId: String(valueFrom(item, ["package_id", "packageId"]) || ""), package: item.name, category: packageCategory(item),
         downloads: freeDownloads + entitledDownloads, users: freeUsers + entitledUsers, freeDownloads, freeUsers, entitledDownloads, entitledUsers,
         freeFirst: parseDate(valueFrom(data, ["free_first", "freeFirst"])), freeLast: parseDate(valueFrom(data, ["free_last", "freeLast"])),
-        entitledFirst: parseDate(valueFrom(data, ["entitled_first", "entitledFirst"])), entitledLast: parseDate(valueFrom(data, ["entitled_last", "entitledLast"])) });
+        entitledFirst: parseDate(valueFrom(data, ["entitled_first", "entitledFirst"])), entitledLast: parseDate(valueFrom(data, ["entitled_last", "entitledLast"])) }, publisherId);
     });
   }
 
-  function normalizeRevenue(raw) {
+  function normalizeRevenue(raw, publisherId) {
     return (Array.isArray(raw) ? raw : []).map(item => {
       const date = parseDate(item.date);
-      return normalize({ type: "revenue", period: date?.slice(0, 7), date, description: item.description, debit: toNumber(item.debit), credit: toNumber(item.credit), balance: toNumber(item.balance), currency: "USD" });
+      return normalize({ type: "revenue", period: date?.slice(0, 7), date, description: item.description, debit: toNumber(item.debit), credit: toNumber(item.credit), balance: toNumber(item.balance), currency: "USD" }, publisherId);
     }).filter(item => item.date);
   }
 
-  function normalizeDaily(raw, scope) {
+  function normalizeDaily(raw, scope, publisherId) {
     const result = [];
     for (const [dateKey, metrics] of Object.entries(raw || {})) {
       if (!metrics || typeof metrics !== "object") continue;
@@ -312,7 +328,7 @@
       result.push(normalize({ type: "daily", period: date.slice(0, 7), date, scope: scope.id ? "package" : "all", packageId: scope.id, package: scope.name, category: scope.category || "",
         sales: toNumber(valueFrom(metrics, ["gross"])), salesQty, paidQty, freeQty, pageViews, conversionRate: Math.min(1, salesQty / (pageViews || 1)) * 100,
         downloads: toNumber(metrics.downloads), wishlisted: toNumber(metrics.wishlisted), refunds: toNumber(metrics.refunds), ratingAvg: toNumber(valueFrom(metrics, ["rating", "ratingAvg"])),
-        quickLooks: toNumber(valueFrom(metrics, ["quick_looks", "quickLooks"])), carted: toNumber(metrics.carted), currency: "USD" }));
+        quickLooks: toNumber(valueFrom(metrics, ["quick_looks", "quickLooks"])), carted: toNumber(metrics.carted), currency: "USD" }, publisherId));
     }
     return result;
   }
@@ -323,90 +339,167 @@
     return [dates[0], DAILY_API_MIN_DATE].sort().at(-1);
   }
 
-  async function saveJob() { await setMeta(SYNC_KEY, syncJob); }
+  function sanitizedPreferences(storedPrefs = {}) {
+    const analyticsViews = ["revenue", "lifetime", "calendar", "sankey", "packages"], ranges = ["all", "7d", "30d", "3", "6", "12", "36", "60", "mtd", "ytd", "custom"];
+    const storedSankeyGroupBy = ["none", "category"].includes(storedPrefs.sankeyGroupBy) ? storedPrefs.sankeyGroupBy : "category";
+    const storedLifetimeAlign = storedPrefs.lifetimeAlign === "age" ? "age" : "calendar";
+    const storedLifetimeStyle = storedPrefs.lifetimeStyle === "area" && storedLifetimeAlign === "calendar" ? "area" : "lines";
+    const lifetimeStyle = storedPrefs.lifetimeStackDefaultApplied === true ? storedLifetimeStyle : "area";
+    return {
+      section: ["dashboard", "analytics", "settings"].includes(storedPrefs.section) ? storedPrefs.section : (storedPrefs.view && storedPrefs.view !== "overview" ? "analytics" : "dashboard"),
+      view: analyticsViews.includes(storedPrefs.view) ? storedPrefs.view : "revenue", range: ranges.includes(storedPrefs.range) ? storedPrefs.range : "all", interval: storedPrefs.interval || "auto", start: storedPrefs.start || "", end: storedPrefs.end || "",
+      performancePackages: Array.isArray(storedPrefs.performancePackages) ? storedPrefs.performancePackages : [], performanceHiddenPackages: Array.isArray(storedPrefs.performanceHiddenPackages) ? storedPrefs.performanceHiddenPackages : [], calendarMetric: storedPrefs.calendarMetric || "sales", lifetimeMetric: LIFETIME_METRICS[storedPrefs.lifetimeMetric] ? storedPrefs.lifetimeMetric : "revenue", lifetimeStyle, lifetimeAlign: lifetimeStyle === "area" ? "calendar" : storedLifetimeAlign, lifetimeStackDefaultApplied: true, lifetimePackages: Array.isArray(storedPrefs.lifetimePackages) ? storedPrefs.lifetimePackages : [], lifetimeHiddenPackages: Array.isArray(storedPrefs.lifetimeHiddenPackages) ? storedPrefs.lifetimeHiddenPackages : [], sankeyPackages: Array.isArray(storedPrefs.sankeyPackages) ? storedPrefs.sankeyPackages : [], sankeyGroupBy: storedPrefs.sankeyCategoryDefaultApplied === true ? storedSankeyGroupBy : "category", sankeyCategoryDefaultApplied: true
+    };
+  }
 
-  async function prepareFullSync() {
+  async function savePrefs() {
+    if (!publisherIdentity.id) return;
+    await chrome.storage.local.set({ [publisherStorageKey(PREFS_KEY_PREFIX)]: prefs });
+  }
+
+  function ownsWorkspace(publisherId, generation) {
+    return publisherIdentity.id === publisherId && workspaceGeneration === generation;
+  }
+
+  async function activatePublisher(identity, { initial = false, resume = true } = {}) {
+    workspaceGeneration += 1;
+    const generation = workspaceGeneration;
+    publisherIdentity = identity;
+    publisherIdentityState = "loading";
+    records = [];
+    syncJob = null;
+    isRefreshing = false;
+    render();
+    const preferencesKey = publisherStorageKey(PREFS_KEY_PREFIX, identity.id);
+    const stored = await chrome.storage.local.get(preferencesKey);
+    if (!ownsWorkspace(identity.id, generation)) return;
+    prefs = sanitizedPreferences(stored[preferencesKey] || {});
+    await chrome.storage.local.set({ [preferencesKey]: prefs });
+    const [publisherRecords, publisherJob] = await Promise.all([getAll(identity.id), getMeta(SYNC_KEY, identity.id)]);
+    if (!ownsWorkspace(identity.id, generation)) return;
+    records = publisherRecords;
+    syncJob = publisherJob;
+    publisherIdentityState = "ready";
+    if (initial && syncJob?.active) isOpen = true;
+    render();
+    if (!resume) return;
+    if (syncJob?.active) runFullSync(identity.id, generation);
+    else if (records.length) incrementalSync(false, identity.id, generation);
+  }
+
+  async function verifyPublisherWorkspace(publisherId, generation) {
+    const identity = await fetchPublisherIdentity();
+    if (identity.id !== publisherId) {
+      if (identity.id !== publisherIdentity.id || publisherIdentityState !== "ready") await activatePublisher(identity);
+      throw new Error("The active publisher changed while data was being synced.");
+    }
+    if (!ownsWorkspace(publisherId, generation)) throw new Error("The publisher workspace changed while data was being synced.");
+    publisherIdentity = identity;
+  }
+
+  async function saveJob(job = syncJob, publisherId = publisherIdentity.id) { await setMeta(SYNC_KEY, job, publisherId); }
+
+  async function prepareFullSync(publisherId, generation) {
     const [packages, revenueRaw] = await Promise.all([fetchPackages(), apiJson(API.revenue)]);
-    const revenue = normalizeRevenue(revenueRaw); await putMany(revenue);
+    await verifyPublisherWorkspace(publisherId, generation);
+    const revenue = normalizeRevenue(revenueRaw, publisherId); await putMany(revenue, publisherId);
+    if (!ownsWorkspace(publisherId, generation)) return;
     const start = earliestAccountDate(packages, revenue), endInclusive = latestCompleteDailyDate(), months = monthSequence(start, new Date().toISOString().slice(0, 10));
     const scopes = [{ id: null, name: "All assets" }, ...packages];
     const chunksPerScope = Math.max(1, Math.ceil((new Date(`${addDays(endInclusive, 1)}T00:00:00Z`) - new Date(`${start}T00:00:00Z`)) / 86400000 / DAILY_API_WINDOW_DAYS));
-    syncJob = { active: true, phase: "months", startedAt: new Date().toISOString(), packages, start, endExclusive: addDays(endInclusive, 1), months, monthIndex: 0,
+    syncJob = { publisherId, active: true, phase: "months", startedAt: new Date().toISOString(), packages, start, endExclusive: addDays(endInclusive, 1), months, monthIndex: 0,
       scopes, scopeIndex: 0, cursor: start, completed: 1, total: 1 + months.length * 2 + scopes.length * chunksPerScope, label: "Getting your history ready" };
-    await saveJob(); render();
+    await saveJob(syncJob, publisherId); render();
   }
 
-  async function runFullSync() {
+  async function runFullSync(publisherId = publisherIdentity.id, generation = workspaceGeneration) {
     try {
-      if (!syncJob?.active || !syncJob.phase) await prepareFullSync();
-      if (syncJob.phase === "months") {
-        while (syncJob.active && syncJob.monthIndex < syncJob.months.length) {
-          const month = syncJob.months[syncJob.monthIndex]; syncJob.label = `Syncing sales and downloads · ${month}`; render();
+      if (!ownsWorkspace(publisherId, generation)) return;
+      if (!syncJob?.active || !syncJob.phase) await prepareFullSync(publisherId, generation);
+      if (!ownsWorkspace(publisherId, generation)) return;
+      const job = syncJob;
+      if (job.publisherId !== publisherId) throw new Error("The saved sync does not belong to this publisher.");
+      if (job.phase === "months") {
+        while (job.active && ownsWorkspace(publisherId, generation) && job.monthIndex < job.months.length) {
+          const month = job.months[job.monthIndex]; job.label = `Syncing sales and downloads · ${month}`; render();
           const [salesRaw, downloadsRaw] = await Promise.all([apiJson(API.sales(month)), apiJson(API.downloads(month))]);
-          await putMany([...normalizeSales(salesRaw, month), ...normalizeDownloads(downloadsRaw, month)]);
-          syncJob.monthIndex += 1; syncJob.completed += 2; await saveJob(); render(); await sleep(80);
+          await verifyPublisherWorkspace(publisherId, generation);
+          await putMany([...normalizeSales(salesRaw, month, publisherId), ...normalizeDownloads(downloadsRaw, month, publisherId)], publisherId);
+          job.monthIndex += 1; job.completed += 2; await saveJob(job, publisherId); render(); await sleep(80);
         }
-        if (!syncJob.active) return;
-        syncJob.phase = "daily"; await saveJob();
+        if (!job.active || !ownsWorkspace(publisherId, generation)) return;
+        job.phase = "daily"; await saveJob(job, publisherId);
       }
-      if (syncJob.phase === "daily") {
-        while (syncJob.active && syncJob.scopeIndex < syncJob.scopes.length) {
-          const scope = syncJob.scopes[syncJob.scopeIndex];
-          while (syncJob.active && syncJob.cursor < syncJob.endExclusive) {
-            const chunkEnd = [addDays(syncJob.cursor, DAILY_API_WINDOW_DAYS), syncJob.endExclusive].sort()[0];
-            syncJob.label = `Syncing daily performance · ${scope.name} · ${syncJob.cursor}–${addDays(chunkEnd, -1)}`; render();
+      if (job.phase === "daily") {
+        while (job.active && ownsWorkspace(publisherId, generation) && job.scopeIndex < job.scopes.length) {
+          const scope = job.scopes[job.scopeIndex];
+          while (job.active && ownsWorkspace(publisherId, generation) && job.cursor < job.endExclusive) {
+            const chunkEnd = [addDays(job.cursor, DAILY_API_WINDOW_DAYS), job.endExclusive].sort()[0];
+            job.label = `Syncing daily performance · ${scope.name} · ${job.cursor}–${addDays(chunkEnd, -1)}`; render();
             let raw;
-            try { raw = await apiJson(API.daily, { method: "POST", body: { start_date: apiTimestamp(syncJob.cursor), end_date: apiTimestamp(chunkEnd), package_ids: scope.id ? [scope.id] : [] } }); }
-            catch (error) { throw new Error(`${error.message} Range ${syncJob.cursor}–${addDays(chunkEnd, -1)}, scope ${scope.name}.`); }
-            await putMany(normalizeDaily(raw, scope));
-            syncJob.cursor = chunkEnd; syncJob.completed += 1; await saveJob(); render(); await sleep(120);
+            try { raw = await apiJson(API.daily, { method: "POST", body: { start_date: apiTimestamp(job.cursor), end_date: apiTimestamp(chunkEnd), package_ids: scope.id ? [scope.id] : [] } }); }
+            catch (error) { throw new Error(`${error.message} Range ${job.cursor}–${addDays(chunkEnd, -1)}, scope ${scope.name}.`); }
+            await verifyPublisherWorkspace(publisherId, generation);
+            await putMany(normalizeDaily(raw, scope, publisherId), publisherId);
+            job.cursor = chunkEnd; job.completed += 1; await saveJob(job, publisherId); render(); await sleep(120);
           }
-          syncJob.scopeIndex += 1; syncJob.cursor = syncJob.start; await saveJob();
+          if (!ownsWorkspace(publisherId, generation)) return;
+          job.scopeIndex += 1; job.cursor = job.start; await saveJob(job, publisherId);
         }
       }
-      if (syncJob.active) {
+      if (job.active && ownsWorkspace(publisherId, generation)) {
         const completedAt = new Date().toISOString();
-        syncJob.active = false; syncJob.phase = "complete"; syncJob.finishedAt = completedAt; syncJob.lastRefreshedAt = completedAt; syncJob.label = "Your history is up to date";
-        await saveJob(); records = await getAll(); render(); toast("Your complete publisher history is ready.");
+        job.active = false; job.phase = "complete"; job.finishedAt = completedAt; job.lastRefreshedAt = completedAt; job.label = "Your history is up to date";
+        await saveJob(job, publisherId); records = await getAll(publisherId); render(); toast("Your complete publisher history is ready.");
       }
     } catch (error) {
+      if (!ownsWorkspace(publisherId, generation)) return;
       console.error("Publisher Analytics+ sync failed:", error);
-      syncJob = { ...(syncJob || {}), active: false, phase: "error", error: error.message, label: "Sync couldn't be completed" }; await saveJob(); render(); toast("We couldn't finish syncing your history. Please try again.", "error");
+      syncJob = { ...(syncJob || {}), publisherId, active: false, phase: "error", error: error.message, label: "Sync couldn't be completed" }; await saveJob(syncJob, publisherId); render(); toast("We couldn't finish syncing your history. Please try again.", "error");
     }
   }
 
   async function startFullSync() {
-    await database({ type: "UPA_DB_CLEAR" }); records = []; syncJob = null; isOpen = true; render(); await runFullSync();
+    const identity = await fetchPublisherIdentity(true);
+    if (identity.id !== publisherIdentity.id) await activatePublisher(identity, { resume: false });
+    const publisherId = identity.id, generation = workspaceGeneration;
+    await clearPublisherData(publisherId);
+    if (!ownsWorkspace(publisherId, generation)) return;
+    records = []; syncJob = null; isOpen = true; render(); await runFullSync(publisherId, generation);
   }
 
-  async function incrementalSync(announce = false) {
+  async function incrementalSync(announce = false, publisherId = publisherIdentity.id, generation = workspaceGeneration) {
     if (syncJob?.active || isRefreshing || !records.length) return;
     isRefreshing = true; render();
     let notice = "", noticeType = "success";
     try {
       const packages = await fetchPackages(), currentMonth = new Date().toISOString().slice(0, 7);
       const [salesRaw, downloadsRaw, revenueRaw] = await Promise.all([apiJson(API.sales(currentMonth)), apiJson(API.downloads(currentMonth)), apiJson(API.revenue)]);
-      await putMany([...normalizeSales(salesRaw, currentMonth), ...normalizeDownloads(downloadsRaw, currentMonth), ...normalizeRevenue(revenueRaw)]);
+      await verifyPublisherWorkspace(publisherId, generation);
+      await putMany([...normalizeSales(salesRaw, currentMonth, publisherId), ...normalizeDownloads(downloadsRaw, currentMonth, publisherId), ...normalizeRevenue(revenueRaw, publisherId)], publisherId);
       const scopes = [{ id: null, name: "All assets" }, ...packages];
       for (const scope of scopes) {
+        if (!ownsWorkspace(publisherId, generation)) return;
         const last = records.filter(item => item.type === "daily" && item.packageId === scope.id).map(item => item.date).sort().at(-1);
         if (!last) continue;
         const endExclusive = addDays(latestCompleteDailyDate(), 1);
         let cursor = last;
-        while (cursor < endExclusive) {
+        while (ownsWorkspace(publisherId, generation) && cursor < endExclusive) {
           const chunkEnd = [addDays(cursor, DAILY_API_WINDOW_DAYS), endExclusive].sort()[0];
           const raw = await apiJson(API.daily, { method: "POST", body: { start_date: apiTimestamp(cursor), end_date: apiTimestamp(chunkEnd), package_ids: scope.id ? [scope.id] : [] } });
-          await putMany(normalizeDaily(raw, scope)); cursor = chunkEnd;
+          await verifyPublisherWorkspace(publisherId, generation);
+          await putMany(normalizeDaily(raw, scope, publisherId), publisherId); cursor = chunkEnd;
         }
       }
-      records = await getAll();
-      syncJob = { ...(syncJob || {}), packages, active: false, phase: "complete", error: "", label: "Your history is up to date", lastRefreshedAt: new Date().toISOString() };
-      await saveJob();
+      if (!ownsWorkspace(publisherId, generation)) return;
+      records = await getAll(publisherId);
+      syncJob = { ...(syncJob || {}), publisherId, packages, active: false, phase: "complete", error: "", label: "Your history is up to date", lastRefreshedAt: new Date().toISOString() };
+      await saveJob(syncJob, publisherId);
       if (announce) notice = "Your publisher data has been refreshed.";
     } catch (error) {
       console.warn("Publisher Analytics+ incremental API sync failed:", error.message);
       if (announce) { notice = "We couldn't refresh your publisher data. Please try again."; noticeType = "error"; }
-    } finally { isRefreshing = false; render(); if (notice) toast(notice, noticeType); }
+    } finally { if (ownsWorkspace(publisherId, generation)) { isRefreshing = false; render(); if (notice) toast(notice, noticeType); } }
   }
 
   function availableDateBounds() {
@@ -1016,7 +1109,7 @@
     const downloadMonths = new Set(records.filter(item => item.type === "downloads").map(item => item.period)).size;
     const performanceDays = new Set(records.filter(item => item.type === "daily" && item.scope === "all").map(item => item.date)).size;
     const revenueEntries = records.filter(item => item.type === "revenue").length;
-    return `<section class="upa-settings-page"><article class="upa-card upa-settings-card"><div class="upa-section-title"><div><small>LOCAL DATA</small><h2>Data coverage</h2><p>Available history stored for the active publisher in this browser.</p></div></div><div class="upa-coverage-grid"><div><span>Sales</span><strong>${number(salesMonths)}</strong><small>months</small></div><div><span>Downloads</span><strong>${number(downloadMonths)}</strong><small>months</small></div><div><span>Performance</span><strong>${number(performanceDays)}</strong><small>days</small></div><div><span>Revenue</span><strong>${number(revenueEntries)}</strong><small>entries</small></div></div></article><article class="upa-card upa-settings-card"><div class="upa-section-title"><div><small>DATA MANAGEMENT</small><h2>Browser storage</h2><p>Your analytics stays in this browser and is never sent to an external service.</p></div></div><button class="upa-data-action" type="button" data-action="export" ${records.length ? "" : "disabled"}><span><strong>Export data</strong><small>Download a JSON backup of your analytics.</small></span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5v10m-4-4 4 4 4-4"></path><path d="M3.5 14v2.5h13V14"></path></svg></button><div class="upa-danger-zone"><div><strong>Clear local data</strong><span>Deletes synced analytics and the saved sync checkpoint.</span></div><button type="button" data-action="clear" ${records.length || syncJob ? "" : "disabled"}>Clear data</button></div></article></section>`;
+    return `<section class="upa-settings-page"><article class="upa-card upa-settings-card"><div class="upa-section-title"><div><small>LOCAL DATA</small><h2>Data coverage</h2><p>Available history stored for ${escapeHtml(publisherIdentity.name)} in this browser.</p></div></div><div class="upa-coverage-grid"><div><span>Sales</span><strong>${number(salesMonths)}</strong><small>months</small></div><div><span>Downloads</span><strong>${number(downloadMonths)}</strong><small>months</small></div><div><span>Performance</span><strong>${number(performanceDays)}</strong><small>days</small></div><div><span>Revenue</span><strong>${number(revenueEntries)}</strong><small>entries</small></div></div></article><article class="upa-card upa-settings-card"><div class="upa-section-title"><div><small>DATA MANAGEMENT</small><h2>Browser storage</h2><p>Your analytics stays in this browser and is never sent to an external service. Each publisher has a separate local workspace.</p></div></div><button class="upa-data-action" type="button" data-action="export" ${records.length ? "" : "disabled"}><span><strong>Export data</strong><small>Download a JSON backup of this publisher's analytics.</small></span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5v10m-4-4 4 4 4-4"></path><path d="M3.5 14v2.5h13V14"></path></svg></button><div class="upa-danger-zone"><div><strong>Clear local data</strong><span>Deletes this publisher's synced analytics and saved sync progress. Preferences are kept.</span></div><button type="button" data-action="clear" ${records.length || syncJob ? "" : "disabled"}>Clear data</button></div></article></section>`;
   }
 
   function render() {
@@ -1140,7 +1233,7 @@
         <section class="upa-workspace">
           <header class="upa-header ${section === "dashboard" || section === "settings" ? "upa-header-compact" : ""}"><div class="upa-header-main"><div class="upa-header-copy"><small>Publisher workspace</small><h1>${hasData || section === "settings" ? sectionMeta.label : "Welcome"}</h1><div class="upa-header-subline"><p>${hasData || section === "settings" ? sectionMeta.description : "Build a complete, configurable view of your publishing business."}</p>${refreshAction}</div></div><div class="upa-header-actions">${intervalControl}${rangeControl}</div></div>${hasData ? `<nav class="upa-mobile-nav" aria-label="Workspace sections"><button class="${section === "dashboard" ? "upa-active" : ""}" type="button" data-section="dashboard">Dashboard</button><button class="${section === "analytics" ? "upa-active" : ""}" type="button" data-section="analytics">Analytics</button><button class="${section === "settings" ? "upa-active" : ""}" type="button" data-section="settings">Settings</button></nav>` : ""}${hasData && section === "analytics" ? `<nav class="upa-view-tabs" role="tablist" aria-label="Analytics views">${viewTabs}</nav>` : ""}</header>
           ${(syncJob?.active || syncJob?.phase === "error" || syncIncomplete) ? `<section class="upa-sync ${syncJob?.active ? "upa-syncing" : ""}">${syncIcon}<div class="upa-sync-copy"><strong>${escapeHtml(syncTitle)}</strong><span>${escapeHtml(syncDetail)}</span>${syncJob?.active ? '<small class="upa-sync-note">Large catalogs can take several minutes. Keep this tab open; if interrupted, progress resumes when you return.</small>' : ""}</div><div class="upa-sync-actions">${syncJob?.active ? '<button data-action="stop-sync">Pause</button>' : syncIncomplete ? '<button data-action="continue-sync">Continue</button>' : '<button data-action="sync-all">Try full sync again</button>'}</div>${syncJob?.active ? `<div class="upa-progress"><i style="width:${progress}%"></i></div>` : ""}</section>` : ""}
-          <main class="upa-content" data-section="${section}" data-view="${view}">${section === "settings" ? settingsPanel() : records.length ? `<section class="upa-dashboard-view upa-view-panel upa-view-dashboard" id="upa-view-dashboard">${dashboardSummary}<article class="upa-dashboard-chart"><div class="upa-section-title"><div><small>BUSINESS ACTIVITY</small><h2>Performance over time</h2><p>${intervalName(overviewChartData.interval)} revenue, pageviews, and downloads on aligned timelines.</p></div><div class="upa-section-tools"><span>${overviewChartData.points.length} periods</span>${chartActions("overview")}</div></div><div class="upa-pulse-legend"><span><i class="upa-pulse-revenue"></i>Gross revenue</span><span><i class="upa-pulse-views"></i>Pageviews</span><span><i class="upa-pulse-downloads"></i>Downloads</span></div><div id="upa-overview-chart" class="upa-overview-chart" role="img" aria-label="Aligned gross revenue, pageviews, and downloads timelines"></div></article>${dashboardPackageTable}</section>
+          <main class="upa-content" data-section="${section}" data-view="${view}">${publisherIdentityState !== "ready" ? `<section class="upa-welcome"><div class="upa-welcome-copy"><small>PUBLISHER WORKSPACE</small><h2>${publisherIdentityState === "loading" ? "Checking your publisher…" : "We couldn't identify the active publisher."}</h2><p>${publisherIdentityState === "loading" ? "Your local workspace will open in a moment." : "Refresh the Publisher Portal, or try again while signed in."}</p>${publisherIdentityState === "error" ? '<button class="upa-primary upa-large" data-action="retry-publisher">Try again</button>' : ""}</div></section>` : section === "settings" ? settingsPanel() : records.length ? `<section class="upa-dashboard-view upa-view-panel upa-view-dashboard" id="upa-view-dashboard">${dashboardSummary}<article class="upa-dashboard-chart"><div class="upa-section-title"><div><small>BUSINESS ACTIVITY</small><h2>Performance over time</h2><p>${intervalName(overviewChartData.interval)} revenue, pageviews, and downloads on aligned timelines.</p></div><div class="upa-section-tools"><span>${overviewChartData.points.length} periods</span>${chartActions("overview")}</div></div><div class="upa-pulse-legend"><span><i class="upa-pulse-revenue"></i>Gross revenue</span><span><i class="upa-pulse-views"></i>Pageviews</span><span><i class="upa-pulse-downloads"></i>Downloads</span></div><div id="upa-overview-chart" class="upa-overview-chart" role="img" aria-label="Aligned gross revenue, pageviews, and downloads timelines"></div></article>${dashboardPackageTable}</section>
             <section class="upa-dashboard-grid"><section class="upa-view-panel upa-view-revenue upa-performance-view" id="upa-view-revenue"><article class="upa-card upa-performance-controls"><div class="upa-performance-control-layout"><div><small>CATALOG PERFORMANCE</small><h2>Compare the signals that drive your business</h2><p>Start with the catalog total, or choose packages to give every package its own line across all four charts.</p></div><details class="upa-package-filter upa-performance-package-filter"><summary><span>Packages</span><strong>${performanceSelectionLabel}</strong></summary><div class="upa-package-filter-panel"><div class="upa-package-filter-head"><span>Choose packages · revenue in range</span><button type="button" data-action="performance-all">Show all assets</button></div><div class="upa-package-checklist">${performanceData.options.length ? performanceData.options.map(item => `<label><input type="checkbox" data-performance-package="${escapeHtml(item.key)}" ${performanceData.explicitKeys.includes(item.key) ? "checked" : ""}><span><strong>${escapeHtml(item.name)}</strong><small>${money(item.revenue)}</small></span></label>`).join("") : '<div class="upa-package-filter-empty">No package history is available yet.</div>'}</div></div></details></div>${performanceLegend}</article><div class="upa-performance-chart-grid">${performanceChartsMarkup}</div><div class="upa-chart-hint upa-performance-hint"><span>Every chart uses the same package colors</span><span>Zoom and pan stay aligned</span><span>Use the navigator handles for an exact window</span></div></section>
             <article class="upa-card upa-packages-card upa-view-panel upa-view-packages" id="upa-view-packages"><div class="upa-section-title"><div><small>AUDIENCE &amp; CONVERSION</small><h2>Package performance</h2><p>Top packages ranked by gross sales.</p></div><span>${packages.length} packages</span></div><div class="upa-package-list">${packages.slice(0, 10).map((item, index) => `<div class="upa-package-row"><b>${String(index + 1).padStart(2, "0")}</b><div><strong>${escapeHtml(item.name)}</strong><span>${number(item.pageViews)} views · ${item.conversion.toFixed(2)}% conversion · ${number(item.downloads)} downloads</span></div><em>${money(item.sales)}</em></div>`).join("")}</div></article></section>
             <section class="upa-card upa-insight-card upa-view-panel upa-view-lifetime" id="upa-view-lifetime"><div class="upa-section-title"><div><small>LIFETIME GROWTH</small><h2>How packages accumulate ${escapeHtml(lifetimeData.metric.noun)}</h2><p>Cumulative ${escapeHtml(lifetimeData.metric.label.toLowerCase())} across all available history makes momentum and plateaus visible.</p></div><div class="upa-section-tools"><span>${lifetimeData.pointCount} months</span>${chartActions("lifetime", !lifetimeData.series.length)}</div></div><div class="upa-insight-toolbar upa-lifetime-toolbar"><div class="upa-lifetime-controls"><label class="upa-inline-select">View<select id="upa-lifetime-style"><option value="area" ${lifetimeData.style === "area" ? "selected" : ""}>Stacked area</option><option value="lines" ${lifetimeData.style === "lines" ? "selected" : ""}>Cumulative lines</option></select></label><label class="upa-inline-select">Metric<select id="upa-lifetime-metric">${Object.values(LIFETIME_METRICS).map(metric => `<option value="${metric.id}" ${lifetimeData.metric.id === metric.id ? "selected" : ""}>${metric.label}</option>`).join("")}</select></label>${lifetimeData.style === "lines" ? `<label class="upa-inline-select">Align<select id="upa-lifetime-align"><option value="calendar" ${lifetimeData.align === "calendar" ? "selected" : ""}>Calendar time</option><option value="age" ${lifetimeData.align === "age" ? "selected" : ""}>${lifetimeData.metric.ageLabel}</option></select></label>` : ""}<details class="upa-package-filter"><summary><span>Packages</span><strong>${lifetimeData.explicitKeys.length ? `${lifetimeData.explicitKeys.length} selected` : `Top 8 by ${lifetimeData.metric.rankingLabel}`}</strong></summary><div class="upa-package-filter-panel"><div class="upa-package-filter-head"><span>Choose packages to compare</span><button data-action="lifetime-top">Use top 8</button></div><div class="upa-package-checklist">${lifetimeData.options.map(item => `<label><input type="checkbox" data-lifetime-package="${escapeHtml(item.key)}" ${lifetimeData.activePackages.some(active => active.key === item.key) ? "checked" : ""}><span><strong>${escapeHtml(item.name)}</strong><small>${lifetimeValue(lifetimeData.metric, item.total)}</small></span></label>`).join("")}</div></div></details></div></div><div class="upa-lifetime-legend">${lifetimeData.legend.map(item => `<button type="button" data-lifetime-legend-package="${escapeHtml(item.key)}" aria-pressed="${item.visible}" title="${item.visible ? "Hide" : "Show"} ${escapeHtml(item.name)}"><i style="background:${item.color}"></i><strong>${escapeHtml(item.name)}</strong><em>${lifetimeValue(lifetimeData.metric, item.total)}</em></button>`).join("")}</div><div id="upa-lifetime-chart" class="upa-lifetime-chart" role="img" aria-label="Cumulative ${escapeHtml(lifetimeData.metric.label.toLowerCase())} by package"></div></section>
@@ -1175,6 +1268,13 @@
         document.querySelector("#upa-root .upa-range-trigger")?.setAttribute("aria-expanded", "false");
       }
       const action = event.target.closest("[data-action]")?.dataset.action;
+      if (action === "retry-publisher") {
+        publisherIdentityState = "loading"; render();
+        try { await activatePublisher(await fetchPublisherIdentity(true), { initial: true }); }
+        catch (error) { publisherIdentityState = "error"; console.warn("Publisher Analytics+ could not identify the active publisher:", error.message); render(); }
+        return;
+      }
+      if (publisherIdentityState !== "ready" && action && !["toggle-account", "exit-analytics"].includes(action)) return;
       if (action === "range-toggle") {
         isRangePopoverOpen = !isRangePopoverOpen; isCustomRangeEditorOpen = false; render(); return;
       }
@@ -1186,7 +1286,7 @@
           return;
         }
         prefs.range = rangeOption; isRangePopoverOpen = false; isCustomRangeEditorOpen = false;
-        await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); return;
+        await savePrefs(); render(); return;
       }
       if (action === "range-back") { isRangePopoverOpen = true; isCustomRangeEditorOpen = false; render(); return; }
       if (action === "range-cancel") { isRangePopoverOpen = false; isCustomRangeEditorOpen = false; render(); return; }
@@ -1198,7 +1298,7 @@
         end = [[end, available.start].sort().at(-1), available.end].sort()[0];
         if (start > end) [start, end] = [end, start];
         prefs.range = "custom"; prefs.start = start; prefs.end = end; isRangePopoverOpen = false; isCustomRangeEditorOpen = false;
-        await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); return;
+        await savePrefs(); render(); return;
       }
       const chartButton = event.target.closest("[data-chart-action]");
       if (chartButton) { await handleChartAction(chartButton.dataset.chartAction, chartButton.dataset.chart); return; }
@@ -1207,58 +1307,62 @@
         const key = performanceLegendButton.dataset.performanceLegendPackage, hidden = new Set(prefs.performanceHiddenPackages || []);
         if (hidden.has(key)) hidden.delete(key); else hidden.add(key);
         prefs.performanceHiddenPackages = [...hidden];
-        await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); return;
+        await savePrefs(); render(); return;
       }
       const lifetimeLegendButton = event.target.closest("[data-lifetime-legend-package]");
       if (lifetimeLegendButton) {
         const key = lifetimeLegendButton.dataset.lifetimeLegendPackage, hidden = new Set(prefs.lifetimeHiddenPackages || []);
         if (hidden.has(key)) hidden.delete(key); else hidden.add(key);
         prefs.lifetimeHiddenPackages = [...hidden];
-        await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); return;
+        await savePrefs(); render(); return;
       }
       const sectionButton = event.target.closest("button[data-section]");
-      if (sectionButton) { prefs.section = sectionButton.dataset.section; accountMenuOpen = false; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); return; }
+      if (sectionButton) { prefs.section = sectionButton.dataset.section; accountMenuOpen = false; await savePrefs(); render(); return; }
       const viewButton = event.target.closest("button[data-view]");
       if (viewButton) {
         prefs.section = "analytics"; prefs.view = viewButton.dataset.view;
         if (prefs.view === "lifetime") { isRangePopoverOpen = false; isCustomRangeEditorOpen = false; }
-        await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); return;
+        await savePrefs(); render(); return;
       }
       if (event.target.closest(".upa-fab")) { isOpen = true; render(); return; }
       if (action === "toggle-account") { accountMenuOpen = !accountMenuOpen; render(); return; }
-      if (action === "open-settings") { prefs.section = "settings"; accountMenuOpen = false; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); return; }
+      if (action === "open-settings") { prefs.section = "settings"; accountMenuOpen = false; await savePrefs(); render(); return; }
       if (action === "exit-analytics") { isOpen = false; accountMenuOpen = false; render(); return; }
       if (action === "sync-all") await startFullSync();
       if (action === "refresh") await incrementalSync(true);
-      if (action === "stop-sync") { syncJob.active = false; syncJob.label = "Sync paused"; await saveJob(); render(); }
-      if (action === "continue-sync") { syncJob.active = true; await saveJob(); render(); await runFullSync(); }
-      if (action === "performance-all") { prefs.performancePackages = []; prefs.performanceHiddenPackages = []; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); }
-      if (action === "lifetime-top") { prefs.lifetimePackages = []; prefs.lifetimeHiddenPackages = []; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); }
-      if (action === "sankey-top") { prefs.sankeyPackages = []; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); }
-      if (action === "export") { download(`publisher-analytics-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), records }, null, 2)); toast("Your analytics backup is downloading."); }
-      if (action === "clear" && window.confirm("Clear all locally synced publisher data? This can't be undone.")) { await database({ type: "UPA_DB_CLEAR" }); records = []; syncJob = null; render(); toast("Local analytics data was cleared."); }
+      if (action === "stop-sync" && syncJob) { syncJob.active = false; syncJob.label = "Sync paused"; await saveJob(); render(); }
+      if (action === "continue-sync" && syncJob) { syncJob.active = true; await saveJob(); render(); await runFullSync(publisherIdentity.id, workspaceGeneration); }
+      if (action === "performance-all") { prefs.performancePackages = []; prefs.performanceHiddenPackages = []; await savePrefs(); render(); }
+      if (action === "lifetime-top") { prefs.lifetimePackages = []; prefs.lifetimeHiddenPackages = []; await savePrefs(); render(); }
+      if (action === "sankey-top") { prefs.sankeyPackages = []; await savePrefs(); render(); }
+      if (action === "export") { download(`publisher-analytics-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ version: 2, exportedAt: new Date().toISOString(), publisher: { id: publisherIdentity.id, name: publisherIdentity.name }, records }, null, 2)); toast("Your analytics backup is downloading."); }
+      if (action === "clear" && window.confirm(`Clear locally synced analytics for ${publisherIdentity.name}? Your preferences will be kept. This can't be undone.`)) {
+        const publisherId = publisherIdentity.id, generation = workspaceGeneration;
+        await clearPublisherData(publisherId);
+        if (ownsWorkspace(publisherId, generation)) { records = []; syncJob = null; render(); toast("This publisher's local analytics data was cleared."); }
+      }
       if (!action && outsideAccountMenu) render();
     });
     document.addEventListener("change", async event => {
-      if (event.target.id === "upa-interval") { prefs.interval = event.target.value; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); }
-      if (event.target.id === "upa-calendar-metric") { prefs.calendarMetric = event.target.value; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); }
-      if (event.target.id === "upa-lifetime-metric") { prefs.lifetimeMetric = LIFETIME_METRICS[event.target.value] ? event.target.value : "revenue"; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); }
-      if (event.target.id === "upa-lifetime-style") { prefs.lifetimeStyle = event.target.value === "area" ? "area" : "lines"; if (prefs.lifetimeStyle === "area") prefs.lifetimeAlign = "calendar"; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); }
-      if (event.target.id === "upa-lifetime-align") { prefs.lifetimeAlign = event.target.value === "age" ? "age" : "calendar"; if (prefs.lifetimeAlign === "age") prefs.lifetimeStyle = "lines"; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); }
-      if (event.target.id === "upa-sankey-group") { prefs.sankeyGroupBy = event.target.value === "category" ? "category" : "none"; await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); }
+      if (event.target.id === "upa-interval") { prefs.interval = event.target.value; await savePrefs(); render(); }
+      if (event.target.id === "upa-calendar-metric") { prefs.calendarMetric = event.target.value; await savePrefs(); render(); }
+      if (event.target.id === "upa-lifetime-metric") { prefs.lifetimeMetric = LIFETIME_METRICS[event.target.value] ? event.target.value : "revenue"; await savePrefs(); render(); }
+      if (event.target.id === "upa-lifetime-style") { prefs.lifetimeStyle = event.target.value === "area" ? "area" : "lines"; if (prefs.lifetimeStyle === "area") prefs.lifetimeAlign = "calendar"; await savePrefs(); render(); }
+      if (event.target.id === "upa-lifetime-align") { prefs.lifetimeAlign = event.target.value === "age" ? "age" : "calendar"; if (prefs.lifetimeAlign === "age") prefs.lifetimeStyle = "lines"; await savePrefs(); render(); }
+      if (event.target.id === "upa-sankey-group") { prefs.sankeyGroupBy = event.target.value === "category" ? "category" : "none"; await savePrefs(); render(); }
       if (event.target.matches("[data-performance-package]")) {
         prefs.performancePackages = [...document.querySelectorAll("#upa-root [data-performance-package]:checked")].map(input => input.dataset.performancePackage);
         if (event.target.checked) prefs.performanceHiddenPackages = (prefs.performanceHiddenPackages || []).filter(key => key !== event.target.dataset.performancePackage);
-        await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); requestAnimationFrame(() => { const filter = document.querySelector("#upa-root .upa-performance-package-filter"); if (filter) filter.open = true; });
+        await savePrefs(); render(); requestAnimationFrame(() => { const filter = document.querySelector("#upa-root .upa-performance-package-filter"); if (filter) filter.open = true; });
       }
       if (event.target.matches("[data-lifetime-package]")) {
         prefs.lifetimePackages = [...document.querySelectorAll("#upa-root [data-lifetime-package]:checked")].map(input => input.dataset.lifetimePackage);
         if (event.target.checked) prefs.lifetimeHiddenPackages = (prefs.lifetimeHiddenPackages || []).filter(key => key !== event.target.dataset.lifetimePackage);
-        await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); requestAnimationFrame(() => { const filter = document.querySelector("#upa-root .upa-view-lifetime .upa-package-filter"); if (filter) filter.open = true; });
+        await savePrefs(); render(); requestAnimationFrame(() => { const filter = document.querySelector("#upa-root .upa-view-lifetime .upa-package-filter"); if (filter) filter.open = true; });
       }
       if (event.target.matches("[data-sankey-package]")) {
         prefs.sankeyPackages = [...document.querySelectorAll("#upa-root [data-sankey-package]:checked")].map(input => input.dataset.sankeyPackage);
-        await chrome.storage.local.set({ [PREFS_KEY]: prefs }); render(); requestAnimationFrame(() => { const filter = document.querySelector("#upa-root .upa-package-filter"); if (filter) filter.open = true; });
+        await savePrefs(); render(); requestAnimationFrame(() => { const filter = document.querySelector("#upa-root .upa-package-filter"); if (filter) filter.open = true; });
       }
     });
     document.addEventListener("keydown", event => {
@@ -1279,26 +1383,28 @@
   }
 
   async function init() {
-    const stored = await chrome.storage.local.get(PREFS_KEY);
-    const storedPrefs = stored[PREFS_KEY] || {}, analyticsViews = ["revenue", "lifetime", "calendar", "sankey", "packages"], ranges = ["all", "7d", "30d", "3", "6", "12", "36", "60", "mtd", "ytd", "custom"];
-    const storedSankeyGroupBy = ["none", "category"].includes(storedPrefs.sankeyGroupBy) ? storedPrefs.sankeyGroupBy : "category";
-    const storedLifetimeAlign = storedPrefs.lifetimeAlign === "age" ? "age" : "calendar";
-    const storedLifetimeStyle = storedPrefs.lifetimeStyle === "area" && storedLifetimeAlign === "calendar" ? "area" : "lines";
-    const lifetimeStyle = storedPrefs.lifetimeStackDefaultApplied === true ? storedLifetimeStyle : "area";
-    prefs = {
-      section: ["dashboard", "analytics", "settings"].includes(storedPrefs.section) ? storedPrefs.section : (storedPrefs.view && storedPrefs.view !== "overview" ? "analytics" : "dashboard"),
-      view: analyticsViews.includes(storedPrefs.view) ? storedPrefs.view : "revenue", range: ranges.includes(storedPrefs.range) ? storedPrefs.range : "all", interval: storedPrefs.interval || "auto", start: storedPrefs.start || "", end: storedPrefs.end || "",
-      performancePackages: Array.isArray(storedPrefs.performancePackages) ? storedPrefs.performancePackages : [], performanceHiddenPackages: Array.isArray(storedPrefs.performanceHiddenPackages) ? storedPrefs.performanceHiddenPackages : [], calendarMetric: storedPrefs.calendarMetric || "sales", lifetimeMetric: LIFETIME_METRICS[storedPrefs.lifetimeMetric] ? storedPrefs.lifetimeMetric : "revenue", lifetimeStyle, lifetimeAlign: lifetimeStyle === "area" ? "calendar" : storedLifetimeAlign, lifetimeStackDefaultApplied: true, lifetimePackages: Array.isArray(storedPrefs.lifetimePackages) ? storedPrefs.lifetimePackages : [], lifetimeHiddenPackages: Array.isArray(storedPrefs.lifetimeHiddenPackages) ? storedPrefs.lifetimeHiddenPackages : [], sankeyPackages: Array.isArray(storedPrefs.sankeyPackages) ? storedPrefs.sankeyPackages : [], sankeyGroupBy: storedPrefs.sankeyCategoryDefaultApplied === true ? storedSankeyGroupBy : "category", sankeyCategoryDefaultApplied: true
-    };
-    await chrome.storage.local.set({ [PREFS_KEY]: prefs });
-    records = await getAll(); syncJob = await getMeta(SYNC_KEY); isOpen = Boolean(syncJob?.active);
     const root = document.createElement("div"); root.id = "upa-root"; document.body.appendChild(root); bindEvents(); render();
-    refreshPublisherIdentity().catch(error => console.warn("Publisher Analytics+ could not load the publisher profile:", error.message));
-    setInterval(() => {
-      const header = publisherFromHeader();
-      if (header?.portalLabel && header.portalLabel !== publisherIdentity.portalLabel) refreshPublisherIdentity(true).catch(error => console.warn("Publisher Analytics+ could not refresh the publisher profile:", error.message));
-    }, 10000);
-    if (syncJob?.active) runFullSync(); else if (records.length) incrementalSync();
+    try { await activatePublisher(await fetchPublisherIdentity(), { initial: true }); }
+    catch (error) { publisherIdentityState = "error"; console.warn("Publisher Analytics+ could not identify the active publisher:", error.message); render(); }
+    setInterval(async () => {
+      if (identityRefreshInFlight || document.visibilityState === "hidden") return;
+      identityRefreshInFlight = true;
+      try {
+        const identity = await fetchPublisherIdentity();
+        if (identity.id !== publisherIdentity.id) await activatePublisher(identity);
+        else if (publisherIdentityState !== "ready" || identity.name !== publisherIdentity.name || identity.icon !== publisherIdentity.icon) { publisherIdentity = identity; publisherIdentityState = "ready"; scheduleRender(); }
+      } catch (error) {
+        workspaceGeneration += 1;
+        publisherIdentity = { id: "", organizationId: "", portalLabel: "", name: "Publisher", icon: "" };
+        publisherIdentityState = "error";
+        records = [];
+        syncJob = null;
+        isRefreshing = false;
+        console.warn("Publisher Analytics+ could not refresh the publisher identity:", error.message);
+        render();
+      }
+      finally { identityRefreshInFlight = false; }
+    }, 30000);
   }
 
   init().catch(error => console.error("Publisher Analytics+ failed to initialize:", error));

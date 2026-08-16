@@ -1,21 +1,46 @@
 const DB_NAME = "unity-publisher-analytics-api";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
+const ANALYTICS_META_KEYS = ["apiSyncV1"];
 
 function openDatabase() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains("records")) {
-        const records = db.createObjectStore("records", { keyPath: "id" });
-        records.createIndex("type", "type", { unique: false });
-        records.createIndex("period", "period", { unique: false });
-      }
-      if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta", { keyPath: "key" });
+      // Pre-release schema: old records have no trustworthy owner, so they cannot be migrated.
+      if (db.objectStoreNames.contains("records")) db.deleteObjectStore("records");
+      if (db.objectStoreNames.contains("meta")) db.deleteObjectStore("meta");
+      const records = db.createObjectStore("records", { keyPath: "id" });
+      records.createIndex("publisherId", "publisherId", { unique: false });
+      records.createIndex("type", "type", { unique: false });
+      records.createIndex("period", "period", { unique: false });
+      const meta = db.createObjectStore("meta", { keyPath: "id" });
+      meta.createIndex("publisherId", "publisherId", { unique: false });
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
+}
+
+function publisherIdFrom(message) {
+  const publisherId = String(message?.publisherId || "").trim();
+  if (!publisherId) throw new Error("A publisher identity is required for local data access.");
+  return publisherId;
+}
+
+function metaId(publisherId, key) {
+  return JSON.stringify([publisherId, String(key || "")]);
+}
+
+function deletePublisherRows(store, publisherId) {
+  const request = store.index("publisherId").openKeyCursor(IDBKeyRange.only(publisherId));
+  request.onsuccess = () => {
+    const cursor = request.result;
+    if (!cursor) return;
+    store.delete(cursor.primaryKey);
+    cursor.continue();
+  };
+  return request;
 }
 
 async function transaction(storeName, mode, operation) {
@@ -35,24 +60,30 @@ async function transaction(storeName, mode, operation) {
 }
 
 async function handleDatabaseMessage(message) {
+  const publisherId = publisherIdFrom(message);
   switch (message.type) {
     case "UPA_DB_GET_ALL":
-      return transaction("records", "readonly", store => store.getAll());
+      return transaction("records", "readonly", store => store.index("publisherId").getAll(publisherId));
     case "UPA_DB_PUT_MANY":
       return transaction("records", "readwrite", store => {
-        for (const record of message.records || []) store.put(record);
+        for (const record of message.records || []) {
+          if (record?.publisherId !== publisherId) throw new Error("A record does not belong to the active publisher.");
+          store.put(record);
+        }
         return { result: (message.records || []).length };
       });
     case "UPA_DB_CLEAR":
-      await transaction("records", "readwrite", store => store.clear());
-      await transaction("meta", "readwrite", store => store.clear());
+      await transaction("records", "readwrite", store => deletePublisherRows(store, publisherId));
+      await transaction("meta", "readwrite", store => {
+        for (const key of ANALYTICS_META_KEYS) store.delete(metaId(publisherId, key));
+      });
       return true;
     case "UPA_DB_GET_META": {
-      const value = await transaction("meta", "readonly", store => store.get(message.key));
+      const value = await transaction("meta", "readonly", store => store.get(metaId(publisherId, message.key)));
       return value?.value;
     }
     case "UPA_DB_SET_META":
-      return transaction("meta", "readwrite", store => store.put({ key: message.key, value: message.value }));
+      return transaction("meta", "readwrite", store => store.put({ id: metaId(publisherId, message.key), publisherId, key: message.key, value: message.value }));
     default:
       throw new Error(`Unknown database operation: ${message.type}`);
   }

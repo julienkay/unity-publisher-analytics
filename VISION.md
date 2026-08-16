@@ -24,7 +24,7 @@ Independent publishers and small teams who use the Unity Publisher Portal to und
 - **Trustworthy numbers.** Preserve the meaning and precision of Unity's source data, make time ranges explicit, and avoid combining unlike metrics.
 - **Flexible time.** Treat day, week, month, quarter, year, and lifetime as different valid ways to examine the same history.
 - **Questions before charts.** Design analysis around decisions publishers want to make, then choose the visualization that explains the answer best.
-- **Local and private.** Keep publisher data in the browser, contact only Unity, and add no telemetry or external service by default.
+- **Local and private.** Keep publisher data in the browser, isolate each publisher in its own local workspace, contact only Unity, and add no telemetry or external service by default.
 - **Effortless continuity.** Full-history collection must survive refreshes, clearly show what is happening, and keep recent data current afterward.
 - **Useful before elaborate.** Prefer a small set of decision-supporting views over a dense dashboard of vanity metrics.
 

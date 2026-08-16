@@ -14,6 +14,7 @@
     let url;
     try { url = new URL(path, location.origin); } catch { return false; }
     if (url.origin !== location.origin) return false;
+    if (url.pathname === "/publisher-v2-api/user" && !url.search && method === "GET") return true;
     if (url.pathname === "/publisher-v2-api/proxy" && method === "GET") {
       return ["/management/once-published-packages", "/management/categories"].includes(url.searchParams.get("path")) && url.searchParams.get("type") === "array";
     }

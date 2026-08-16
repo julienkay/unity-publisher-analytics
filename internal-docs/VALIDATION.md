@@ -1,6 +1,6 @@
 # Validation, shortcuts, and known issues
 
-Status: reconstructed from repository history and the original Codex session on 2026-08-15. The original session did not keep a formal test log, so this document is intentionally conservative.
+Status: reconstructed from repository history and the original Codex session on 2026-08-15; publisher-isolation status updated 2026-08-16. The original session did not keep a formal test log, so this document is intentionally conservative.
 
 ## Validation scope
 
@@ -21,6 +21,7 @@ The exact total catalog size, unpublished-package count, and number of metadata 
 | Area | Status | Evidence and limits |
 |---|---|---|
 | Current endpoint paths and request shapes | **Observed once** | Working extension on one signed-in account; two earlier 400 responses recorded, but no raw fixtures |
+| Publisher identity and local isolation | **Implemented, second account unverified** | Official Portal bundle distinguishes `publisherId` from organization IDs; source checks cover namespace propagation, but no retained live switch test exists |
 | Full sync across the original account's available history | **Observed once** | Dashboard populated over multi-year history; no persisted coverage report or independent reconciliation |
 | Resumable checkpoint after page refresh | **Plausible prototype behavior** | Checkpoint is saved after each step; no explicit refresh-at-each-phase manual test was recorded |
 | Automatic incremental refresh | **Observed once at UI level** | Used during iteration; correction depth and new-package behavior not validated |
@@ -71,7 +72,7 @@ These appear to have been expedient implementation choices rather than conscious
 - the two-day daily freshness lag;
 - annual request windows;
 - fixed USD;
-- one global publisher namespace;
+- publisher isolation implemented from Portal-bundle evidence but not yet tested with a second live publisher;
 - one-day incremental overlap;
 - broad unfixture-backed aliases;
 - “complete” based on request-loop completion;
@@ -82,9 +83,9 @@ These appear to have been expedient implementation choices rather than conscious
 
 ### P0 — Trust and isolation
 
-1. **Publisher data is not isolated.** Switching the active publisher can expose or combine another publisher's records.
-2. **Completion is overstated.** There is no scope/date coverage manifest, gap detection, or reconciliation.
-3. **Currency is assumed.** Every monetary value is shown as USD without a verified contract.
+1. **Completion is overstated.** There is no scope/date coverage manifest, gap detection, or reconciliation.
+2. **Currency is assumed.** Every monetary value is shown as USD without a verified contract.
+3. **Publisher isolation lacks a second-account test.** The code namespaces and fails closed by `publisherId`, but stability and switching have only Portal-bundle evidence.
 
 ### P1 — Freshness and lifecycle
 
@@ -107,7 +108,7 @@ These appear to have been expedient implementation choices rather than conscious
 
 Work should proceed in this order:
 
-1. Add publisher isolation or fail-closed publisher-change detection.
+1. Validate publisher isolation and fail-closed switching with two live publisher accounts.
 2. Capture all raw endpoint fixtures using [api-fixtures/README.md](api-fixtures/README.md).
 3. Add pure normalizer tests using those fixtures, including unknown-shape failures.
 4. Add paired daily boundary and zero-day tests.
