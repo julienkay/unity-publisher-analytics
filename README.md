@@ -60,4 +60,10 @@ Daily history is requested for the complete catalog and for each package. The st
 
 Apache ECharts is bundled locally with the extension; no runtime code is loaded from a CDN. To rebuild the committed chart bundle after changing `scripts/echarts-entry.js`, run `npm install` and `npm run build:charts`.
 
+## Package for the Chrome Web Store
+
+Run `npm run package` to rebuild the chart bundle and create a versioned ZIP in
+`dist/`. Upload that ZIP to the Chrome Web Store developer dashboard. The archive
+contains only the extension's runtime files and bundled license notices.
+
 The Publisher Portal endpoints are implementation details and can change without notice. The extension deliberately trusts this single source instead of maintaining alternate ingestion paths.

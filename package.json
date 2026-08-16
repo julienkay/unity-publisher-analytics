@@ -2,7 +2,8 @@
   "name": "unity-publisher-analytics",
   "private": true,
   "scripts": {
-    "build:charts": "esbuild scripts/echarts-entry.js --bundle --minify --format=iife --global-name=echarts --outfile=vendor/echarts.min.js --legal-comments=linked"
+    "build:charts": "esbuild scripts/echarts-entry.js --bundle --minify --format=iife --global-name=echarts --outfile=vendor/echarts.min.js --legal-comments=linked",
+    "package": "npm run build:charts && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-extension.ps1"
   },
   "devDependencies": {
     "echarts": "6.1.0",
