@@ -29,7 +29,7 @@ The dashboard brings together:
 - Daily sales, purchases and claims, pageviews, conversion, downloads, wishlist changes, refunds, ratings, quick looks, and cart activity.
 - Catalog-wide and per-package performance.
 
-The main revenue chart supports automatic or explicit daily, weekly, monthly, quarterly, and yearly intervals. Choose a preset or exact start and end dates, then scroll or pinch to zoom, drag to pan, or use the navigator handles to focus on a precise window.
+The main Performance view supports automatic or explicit daily, weekly, monthly, quarterly, and yearly intervals. It starts with the complete catalog and shows gross revenue, purchases and claims, pageviews, and downloads in separate charts. Choose any combination of packages to give each package its own consistently colored line across all four charts. Choose a preset or exact start and end dates, then scroll or pinch to zoom, drag to pan, or use the navigator handles to focus on a precise window.
 
 Additional views reveal patterns that are hard to see in a timeline:
 
@@ -38,7 +38,7 @@ Additional views reveal patterns that are hard to see in a timeline:
 - A filterable Sankey diagram groups total gross revenue by the Asset Store categories assigned in the Publisher Portal, then splits each category into package contributions. Publishers can switch to a direct package split.
 - Every chart can be saved as a high-resolution PNG or shared through the device's native share surface when available.
 
-The left navigation separates a general Dashboard from the deeper Analytics workspace. Its top summary pairs selected-range asset allocation and revenue concentration with six headline metrics; when enough earlier data exists, selected-range metrics include a comparison with the preceding equivalent period. Aligned revenue, pageview, and download timelines and a ranked package table follow below. Within Analytics, focused tabs switch between Revenue, Lifetime growth, Daily patterns, Revenue composition, and Packages. Lifetime growth always uses all available history; the selected date range remains shared across the other views.
+The left navigation separates a general Dashboard from the deeper Analytics workspace. Its top summary pairs selected-range asset allocation and revenue concentration with six headline metrics; when enough earlier data exists, selected-range metrics include a comparison with the preceding equivalent period. Aligned revenue, pageview, and download timelines and a ranked package table follow below. Within Analytics, focused tabs switch between Performance, Lifetime growth, Daily patterns, Revenue composition, and Packages. Lifetime growth always uses all available history; the selected date range remains shared across the other views.
 
 The publisher block at the bottom of the navigation follows the publisher currently active in the signed-in portal. It uses the store profile name and picture when available. Its upward menu opens Settings or returns to the Publisher Portal; data coverage, JSON export, and local-data clearing are kept separate from the analytics workspace.
 

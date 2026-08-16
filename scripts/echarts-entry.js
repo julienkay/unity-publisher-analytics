@@ -27,4 +27,4 @@ echarts.use([
   SVGRenderer
 ]);
 
-globalThis.UPAECharts = { init: echarts.init, graphic: echarts.graphic };
+globalThis.UPAECharts = { init: echarts.init, graphic: echarts.graphic, connect: echarts.connect };

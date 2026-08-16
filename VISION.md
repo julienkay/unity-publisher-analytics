@@ -39,6 +39,8 @@ The first experience should answer:
 3. How do sales, claims, downloads, refunds, and wishlists move over time?
 4. Is my data complete and up to date?
 
+The primary analytics view should be a familiar step up from Unity's own dashboard: the same essential time-range and package questions, extended across the publisher's available history. It should let publishers compare packages as separate, consistently colored lines and inspect related metrics in separate aligned charts, avoiding dual axes that make unlike units hard to interpret. A catalog-wide "All assets" view is the default and should evolve into reusable package groups without changing the basic interaction.
+
 As the product develops, it should also answer questions such as:
 
 - What is the lifetime revenue, unit volume, refund rate, and download count of a package?
