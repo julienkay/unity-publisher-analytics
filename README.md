@@ -13,7 +13,7 @@ data evidence, and decision log, lives in [internal-docs](internal-docs/README.m
 2. Enable **Developer mode**.
 3. Click **Load unpacked** and select this folder.
 4. Open or refresh any page under `https://publisher.unity.com/` while signed in.
-5. Click the **A+** button or the extension toolbar icon.
+5. Click the **Publisher Analytics+** button or the extension toolbar icon.
 
 After updating an existing unpacked installation, click **Reload** on its `chrome://extensions` card and refresh the Publisher Portal.
 

@@ -4,10 +4,22 @@
   "short_name": "Analytics+",
   "version": "0.1.0",
   "description": "Better analytics for Asset Store publishers.",
+  "icons": {
+    "16": "icons/publisher-analytics-16.png",
+    "32": "icons/publisher-analytics-32.png",
+    "48": "icons/publisher-analytics-48.png",
+    "128": "icons/publisher-analytics-128.png"
+  },
   "permissions": ["storage", "activeTab"],
   "host_permissions": ["https://publisher.unity.com/*"],
   "action": {
-    "default_title": "Open Publisher Analytics+"
+    "default_title": "Open Publisher Analytics+",
+    "default_icon": {
+      "16": "icons/publisher-analytics-16.png",
+      "32": "icons/publisher-analytics-32.png",
+      "48": "icons/publisher-analytics-48.png",
+      "128": "icons/publisher-analytics-128.png"
+    }
   },
   "background": {
     "service_worker": "background.js"
@@ -24,6 +36,12 @@
       "js": ["vendor/echarts.min.js", "content.js"],
       "css": ["styles.css"],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/publisher-analytics-128.png"],
+      "matches": ["https://publisher.unity.com/*"]
     }
   ]
 }
