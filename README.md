@@ -29,14 +29,16 @@ The dashboard brings together:
 - Daily sales, purchases and claims, pageviews, conversion, downloads, wishlist changes, refunds, ratings, quick looks, and cart activity.
 - Catalog-wide and per-package performance.
 
-The main Performance view supports automatic or explicit daily, weekly, monthly, quarterly, and yearly intervals. It starts with the complete catalog and shows gross revenue, purchases and claims, pageviews, and downloads in separate charts. Choose any combination of packages to give each package its own consistently colored line across all four charts. Choose a preset or exact start and end dates, then scroll or pinch to zoom, drag to pan, or use the navigator handles to focus on a precise window.
+The main Performance view supports automatic or explicit daily, weekly, monthly, quarterly, and yearly intervals. It starts with the complete catalog and shows gross revenue, purchases and claims, pageviews, and downloads in separate charts. Select any combination of "All assets," reusable package groups, and individual assets. Each selected scope gets one consistently colored line across all four charts; a group line aggregates its member assets. Choose a preset or exact start and end dates, then scroll or pinch to zoom, drag to pan, or use the navigator handles to focus on a precise window.
+
+The Asset group menu on Performance is the single entry point for choosing multiple groups and individual assets. Its visually separated Manage groups action opens the dedicated package-group manager for creation and editing. A package may belong to several selected scopes; when that happens, an in-menu notice explains that the package remains included in each matching comparison line. Groups are tied to the signed-in publisher and use Unity package IDs, so package renames do not break membership.
 
 Additional views reveal patterns that are hard to see in a timeline:
 
 - A lifetime growth chart compares cumulative gross revenue, sales quantity, downloads, or pageviews by package. It defaults to a calendar-time stacked area view of asset composition; publishers can switch to separate lines, align packages at their first activity to compare trajectories, and toggle series directly from the legend.
 - A stacked calendar compares daily revenue, purchases, pageviews, or downloads across every available year.
 - A filterable Sankey diagram groups total gross revenue by the Asset Store categories assigned in the Publisher Portal, then splits each category into package contributions. Publishers can switch to a direct package split.
-- Every chart can be saved as a high-resolution PNG or shared through the device's native share surface when available.
+- Every chart can be saved as a high-resolution PNG or shared through the device's native share surface when available. Performance exports include the names of the visible comparison scopes in the image header without adding that list to the live chart cards.
 
 The left navigation separates a general Dashboard from the deeper Analytics workspace. Its top summary pairs selected-range asset allocation and revenue concentration with six headline metrics; when enough earlier data exists, selected-range metrics include a comparison with the preceding equivalent period. Aligned revenue, pageview, and download timelines and a ranked package table follow below. Within Analytics, focused tabs switch between Performance, Lifetime growth, Daily patterns, Revenue composition, and Packages. Lifetime growth always uses all available history; the selected date range remains shared across the other views.
 
@@ -50,11 +52,11 @@ Your analytics data and preferences stay in this browser. The extension communic
 
 The signed-in Asset Store publisher ID selects an independent local workspace. Switching publishers loads that publisher's records, sync progress, and preferences without showing or combining another publisher's data.
 
-Removing the extension deletes every local workspace. Selecting **Clear data** deletes only the active publisher's synced analytics and saved sync progress; it keeps preferences and does not affect data saved for other publishers. Use **Export data** to create a local JSON backup for the active publisher.
+Removing the extension deletes every local workspace. Selecting **Clear data** deletes only the active publisher's synced analytics and saved sync progress; it keeps preferences and package groups, and does not affect data saved for other publishers. Use **Export data** to create a local JSON backup for the active publisher.
 
 ## Technical notes
 
-The extension uses the signed-in portal session and the reporting endpoints already used by the Unity Publisher Portal. Normalized data is stored in an extension-owned IndexedDB database; preferences and the resumable checkpoint use `chrome.storage.local`.
+The extension uses the signed-in portal session and the reporting endpoints already used by the Unity Publisher Portal. Normalized data and the resumable checkpoint are stored in an extension-owned IndexedDB database; preferences, publisher presentation details, and package groups use `chrome.storage.local`.
 
 Daily history is requested for the complete catalog and for each package. The start is derived from the earliest package-publication or ledger date, but the current prototype clamps daily collection to `2019-01-01`. Unity's actual retention boundary, date semantics, revision behavior, currency contract, and completeness guarantees remain undocumented and are tracked in [internal-docs/DATA-EVIDENCE.md](internal-docs/DATA-EVIDENCE.md).
 

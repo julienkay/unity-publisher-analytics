@@ -58,8 +58,32 @@ function validateNamespacePropagation() {
   assert.ok(!background.includes('transaction("meta", "readwrite", store => deletePublisherRows'), "Analytics clearing must not delete all publisher metadata.");
 }
 
+function validatePackageGroupPersistence() {
+  const content = fs.readFileSync(path.join(root, "content.js"), "utf8");
+  const background = fs.readFileSync(path.join(root, "background.js"), "utf8");
+  for (const required of [
+    'GROUPS_KEY_PREFIX = "unityPublisherAnalyticsPackageGroupsV1"',
+    "publisherStorageKey(GROUPS_KEY_PREFIX, identity.id)",
+    "sanitizedPackageGroups",
+    "sanitizedPerformanceScopes",
+    "selectedPerformanceScopes",
+    "overlappingPerformanceAssets",
+    'data-performance-scope="group"',
+    'data-performance-scope="asset"',
+    'data-action="manage-groups"',
+    'section === "groups" ? groupsPanel(performanceOptions)',
+    'String(item.id || "")',
+    'String(item.packageId || "")'
+  ]) assert.ok(content.includes(required), `Missing package-group invariant: ${required}`);
+  assert.ok(!content.includes("upa-performance-group-actions"), "Group management must not be split into separate Performance controls.");
+  assert.ok(!content.includes('id="upa-performance-group"'), "Performance must use one combined group and asset menu.");
+  assert.ok(!content.includes("data-performance-package"), "Individual assets must not open a second Performance selector.");
+  assert.ok(!background.includes("unityPublisherAnalyticsPackageGroups"), "Analytics database clearing must not own package-group storage.");
+}
+
 Promise.resolve()
   .then(validateIdentityAllowlist)
   .then(validateNamespacePropagation)
-  .then(() => console.log("Publisher isolation validation passed."))
+  .then(validatePackageGroupPersistence)
+  .then(() => console.log("Publisher isolation and package-group validation passed."))
   .catch(error => { console.error(error); process.exitCode = 1; });

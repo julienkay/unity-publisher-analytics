@@ -22,6 +22,7 @@ The exact total catalog size, unpublished-package count, and number of metadata 
 |---|---|---|
 | Current endpoint paths and request shapes | **Observed once** | Working extension on one signed-in account; two earlier 400 responses recorded, but no raw fixtures |
 | Publisher identity and local isolation | **Implemented, second account unverified** | Official Portal bundle distinguishes `publisherId` from organization IDs; source checks cover namespace propagation, but no retained live switch test exists |
+| Publisher-scoped package groups | **Implemented, manual UI validation pending** | Groups use `package_id`, survive analytics clearing, and render as independently aggregated comparison lines; multi-scope selection, overlap notices, and dedicated create/edit/manage pages still need an unpacked-extension smoke test |
 | Full sync across the original account's available history | **Observed once** | Dashboard populated over multi-year history; no persisted coverage report or independent reconciliation |
 | Resumable checkpoint after page refresh | **Plausible prototype behavior** | Checkpoint is saved after each step; no explicit refresh-at-each-phase manual test was recorded |
 | Automatic incremental refresh | **Observed once at UI level** | Used during iteration; correction depth and new-package behavior not validated |
@@ -118,6 +119,7 @@ Work should proceed in this order:
 8. Add integration coverage for resume, auth expiry, 400/401/403/429/500 responses, adaptive window splitting, and partial writes.
 9. Add CI for syntax checks, manifest validation, fixture tests, and deterministic aggregations.
 10. Run a manual matrix across at least two publishers, including one account with older history and a materially larger catalog.
+11. Smoke-test package-group creation, overlapping membership, active-group edits/deletion, analytics clearing, unavailable members, and narrow-screen editing in the unpacked extension.
 
 ## Release evidence rule
 

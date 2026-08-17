@@ -48,6 +48,7 @@ The type tokens live on `#upa-root` in `styles.css`.
 - Keep metric comparisons secondary to the current value, state the preceding period explicitly, and omit them when the baseline is incomplete or zero.
 - Move calculation details into a focused, keyboard-accessible info tooltip when persistent helper text would repeat across a compact metric grid.
 - Empty, loading, error, and success states use publisher-facing language and keep the next action obvious.
+- Tooltips must add information or context; never use them to repeat the visible label or value unchanged.
 
 ## Charts
 
