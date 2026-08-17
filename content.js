@@ -38,6 +38,11 @@
 
   const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
   const compact = value => String(value ?? "").trim().replace(/\s+/g, " ");
+  const displayText = value => {
+    const text = compact(value);
+    if (!/%[0-9a-f]{2}/i.test(text)) return text;
+    try { return compact(decodeURIComponent(text)); } catch { return text; }
+  };
   const keyOf = value => String(value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
   const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[character]);
   const number = value => new Intl.NumberFormat().format(Number(value) || 0);
@@ -101,15 +106,15 @@
     const key = publisherStorageKey(PUBLISHER_KEY_PREFIX, id);
     const stored = await chrome.storage.local.get(key), cached = stored[key];
     const fresh = !force && cached?.id === id && Date.now() - Number(cached.updatedAt || 0) < 86400000;
-    if (fresh) return cached;
+    if (fresh) return { ...cached, portalLabel: displayText(cached.portalLabel), name: displayText(cached.name) };
     const apiIcon = typeof user.avatar === "string" ? user.avatar : "";
-    const apiName = compact(user.publisherName || user.publisherOrgName);
+    const apiName = displayText(user.publisherName || user.publisherOrgName);
     const profile = apiIcon && apiName ? null : await loadPublisherProfile();
     const identity = {
       id,
       organizationId: compact(user.publisherOrgId || user.defaultOrgId),
-      portalLabel: header?.portalLabel || "",
-      name: apiName || profile?.name || header?.name || "Publisher",
+      portalLabel: displayText(header?.portalLabel),
+      name: apiName || displayText(profile?.name) || displayText(header?.name) || "Publisher",
       icon: apiIcon || profile?.icon || "",
       updatedAt: Date.now()
     };
