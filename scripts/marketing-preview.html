@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Publisher Analytics+ Marketing Preview</title>
+  <link rel="stylesheet" href="../styles.css">
+  <style>html,body{margin:0;width:100%;height:100%;background:#f4f5f8}*{scrollbar-color:#c7cad4 transparent}</style>
+</head>
+<body>
+  <script src="marketing-fixture.js"></script>
+  <script>
+    const fixture = window.__UPA_MARKETING_FIXTURE__;
+    const storage = Object.create(null);
+    const query = new URLSearchParams(location.search);
+    const syncing = query.get("sync") === "1";
+    const syncJob = syncing ? {
+      publisherId: fixture.publisherId,
+      active: true,
+      phase: "daily",
+      startedAt: "2026-08-17T18:24:00.000Z",
+      packages: fixture.packages,
+      start: "2022-03-01",
+      endExclusive: "2026-08-16",
+      months: [],
+      monthIndex: 0,
+      scopes: [{ id: null, name: "All assets" }, ...fixture.packages],
+      scopeIndex: 2,
+      cursor: "2024-09-01",
+      completed: 37,
+      total: 68,
+      label: "Syncing performance history · Luminous Shader Library"
+    } : null;
+    storage[`unityPublisherAnalyticsPrefsV2:${encodeURIComponent(fixture.publisherId)}`] = {
+      section: query.get("section") || "dashboard",
+      view: query.get("view") || "revenue",
+      range: "all",
+      interval: "month",
+      calendarMetric: "sales",
+      lifetimeMetric: "revenue",
+      lifetimeStyle: "area",
+      lifetimeAlign: "calendar",
+      lifetimeStackDefaultApplied: true,
+      sankeyGroupBy: "category",
+      sankeyCategoryDefaultApplied: true
+    };
+    const messageListeners = [];
+    window.chrome = {
+      storage: { local: {
+        async get(key) { return typeof key === "string" ? { [key]: storage[key] } : { ...storage }; },
+        async set(values) { Object.assign(storage, values); }
+      }},
+      runtime: {
+        getURL(path) { return new URL(`../${path}`, location.href).href; },
+        onMessage: { addListener(listener) { messageListeners.push(listener); } },
+        async sendMessage(message) {
+          if (message.type === "UPA_DB_GET_ALL") return { ok: true, result: syncing ? [] : fixture.records };
+          if (message.type === "UPA_DB_GET_META") return { ok: true, result: syncJob };
+          if (message.type === "UPA_DB_SET_META" || message.type === "UPA_DB_PUT_MANY") return { ok: true, result: true };
+          return { ok: true, result: true };
+        }
+      }
+    };
+    window.addEventListener("message", event => {
+      const message = event.data;
+      if (message?.source !== "unity-publisher-analytics" || message?.type !== "UPA_API_REQUEST") return;
+      if (syncing && message.path === "/publisher-v2-api/dashboard/daily") return;
+      const data = message.path === "/publisher-v2-api/user"
+        ? { publisherId: fixture.publisherId, publisherName: fixture.publisherName, publisherOrgId: "northstar" }
+        : [];
+      window.postMessage({ source: "unity-publisher-analytics-api", type: "UPA_API_RESPONSE", requestId: message.requestId, ok: true, status: 200, data }, location.origin);
+    });
+    window.__openAnalytics = () => messageListeners.forEach(listener => listener({ type: "UPA_TOGGLE" }));
+  </script>
+  <script src="../vendor/echarts.min.js"></script>
+  <script src="../content.js"></script>
+</body>
+</html>
