@@ -1117,26 +1117,26 @@
     const chart = chartInstances.get(key), metadata = chartShareMetadata.get(key); if (!chart || !metadata) throw new Error("This chart is not ready yet.");
     const source = chart.getDataURL({ type: "png", pixelRatio: 2, backgroundColor: "#ffffff" });
     const image = new Image(); image.src = source; await image.decode();
-    const scopeNames = Array.isArray(metadata.scopeNames) ? metadata.scopeNames : [], measureCanvas = document.createElement("canvas"), measureContext = measureCanvas.getContext("2d");
-    measureContext.font = "18px Segoe UI, sans-serif";
-    const maxScopeWidth = image.naturalWidth - 80, scopeLines = [];
-    for (const name of scopeNames) {
-      const candidate = scopeLines.length && scopeLines.at(-1) ? `${scopeLines.at(-1)} · ${name}` : name;
-      if (scopeLines.length && measureContext.measureText(candidate).width > maxScopeWidth) scopeLines.push(name);
-      else if (scopeLines.length) scopeLines[scopeLines.length - 1] = candidate;
-      else scopeLines.push(name);
-    }
-    const headerHeight = scopeLines.length ? 170 + scopeLines.length * 25 : 150, canvas = document.createElement("canvas"); canvas.width = image.naturalWidth; canvas.height = image.naturalHeight + headerHeight;
+    const scopeLegend = Array.isArray(metadata.scopeLegend) ? metadata.scopeLegend : [], headerHeight = 150, footerHeight = scopeLegend.length ? 60 + scopeLegend.length * 28 : 0;
+    const canvas = document.createElement("canvas"); canvas.width = image.naturalWidth; canvas.height = image.naturalHeight + headerHeight + footerHeight;
     const context = canvas.getContext("2d"); context.fillStyle = "#fff"; context.fillRect(0, 0, canvas.width, canvas.height);
     context.fillStyle = "#172033"; context.font = "700 32px Segoe UI, sans-serif"; context.fillText(metadata.title, 40, 56);
     context.fillStyle = "#70798d"; context.font = "20px Segoe UI, sans-serif"; context.fillText(metadata.subtitle, 40, 91);
-    if (scopeLines.length) {
-      context.fillStyle = "#8a91a1"; context.font = "700 14px Segoe UI, sans-serif"; context.fillText("COMPARED SCOPES", 40, 126);
-      context.fillStyle = "#4e5669"; context.font = "18px Segoe UI, sans-serif";
-      scopeLines.forEach((line, index) => context.fillText(line, 40, 154 + index * 25, maxScopeWidth));
-    }
     context.fillStyle = "#6c5ce7"; context.font = "700 18px Segoe UI, sans-serif"; context.textAlign = "right"; context.fillText("Publisher Analytics+", canvas.width - 40, 56); context.textAlign = "left";
     context.drawImage(image, 0, headerHeight);
+    if (scopeLegend.length) {
+      const footerTop = headerHeight + image.naturalHeight, maxLabelWidth = canvas.width - 105;
+      context.strokeStyle = "#e8eaf0"; context.lineWidth = 1; context.beginPath(); context.moveTo(40, footerTop + .5); context.lineTo(canvas.width - 40, footerTop + .5); context.stroke();
+      context.fillStyle = "#8a91a1"; context.font = "700 14px Segoe UI, sans-serif"; context.fillText("COMPARED SCOPES", 40, footerTop + 30);
+      context.font = "18px Segoe UI, sans-serif";
+      scopeLegend.forEach((entry, index) => {
+        const baseline = footerTop + 60 + index * 28;
+        context.fillStyle = entry.color || "#6c5ce7"; context.beginPath(); context.arc(46, baseline - 6, 5, 0, Math.PI * 2); context.fill();
+        let label = String(entry.name || "Unnamed scope"), shortened = false;
+        while (label.length > 1 && context.measureText(`${label}…`).width > maxLabelWidth) { label = label.slice(0, -1); shortened = true; }
+        context.fillStyle = "#4e5669"; context.fillText(shortened ? `${label.trimEnd()}…` : label, 62, baseline);
+      });
+    }
     const blob = await new Promise((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error("Could not create the chart image.")), "image/png"));
     return { blob, filename: chartFilename(key), metadata };
   }
@@ -1262,7 +1262,7 @@
     const overviewChartData = overviewViewModel(dailyAll, dateBounds), calendarData = calendarViewModel(dailyAll, prefs.calendarMetric), lifetimeData = lifetimeViewModel(lifetimeItems, lifetimeMetric.id, prefs.lifetimePackages, prefs.lifetimeHiddenPackages, prefs.lifetimeStyle, prefs.lifetimeAlign), sankeyData = sankeyViewModel(salesItems, prefs.sankeyPackages, prefs.sankeyGroupBy, packageCategories);
     const sankeyHeight = Math.max(410, sankeyData.activePackages.length * 48 + 96);
     chartShareMetadata.set("overview", { title: "Business activity over time", subtitle: `${intervalName(overviewChartData.interval)} revenue, pageviews, and downloads · ${dateBounds.start} to ${dateBounds.end}` });
-    for (const chart of performanceCharts) chartShareMetadata.set(`performance-${chart.metric.id}`, { title: `${chart.metric.label} over time`, subtitle: `${intervalName(interval)} totals · ${dateBounds.start} to ${dateBounds.end}`, scopeNames: chart.series.map(scope => scope.name) });
+    for (const chart of performanceCharts) chartShareMetadata.set(`performance-${chart.metric.id}`, { title: `${chart.metric.label} over time`, subtitle: `${intervalName(interval)} totals · ${dateBounds.start} to ${dateBounds.end}`, scopeLegend: chart.series.map(scope => ({ name: scope.name, color: scope.color })) });
     chartShareMetadata.set("lifetime", { title: `${lifetimeData.metric.label} lifetime growth`, subtitle: `${lifetimeData.style === "area" ? "Stacked cumulative" : "Cumulative"} ${lifetimeData.metric.label.toLowerCase()} · ${lifetimeData.align === "age" ? `aligned by ${lifetimeData.metric.ageDescription}` : "calendar time"} · all available history` });
     chartShareMetadata.set("calendar", { title: `${calendarData.metric.label} calendar`, subtitle: `${dateBounds.start} to ${dateBounds.end} · daily intensity across ${calendarData.years.length} ${calendarData.years.length === 1 ? "year" : "years"}` });
     chartShareMetadata.set("sankey", { title: "Where revenue comes from", subtitle: `${sankeyData.activePackages.length} packages${sankeyData.groupBy === "category" ? ` · ${sankeyData.categories} categories` : ""} · ${dateBounds.start} to ${dateBounds.end}` });
