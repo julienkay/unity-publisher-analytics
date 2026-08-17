@@ -10,7 +10,7 @@
     "48": "icons/publisher-analytics-48.png",
     "128": "icons/publisher-analytics-128.png"
   },
-  "permissions": ["storage", "activeTab"],
+  "permissions": ["storage"],
   "host_permissions": ["https://publisher.unity.com/*"],
   "action": {
     "default_title": "Open Publisher Analytics+",
