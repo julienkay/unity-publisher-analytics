@@ -1113,9 +1113,32 @@
 
   function chartFilename(key) { return `publisher-analytics-${key}-${new Date().toISOString().slice(0, 10)}.png`; }
 
+  const CHART_EXPORT_WIDTH = 1920;
+
+  async function chartExportDataUrl(chart) {
+    const chartWidth = chart.getWidth();
+    const chartHeight = chart.getHeight();
+    const exportHeight = Math.round(CHART_EXPORT_WIDTH * chartHeight / chartWidth);
+    const container = document.createElement("div");
+    Object.assign(container.style, { position: "fixed", left: "-10000px", top: "0", width: `${CHART_EXPORT_WIDTH}px`, height: `${exportHeight}px`, visibility: "hidden", pointerEvents: "none" });
+    document.body.appendChild(container);
+    const exportChart = globalThis.UPAECharts.init(container, null, { renderer: "canvas", width: CHART_EXPORT_WIDTH, height: exportHeight });
+    try {
+      const option = chart.getOption();
+      option.animation = false;
+      exportChart.setOption(option, { notMerge: true, lazyUpdate: false });
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      exportChart.getZr().flush();
+      return exportChart.getDataURL({ type: "png", pixelRatio: 1, backgroundColor: "#ffffff" });
+    } finally {
+      exportChart.dispose();
+      container.remove();
+    }
+  }
+
   async function chartImage(key) {
     const chart = chartInstances.get(key), metadata = chartShareMetadata.get(key); if (!chart || !metadata) throw new Error("This chart is not ready yet.");
-    const source = chart.getDataURL({ type: "png", pixelRatio: 2, backgroundColor: "#ffffff" });
+    const source = await chartExportDataUrl(chart);
     const image = new Image(); image.src = source; await image.decode();
     const scopeLegend = Array.isArray(metadata.scopeLegend) ? metadata.scopeLegend : [], headerHeight = 150, footerHeight = scopeLegend.length ? 60 + scopeLegend.length * 28 : 0;
     const canvas = document.createElement("canvas"); canvas.width = image.naturalWidth; canvas.height = image.naturalHeight + headerHeight + footerHeight;
