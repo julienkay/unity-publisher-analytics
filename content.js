@@ -10,6 +10,11 @@
   const SYNC_KEY = "apiSyncV1";
   const DAILY_API_MIN_DATE = "2019-01-01";
   const DAILY_API_WINDOW_DAYS = 365;
+  const RANGE_OPTIONS = [
+    { id: "all", label: "All time" }, { id: "7d", label: "Last 7 days" }, { id: "30d", label: "Last 30 days" }, { id: "3", label: "Last 3 months" },
+    { id: "6", label: "Last 6 months" }, { id: "12", label: "Last 1 year" }, { id: "36", label: "Last 3 years" }, { id: "60", label: "Last 5 years" },
+    { id: "mtd", label: "Month to date" }, { id: "ytd", label: "Year to date" }
+  ];
   const API = {
     user: "/publisher-v2-api/user",
     packages: "/publisher-v2-api/proxy?path=%2Fmanagement%2Fonce-published-packages&type=array",
@@ -575,6 +580,22 @@
     const start = new Date(`${available.end}T00:00:00Z`);
     start.setUTCMonth(start.getUTCMonth() - Number(prefs.range));
     return { start: [start.toISOString().slice(0, 10), available.start].sort().at(-1), end: available.end };
+  }
+
+  function rangePopoverMarkup(dateBounds = selectedDateBounds(), availableBounds = availableDateBounds()) {
+    const customRangeLabel = `${shortDate(dateBounds.start)} – ${shortDate(dateBounds.end)}`;
+    return `<div class="upa-range-popover" role="dialog" aria-label="Choose time range">${isCustomRangeEditorOpen
+      ? `<div class="upa-custom-range"><div class="upa-custom-range-head"><button type="button" data-action="range-back" aria-label="Back to time ranges">←</button><div><strong>Custom range</strong><span>Choose exact start and end dates.</span></div></div><div class="upa-custom-range-fields"><label>From<input id="upa-custom-start" type="date" value="${dateBounds.start}" min="${availableBounds.start}" max="${availableBounds.end}"></label><label>Until<input id="upa-custom-end" type="date" value="${dateBounds.end}" min="${availableBounds.start}" max="${availableBounds.end}"></label></div><div class="upa-custom-range-actions"><button type="button" data-action="range-cancel">Cancel</button><button class="upa-primary" type="button" data-action="range-apply">Apply range</button></div></div>`
+      : `<div class="upa-range-menu" role="listbox">${RANGE_OPTIONS.map(option => `<button type="button" role="option" aria-selected="${prefs.range === option.id}" data-range-option="${option.id}"><span>${option.label}</span>${prefs.range === option.id ? "<i>✓</i>" : ""}</button>`).join("")}<button class="upa-range-custom-option" type="button" role="option" aria-selected="${prefs.range === "custom"}" data-range-option="custom"><span><strong>Custom range</strong><small>${prefs.range === "custom" ? customRangeLabel : "Choose exact dates"}</small></span>${prefs.range === "custom" ? "<i>✓</i>" : ""}</button></div>`}</div>`;
+  }
+
+  function updateRangePopover() {
+    // Keep popover-only interactions out of render(), which recreates the charts and clears their zoom state.
+    const picker = document.querySelector("#upa-root .upa-range-picker"), trigger = picker?.querySelector(".upa-range-trigger");
+    if (!picker || !trigger) return;
+    picker.querySelector(".upa-range-popover")?.remove();
+    trigger.setAttribute("aria-expanded", String(isRangePopoverOpen));
+    if (isRangePopoverOpen) picker.insertAdjacentHTML("beforeend", rangePopoverMarkup());
   }
 
   function comparisonDateBounds(bounds, range) {
@@ -1337,18 +1358,11 @@
     const refreshTooltip = `Refresh publisher data · ${lastRefreshedAt ? `Last refreshed ${dateTime(lastRefreshedAt)}` : "Not refreshed yet"}`;
     const showRefreshAction = hasData && !syncJob?.active && syncJob?.phase !== "error" && !syncIncomplete;
     const refreshAction = showRefreshAction ? `<button class="upa-refresh-action ${isRefreshing ? "upa-refreshing" : ""}" type="button" data-action="refresh" aria-label="${escapeHtml(refreshTooltip)}" ${isRefreshing ? "disabled" : ""}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 5.9A5.5 5.5 0 1 0 13 10.7"></path><path d="M13.4 2.8v3.5H9.9"></path></svg><span>${isRefreshing ? "Refreshing…" : "Refresh data"}</span><span class="upa-refresh-tooltip" role="tooltip">${escapeHtml(refreshTooltip)}</span></button>` : "";
-    const rangeOptions = [
-      { id: "all", label: "All time" }, { id: "7d", label: "Last 7 days" }, { id: "30d", label: "Last 30 days" }, { id: "3", label: "Last 3 months" },
-      { id: "6", label: "Last 6 months" }, { id: "12", label: "Last 1 year" }, { id: "36", label: "Last 3 years" }, { id: "60", label: "Last 5 years" },
-      { id: "mtd", label: "Month to date" }, { id: "ytd", label: "Year to date" }
-    ];
     const customRangeLabel = `${shortDate(dateBounds.start)} – ${shortDate(dateBounds.end)}`;
-    const selectedRangeLabel = prefs.range === "custom" ? customRangeLabel : rangeOptions.find(option => option.id === prefs.range)?.label || "All time";
+    const selectedRangeLabel = prefs.range === "custom" ? customRangeLabel : RANGE_OPTIONS.find(option => option.id === prefs.range)?.label || "All time";
     const revenueMixLabel = prefs.range === "all" ? "Lifetime" : selectedRangeLabel;
     const revenueMixData = revenueMixViewModel(daily.filter(item => item.scope === "package"), revenueMixLabel);
-    const rangePopover = isRangePopoverOpen ? `<div class="upa-range-popover" role="dialog" aria-label="Choose time range">${isCustomRangeEditorOpen
-      ? `<div class="upa-custom-range"><div class="upa-custom-range-head"><button type="button" data-action="range-back" aria-label="Back to time ranges">←</button><div><strong>Custom range</strong><span>Choose exact start and end dates.</span></div></div><div class="upa-custom-range-fields"><label>From<input id="upa-custom-start" type="date" value="${dateBounds.start}" min="${availableBounds.start}" max="${availableBounds.end}"></label><label>Until<input id="upa-custom-end" type="date" value="${dateBounds.end}" min="${availableBounds.start}" max="${availableBounds.end}"></label></div><div class="upa-custom-range-actions"><button type="button" data-action="range-cancel">Cancel</button><button class="upa-primary" type="button" data-action="range-apply">Apply range</button></div></div>`
-      : `<div class="upa-range-menu" role="listbox">${rangeOptions.map(option => `<button type="button" role="option" aria-selected="${prefs.range === option.id}" data-range-option="${option.id}"><span>${option.label}</span>${prefs.range === option.id ? "<i>✓</i>" : ""}</button>`).join("")}<button class="upa-range-custom-option" type="button" role="option" aria-selected="${prefs.range === "custom"}" data-range-option="custom"><span><strong>Custom range</strong><small>${prefs.range === "custom" ? customRangeLabel : "Choose exact dates"}</small></span>${prefs.range === "custom" ? "<i>✓</i>" : ""}</button></div>`}</div>` : "";
+    const rangePopover = isRangePopoverOpen ? rangePopoverMarkup(dateBounds, availableBounds) : "";
     const rangeControl = hasData && section !== "settings" && !(section === "analytics" && view === "lifetime") ? `<div class="upa-header-control upa-header-range"><span>Time range</span><div class="upa-range-picker"><button class="upa-range-trigger" type="button" data-action="range-toggle" aria-haspopup="dialog" aria-expanded="${isRangePopoverOpen}"><b>${selectedRangeLabel}</b><svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3"></path></svg></button>${rangePopover}</div></div>` : "";
     const intervalControl = hasData && section === "analytics" && view === "revenue" ? `<label class="upa-header-control upa-header-interval"><span>Interval</span><select id="upa-interval" aria-label="Chart interval"><option value="auto" ${prefs.interval === "auto" ? "selected" : ""}>Automatic (${intervalName(interval).toLowerCase()})</option><option value="day" ${prefs.interval === "day" ? "selected" : ""}>Daily</option><option value="week" ${prefs.interval === "week" ? "selected" : ""}>Weekly</option><option value="month" ${prefs.interval === "month" ? "selected" : ""}>Monthly</option><option value="quarter" ${prefs.interval === "quarter" ? "selected" : ""}>Quarterly</option><option value="year" ${prefs.interval === "year" ? "selected" : ""}>Yearly</option></select></label>` : "";
     const averageRevenueHelp = trailingRevenue.monthCount ? `Average gross revenue across the ${trailingRevenue.monthCount === 12 ? "last 12" : number(trailingRevenue.monthCount)} complete months available.` : "Average monthly revenue is calculated once a complete month is available.";
@@ -1507,20 +1521,23 @@
         render(); toast("Package group deleted."); return;
       }
       if (action === "range-toggle") {
-        isRangePopoverOpen = !isRangePopoverOpen; isCustomRangeEditorOpen = false; render(); return;
+        isRangePopoverOpen = !isRangePopoverOpen; isCustomRangeEditorOpen = false; updateRangePopover(); return;
       }
       const rangeOption = event.target.closest("[data-range-option]")?.dataset.rangeOption;
       if (rangeOption) {
         if (rangeOption === "custom") {
-          isRangePopoverOpen = true; isCustomRangeEditorOpen = true; render();
+          isRangePopoverOpen = true; isCustomRangeEditorOpen = true; updateRangePopover();
           requestAnimationFrame(() => document.querySelector("#upa-custom-start")?.focus());
           return;
+        }
+        if (rangeOption === prefs.range) {
+          isRangePopoverOpen = false; isCustomRangeEditorOpen = false; updateRangePopover(); return;
         }
         prefs.range = rangeOption; isRangePopoverOpen = false; isCustomRangeEditorOpen = false;
         await savePrefs(); render(); return;
       }
-      if (action === "range-back") { isRangePopoverOpen = true; isCustomRangeEditorOpen = false; render(); return; }
-      if (action === "range-cancel") { isRangePopoverOpen = false; isCustomRangeEditorOpen = false; render(); return; }
+      if (action === "range-back") { isRangePopoverOpen = true; isCustomRangeEditorOpen = false; updateRangePopover(); return; }
+      if (action === "range-cancel") { isRangePopoverOpen = false; isCustomRangeEditorOpen = false; updateRangePopover(); return; }
       if (action === "range-apply") {
         let start = document.querySelector("#upa-custom-start")?.value || "", end = document.querySelector("#upa-custom-end")?.value || "";
         const available = availableDateBounds();
@@ -1599,7 +1616,7 @@
       const openPackageFilter = document.querySelector("#upa-root .upa-package-filter[open]");
       if (openPackageFilter) { openPackageFilter.open = false; openPackageFilter.querySelector("summary")?.focus(); return; }
       if (!isRangePopoverOpen) return;
-      isRangePopoverOpen = false; isCustomRangeEditorOpen = false; render();
+      isRangePopoverOpen = false; isCustomRangeEditorOpen = false; updateRangePopover();
       requestAnimationFrame(() => document.querySelector("#upa-root .upa-range-trigger")?.focus());
     });
     extensionApi.runtime.onMessage.addListener(message => {
