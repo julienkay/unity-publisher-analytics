@@ -1,6 +1,8 @@
 const DB_NAME = "unity-publisher-analytics-api";
 const DB_VERSION = 2;
 const ANALYTICS_META_KEYS = ["apiSyncV1"];
+const PUBLISHER_PORTAL_URL = "https://publisher.unity.com/";
+const OPEN_REQUEST_PREFIX = "upaOpenOnLoad:";
 
 function openDatabase() {
   return new Promise((resolve, reject) => {
@@ -89,7 +91,14 @@ async function handleDatabaseMessage(message) {
   }
 }
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "UPA_CONSUME_OPEN") {
+    const key = `${OPEN_REQUEST_PREFIX}${sender.tab?.id}`;
+    chrome.storage.session.get(key)
+      .then(values => chrome.storage.session.remove(key).then(() => sendResponse({ open: values[key] === true })))
+      .catch(() => sendResponse({ open: false }));
+    return true;
+  }
   if (!message?.type?.startsWith("UPA_DB_")) return false;
   handleDatabaseMessage(message)
     .then(result => sendResponse({ ok: true, result }))
@@ -98,6 +107,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 chrome.action.onClicked.addListener(async tab => {
-  if (!tab.id || !tab.url?.startsWith("https://publisher.unity.com/")) return;
-  try { await chrome.tabs.sendMessage(tab.id, { type: "UPA_TOGGLE" }); } catch { /* Reload the portal once after installing. */ }
+  if (!tab.id) return;
+  if (tab.url?.startsWith(PUBLISHER_PORTAL_URL)) {
+    try { await chrome.tabs.sendMessage(tab.id, { type: "UPA_TOGGLE" }); } catch { /* Reload the portal once after installing. */ }
+    return;
+  }
+  const portalTab = await chrome.tabs.create({ url: "about:blank" });
+  if (!portalTab.id) return;
+  const key = `${OPEN_REQUEST_PREFIX}${portalTab.id}`;
+  await chrome.storage.session.set({ [key]: true });
+  try { await chrome.tabs.update(portalTab.id, { url: PUBLISHER_PORTAL_URL }); }
+  catch (error) { await chrome.storage.session.remove(key); throw error; }
 });

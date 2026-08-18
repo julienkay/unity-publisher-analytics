@@ -1610,6 +1610,8 @@
   }
 
   async function init() {
+    try { isOpen = Boolean((await chrome.runtime.sendMessage({ type: "UPA_CONSUME_OPEN" }))?.open); }
+    catch { /* The in-page launcher remains available if the service worker is unavailable. */ }
     const root = document.createElement("div"); root.id = "upa-root"; document.body.appendChild(root); bindEvents(); render();
     try { await activatePublisher(await fetchPublisherIdentity(), { initial: true }); }
     catch (error) { publisherIdentityState = "error"; console.warn("Publisher Analytics+ could not identify the active publisher:", error.message); render(); }
