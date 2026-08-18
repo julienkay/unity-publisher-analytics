@@ -1,0 +1,26 @@
+[
+  {
+    "first_published_at": "2020-03-25T11:48:21Z",
+    "name": "Package 1",
+    "package_id": "100001",
+    "status": "published"
+  },
+  {
+    "first_published_at": "2020-11-03T17:33:14Z",
+    "name": "Package 2",
+    "package_id": "100002",
+    "status": "published"
+  },
+  {
+    "first_published_at": "2021-10-09T16:07:13Z",
+    "name": "Package 3",
+    "package_id": "100003",
+    "status": "published"
+  },
+  {
+    "first_published_at": "2022-01-22T12:07:12Z",
+    "name": "Package 4",
+    "package_id": "100004",
+    "status": "published"
+  }
+]

@@ -1,0 +1,11 @@
+{
+  "id": "100001",
+  "name": "Publisher User",
+  "locale": "locale-1",
+  "publisherId": "100001",
+  "defaultOrgId": "100001",
+  "publisherOrgId": "100002",
+  "publisherOrgName": "Publisher Organization",
+  "countries": ["country-1"],
+  "avatar": {}
+}

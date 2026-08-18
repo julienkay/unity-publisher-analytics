@@ -1,0 +1,30 @@
+[
+  {
+    "assetstore_name": "Category 1",
+    "id": "100001",
+    "multiple": "value-1",
+    "name": "category-slug-1",
+    "status": "active"
+  },
+  {
+    "assetstore_name": "Category 2",
+    "id": "100002",
+    "multiple": "value-1",
+    "name": "category-slug-2",
+    "status": "active"
+  },
+  {
+    "assetstore_name": "Category 3",
+    "id": "100003",
+    "multiple": "value-1",
+    "name": "category-slug-3",
+    "status": "active"
+  },
+  {
+    "assetstore_name": "Category 4",
+    "id": "100004",
+    "multiple": "value-1",
+    "name": "category-slug-4",
+    "status": "active"
+  }
+]

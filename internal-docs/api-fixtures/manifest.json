@@ -1,72 +1,80 @@
 {
   "formatVersion": 1,
-  "lastReviewed": "2026-08-15",
-  "source": "Repository and original Codex session audit",
-  "warning": "No sanitized raw response fixtures have been retained. Request shapes are not response evidence.",
+  "lastReviewed": "2026-08-18",
+  "source": "Signed-in Publisher Portal capture on one publisher account",
+  "warning": "These are sanitized, representative samples from one account, not a supported Unity API contract. Read each provenance sidecar before drawing semantic or cardinality conclusions.",
   "endpoints": [
+    {
+      "id": "user",
+      "method": "GET",
+      "path": "/publisher-v2-api/user",
+      "status": "captured",
+      "responseFixture": "user.json",
+      "provenanceFixture": "user.provenance.json"
+    },
     {
       "id": "once-published-packages",
       "method": "GET",
       "path": "/publisher-v2-api/proxy?path=%2Fmanagement%2Fonce-published-packages&type=array",
-      "status": "missing",
-      "responseFixture": null,
-      "provenanceFixture": null
+      "status": "captured",
+      "responseFixture": "once-published-packages.json",
+      "provenanceFixture": "once-published-packages.provenance.json"
     },
     {
       "id": "categories",
       "method": "GET",
       "path": "/publisher-v2-api/proxy?path=%2Fmanagement%2Fcategories&type=array",
-      "status": "missing",
-      "responseFixture": null,
-      "provenanceFixture": null
+      "status": "captured",
+      "responseFixture": "categories.json",
+      "provenanceFixture": "categories.provenance.json"
     },
     {
       "id": "package-metadata",
       "method": "POST",
       "path": "/publisher-v2-api/management/packages",
-      "status": "missing",
-      "responseFixture": null,
-      "provenanceFixture": null
+      "status": "captured",
+      "responseFixture": "package-metadata.json",
+      "provenanceFixture": "package-metadata.provenance.json"
     },
     {
       "id": "monthly-sales",
       "method": "GET",
       "path": "/publisher-v2-api/monthly-sales?date=YYYY-MM-01",
-      "status": "missing",
-      "responseFixture": null,
-      "provenanceFixture": null
+      "status": "captured",
+      "responseFixture": "monthly-sales.json",
+      "provenanceFixture": "monthly-sales.provenance.json"
     },
     {
       "id": "monthly-downloads",
       "method": "GET",
       "path": "/publisher-v2-api/monthly-downloads?date=YYYY-MM-01",
-      "status": "missing",
-      "responseFixture": null,
-      "provenanceFixture": null
+      "status": "captured",
+      "responseFixture": "monthly-downloads.json",
+      "provenanceFixture": "monthly-downloads.provenance.json"
     },
     {
       "id": "publisher-revenues",
       "method": "GET",
       "path": "/publisher-v2-api/publisher-revenues",
-      "status": "missing",
-      "responseFixture": null,
-      "provenanceFixture": null
+      "status": "captured",
+      "responseFixture": "publisher-revenues.json",
+      "provenanceFixture": "publisher-revenues.provenance.json"
     },
     {
       "id": "daily-catalog",
       "method": "POST",
       "path": "/publisher-v2-api/dashboard/daily",
-      "status": "missing",
-      "responseFixture": null,
-      "provenanceFixture": null
+      "status": "captured",
+      "responseFixture": "daily-catalog.json",
+      "provenanceFixture": "daily-catalog.provenance.json"
     },
     {
       "id": "daily-package",
       "method": "POST",
       "path": "/publisher-v2-api/dashboard/daily",
-      "status": "missing",
-      "responseFixture": null,
-      "provenanceFixture": null
+      "status": "captured",
+      "responseFixture": "daily-package.json",
+      "provenanceFixture": "daily-package.provenance.json"
     }
   ]
 }

@@ -1,0 +1,128 @@
+{
+  "package_versions": [
+    {
+      "average_rating": "redacted-string-1",
+      "category": "category-value-1",
+      "count_ratings": "redacted-string-1",
+      "created": "2024-05-07 10:25:30",
+      "id": "100005",
+      "modified": "2024-06-17 13:09:11",
+      "name": "Package 7",
+      "package_id": "100007",
+      "price": "0",
+      "size": "395044",
+      "status": "declined",
+      "status_updated": "2024-06-17 13:09:11",
+      "status_publishing": false,
+      "submitted": "2024-05-07 10:25:05",
+      "unitypackages": [
+        {
+          "first_approved_at": null,
+          "size": "395044",
+          "unity_version": "unity-version-1",
+          "unity_version_number": "1200006201202",
+          "vetting": {
+            "genesis_vetting_id": "100001",
+            "id": "100008"
+          }
+        }
+      ],
+      "packmanpackages": [],
+      "version_name": "version-1",
+      "auto_publish": "value-1"
+    },
+    {
+      "average_rating": "redacted-string-1",
+      "category": "category-value-2",
+      "count_ratings": "2",
+      "created": "2021-10-11 20:21:25",
+      "id": "100009",
+      "modified": "2021-12-28 21:17:15",
+      "name": "Package 3",
+      "package_id": "100003",
+      "price": "20",
+      "size": "316986",
+      "status": "draft",
+      "status_updated": "2021-10-11 20:21:25",
+      "status_publishing": false,
+      "submitted": "redacted-string-1",
+      "unitypackages": [
+        {
+          "first_approved_at": "2021-10-10 09:16:51",
+          "size": "316986",
+          "unity_version": "unity-version-2",
+          "unity_version_number": "404206441202",
+          "vetting": {
+            "genesis_vetting_id": null,
+            "id": "100011"
+          }
+        }
+      ],
+      "packmanpackages": [],
+      "version_name": "version-1",
+      "auto_publish": "value-2"
+    },
+    {
+      "average_rating": "redacted-string-1",
+      "category": "category-value-2",
+      "count_ratings": "2",
+      "created": "2021-07-18 17:52:08",
+      "id": "100012",
+      "modified": "2021-10-10 09:17:14",
+      "name": "Package 3",
+      "package_id": "100003",
+      "price": "20",
+      "size": "316986",
+      "status": "published",
+      "status_updated": "2021-10-10 09:17:14",
+      "status_publishing": false,
+      "submitted": "2021-10-09 16:14:44",
+      "unitypackages": [
+        {
+          "first_approved_at": "2021-10-10 09:16:51",
+          "size": "316986",
+          "unity_version": "unity-version-2",
+          "unity_version_number": "404206441202",
+          "vetting": {
+            "genesis_vetting_id": "100002",
+            "id": "100013"
+          }
+        }
+      ],
+      "packmanpackages": [],
+      "version_name": "version-1",
+      "auto_publish": "value-2"
+    },
+    {
+      "average_rating": "redacted-string-1",
+      "category": "category-value-1",
+      "count_ratings": "redacted-string-1",
+      "created": "2022-01-29 22:34:17",
+      "id": "100014",
+      "modified": "2022-01-29 22:34:17",
+      "name": "Package 16",
+      "package_id": "100016",
+      "price": "2.5",
+      "size": "redacted-string-1",
+      "status": "draft",
+      "status_updated": "2022-01-29 22:34:17",
+      "status_publishing": false,
+      "submitted": "redacted-string-1",
+      "unitypackages": [],
+      "packmanpackages": [],
+      "version_name": "2",
+      "auto_publish": "value-2"
+    }
+  ],
+  "package_key_images": {
+    "200001": { "icon": "redacted-icon-1" },
+    "200002": { "icon": "redacted-icon-2" }
+  },
+  "counts": {
+    "declined": "6",
+    "draft": "14",
+    "obsolete": "158",
+    "published": "10"
+  },
+  "total": "30"
+}

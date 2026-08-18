@@ -14,14 +14,14 @@ This log makes data policies reviewable. “Provisional” means the code uses t
 
 - **Status:** Provisional.
 - **Current behavior:** `valueFrom()` normalizes case and punctuation and accepts many snake-case, camelCase, and semantic aliases.
-- **Basis:** Defensive implementation during rapid reverse engineering; no fixture suite exists.
+- **Basis:** Defensive implementation during rapid reverse engineering. A one-account canonical fixture set now exists, but most accepted aliases still have no retained variant evidence.
 - **Risk:** A semantically different field may be accepted silently, and maintainers cannot tell compatibility evidence from guesses.
 - **Target decision:** Keep only a fixture-backed canonical field plus fixture-backed variants. Unknown shapes should produce a diagnostic error rather than silently become zero.
 
 ## D-003 — Start daily history no earlier than 2019-01-01
 
 - **Status:** Provisional and unsupported.
-- **Current behavior:** The earliest package publication or ledger date is clamped to `2019-01-01`.
+- **Current behavior:** The intended earliest package publication or ledger date is clamped to `2019-01-01`. The retained package response uses `first_published_at`, which the current normalizer does not read, so this shape currently falls back to the earliest ledger date.
 - **Basis:** The constant existed in the initial commit; no provenance was recorded.
 - **Risk:** Older retained publisher history is silently excluded.
 - **Target decision:** Discover the retention boundary empirically per account or document a verified Unity boundary. Until then, describe the result as “history available since the attempted boundary,” not inherently complete history.
@@ -44,9 +44,9 @@ This log makes data policies reviewable. “Provisional” means the code uses t
 
 ## D-006 — Treat daily `end_date` as exclusive
 
-- **Status:** Provisional.
+- **Status:** Provisional, supported by one full-month fixture.
 - **Current behavior:** Adjacent windows share a boundary cursor, and the UI labels the end as one day earlier.
-- **Basis:** Working loop behavior and conventional API range design, but no retained boundary test.
+- **Basis:** Retained catalog and package month responses include `start_date` through `end_date - 1` and exclude `end_date`. The stricter paired boundary suite is not yet retained.
 - **Risk:** If Unity uses inclusive ends, boundaries overlap; if another interpretation applies, days may be skipped.
 - **Target decision:** Confirm with paired requests around a known active date and retain the sanitized fixtures.
 
@@ -110,7 +110,7 @@ This log makes data policies reviewable. “Provisional” means the code uses t
 
 - **Status:** Provisional.
 - **Current behavior:** Prefer identifier matches across several candidate fields, then fall back to a case-normalized exact package name. Accept scalar or nested category assignments.
-- **Basis:** The original account required a nested live `category` assignment after simpler ID mapping failed.
+- **Basis:** The original account required a nested live `category` assignment after simpler ID mapping failed. The 2026-08-18 fixture captured scalar-string `category` values on retained rows, so both shapes remain plausible while only the scalar shape is fixture-backed.
 - **Risk:** Ambiguous names, multiple package versions, and ID namespaces can misclassify assets.
 - **Target decision:** Retain the live response variants as fixtures, establish identifier precedence, and surface unresolved or conflicting mappings instead of silently choosing the last row.
 

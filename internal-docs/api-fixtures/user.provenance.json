@@ -1,0 +1,15 @@
+{
+  "captureDate": "2026-08-18",
+  "portalPage": "https://publisher.unity.com/sales",
+  "endpoint": "/publisher-v2-api/user",
+  "method": "GET",
+  "accountContext": "Signed-in publisher with a non-empty organization and country list.",
+  "captureMethod": "A temporary opt-in local capture block requested the same-origin endpoint and sanitized the parsed JSON in the page before emitting it. Cookies, CSRF values, headers, email addresses, and raw response JSON were never logged or retained.",
+  "sanitization": [
+    "Replaced user, publisher, and organization identifiers with stable numeric strings.",
+    "Replaced person, organization, locale, country, and avatar values.",
+    "Preserved key spelling, nesting, JSON types, nullability, and array/object containers."
+  ],
+  "boundarySemantics": "Not applicable.",
+  "commit": "pending"
+}

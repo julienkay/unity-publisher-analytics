@@ -1,0 +1,58 @@
+[
+  {
+    "downloads": {
+      "entitled_downloads": "2",
+      "entitled_first": "2024-07-05T07:28:21Z",
+      "entitled_last": "2024-07-05T07:28:21Z",
+      "entitled_users": "2",
+      "free_downloads": null,
+      "free_first": null,
+      "free_last": null,
+      "free_users": null
+    },
+    "name": "Package 4",
+    "package_id": "100004"
+  },
+  {
+    "downloads": {
+      "entitled_downloads": "4",
+      "entitled_first": "2024-07-17T15:08:12Z",
+      "entitled_last": "2024-07-25T20:42:55Z",
+      "entitled_users": "4",
+      "free_downloads": null,
+      "free_first": null,
+      "free_last": null,
+      "free_users": null
+    },
+    "name": "Package 1",
+    "package_id": "100001"
+  },
+  {
+    "downloads": {
+      "entitled_downloads": null,
+      "entitled_first": null,
+      "entitled_last": null,
+      "entitled_users": null,
+      "free_downloads": "4",
+      "free_first": "2024-07-17T10:15:21Z",
+      "free_last": "2024-07-21T11:12:25Z",
+      "free_users": "2"
+    },
+    "name": "Package 2",
+    "package_id": "100002"
+  },
+  {
+    "downloads": {
+      "entitled_downloads": "2",
+      "entitled_first": "2024-07-10T14:04:22Z",
+      "entitled_last": "2024-07-10T14:04:22Z",
+      "entitled_users": "2",
+      "free_downloads": null,
+      "free_first": null,
+      "free_last": null,
+      "free_users": null
+    },
+    "name": "Package 3",
+    "package_id": "100003"
+  }
+]

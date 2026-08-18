@@ -1,6 +1,10 @@
 {
-  "warning": "Reconstructed working requests, not captured response fixtures. Authentication headers are intentionally omitted.",
+  "warning": "Non-sensitive working request shapes. Authentication headers are intentionally omitted; see manifest.json and provenance sidecars for captured response evidence.",
   "requests": {
+    "user": {
+      "method": "GET",
+      "path": "/publisher-v2-api/user"
+    },
     "oncePublishedPackages": {
       "method": "GET",
       "path": "/publisher-v2-api/proxy?path=%2Fmanagement%2Fonce-published-packages&type=array"

@@ -1,0 +1,15 @@
+{
+  "captureDate": "2026-08-18",
+  "portalPage": "https://publisher.unity.com/sales",
+  "endpoint": "/publisher-v2-api/publisher-revenues",
+  "method": "GET",
+  "accountContext": "Non-empty revenue ledger; four representative debit-bearing rows retained.",
+  "captureMethod": "A temporary opt-in local capture block sanitized the parsed JSON in the page before emitting it. Authentication material and raw response JSON were never logged or retained.",
+  "sanitization": [
+    "Limited the ledger array to four representative rows.",
+    "Replaced descriptions, shifted dates two calendar years earlier, and scaled all monetary numbers together.",
+    "Preserved numeric JSON types, debit/credit signs and zero distinctions, ordering, and the running-balance relationship."
+  ],
+  "boundarySemantics": "No credit-bearing or empty-ledger variant was captured.",
+  "commit": "pending"
+}

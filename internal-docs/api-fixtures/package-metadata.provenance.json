@@ -1,0 +1,22 @@
+{
+  "captureDate": "2026-08-18",
+  "portalPage": "https://publisher.unity.com/sales",
+  "endpoint": "/publisher-v2-api/management/packages",
+  "method": "POST",
+  "sanitizedRequestBody": {
+    "limit": "200",
+    "order_by": "name",
+    "order": "asc"
+  },
+  "accountContext": "Non-empty first page containing declined, draft, and published versions, including repeated versions for one package.",
+  "captureMethod": "A temporary opt-in local capture block sanitized the parsed JSON in the page before emitting it. Authentication material and raw response JSON were never logged or retained.",
+  "sanitization": [
+    "Limited package_versions to four representative rows and package_key_images to two representative entries.",
+    "Replaced all package, version, vetting, and image identifiers and all names, icon locations, category values, and version labels.",
+    "Shifted dates two calendar years earlier while preserving ordering, nulls, and time-of-day.",
+    "Changed ratings, counts, prices, and sizes while preserving their JSON string types and zero/non-zero distinctions.",
+    "Preserved the observed response envelope, nested unitypackages/vetting objects, empty packmanpackages arrays, booleans, statuses, and nullability."
+  ],
+  "boundarySemantics": "The category property was a scalar string in every retained package-version row. Its redacted contents do not establish whether the string is an ID, slug, or display name.",
+  "commit": "pending"
+}

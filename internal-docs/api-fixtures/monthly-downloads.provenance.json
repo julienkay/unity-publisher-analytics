@@ -1,0 +1,16 @@
+{
+  "captureDate": "2026-08-18",
+  "portalPage": "https://publisher.unity.com/sales",
+  "endpoint": "/publisher-v2-api/monthly-downloads?date=2024-07-01",
+  "method": "GET",
+  "accountContext": "Non-empty month containing both entitled-only and free-only package rows.",
+  "captureMethod": "The live request used another month. A temporary opt-in local capture block sanitized the response in the page; the fixture month and all returned dates were then shifted together. Authentication material and raw response JSON were never logged or retained.",
+  "sanitization": [
+    "Limited the response to four representative package rows.",
+    "Replaced package IDs and names with stable values shared by the catalog and sales fixtures.",
+    "Shifted the request month and first/last timestamps two calendar years earlier.",
+    "Changed download and user counts while preserving their string types, nullability, zero/non-zero distinctions, and free-versus-entitled shape."
+  ],
+  "boundarySemantics": "No empty-month variant was captured. Array truncation prevents a catalog-total reconciliation claim.",
+  "commit": "pending"
+}

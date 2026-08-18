@@ -14,7 +14,7 @@ These documents describe implementation decisions, evidence, risks, and validati
 - [DATA-EVIDENCE.md](DATA-EVIDENCE.md) inventories Unity's undocumented endpoints, observed and defensive fields, metric semantics, sync behavior, publisher isolation, and category mapping.
 - [DECISIONS.md](DECISIONS.md) records which data policies are accepted, provisional, or unresolved.
 - [VALIDATION.md](VALIDATION.md) separates manually validated behavior from prototype assumptions, shortcuts, known issues, and next work.
-- [api-fixtures](api-fixtures/README.md) tracks request shapes and the missing sanitized response-fixture coverage.
+- [api-fixtures](api-fixtures/README.md) contains one-account sanitized response samples, request shapes, provenance, and the remaining variant/boundary gaps.
 
 ## Evidence standard
 

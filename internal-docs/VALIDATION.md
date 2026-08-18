@@ -1,6 +1,6 @@
 # Validation, shortcuts, and known issues
 
-Status: reconstructed from repository history and the original Codex session on 2026-08-15; publisher-isolation status updated 2026-08-16. The original session did not keep a formal test log, so this document is intentionally conservative.
+Status: reconstructed from repository history and the original Codex session on 2026-08-15; publisher-isolation status updated 2026-08-16; sanitized one-account API fixtures added 2026-08-18. The original session did not keep a formal test log, so this document is intentionally conservative.
 
 ## Validation scope
 
@@ -14,13 +14,14 @@ The implementation was developed against one publisher account. The session evid
 - zero refunds and chargebacks in the pasted monthly example; and
 - a negative aggregate wishlist value in the analytics export.
 
-The exact total catalog size, unpublished-package count, and number of metadata versions were not retained. Annual daily windows appear to have completed on this account, but timing, response sizes, and retry/rate-limit behavior were not measured.
+The exact total catalog size, unpublished-package count, and number of metadata versions were not retained. The 2026-08-18 fixtures deliberately truncate publisher-specific arrays, so they do not reveal those values. Annual daily windows appear to have completed on this account, but timing, response sizes, and retry/rate-limit behavior were not measured.
 
 ## Behavior matrix
 
 | Area | Status | Evidence and limits |
 |---|---|---|
-| Current endpoint paths and request shapes | **Observed once** | Working extension on one signed-in account; two earlier 400 responses recorded, but no raw fixtures |
+| Current endpoint paths and request shapes | **Fixture-backed on one account** | Sanitized responses retained for `/user` and all eight analytics endpoints; two earlier 400 variants remain undocumented |
+| Package publication date | **Captured implementation mismatch** | Published packages returned `first_published_at`; `fetchPackages()` does not read that key, so the earliest-date calculation falls back to the ledger for this shape |
 | Publisher identity and local isolation | **Implemented, second account unverified** | Official Portal bundle distinguishes `publisherId` from organization IDs; source checks cover namespace propagation, but no retained live switch test exists |
 | Publisher-scoped package groups | **Implemented, manual UI validation pending** | Groups use `package_id`, survive analytics clearing, and render as independently aggregated comparison lines; multi-scope selection, overlap notices, and dedicated create/edit/manage pages still need an unpacked-extension smoke test |
 | Chrome and Firefox support | **Validated** | Target manifests are generated from one canonical manifest; archive validation proves identical runtime payloads; Mozilla's linter reports no errors; and the temporary Firefox package operates successfully on the signed-in Publisher Portal. |
@@ -28,15 +29,15 @@ The exact total catalog size, unpublished-package count, and number of metadata 
 | Resumable checkpoint after page refresh | **Plausible prototype behavior** | Checkpoint is saved after each step; no explicit refresh-at-each-phase manual test was recorded |
 | Automatic incremental refresh | **Observed once at UI level** | Used during iteration; correction depth and new-package behavior not validated |
 | 365-day daily request | **Observed once** | Worked on the original account; no other account/catalog size tested |
-| Daily end-date exclusivity | **Unverified** | Assumed by cursor logic; no paired boundary fixture |
-| Explicit zero days versus omitted days | **Unverified** | Raw date keys were not retained; storage cannot distinguish them |
-| Monthly/daily gross reconciliation | **Unverified** | No complete month comparison retained |
+| Daily end-date exclusivity | **Observed in one retained month** | Both catalog and package fixtures include `start_date` through `end_date - 1` and exclude `end_date`; paired boundary suite still missing |
+| Explicit zero days versus omitted days | **Partially observed** | Retained package response includes explicit `{}` inactive dates and zero-valued metric objects; no omitted-date variant captured, and storage loses the distinction |
+| Monthly/daily gross reconciliation | **Confirmed for one limited paid sample** | Catalog daily and selected-package daily totals match retained monthly sales; zero refunds/chargebacks, no claims, and no matching CSV export |
 | Paid-only assets | **Observed once** | Pasted monthly and analytics examples include paid assets |
 | Free-only assets and conversion | **Confirmed for the portal CSV example** | `$0`, 242 sales quantity, 598 views, and 40.47% conversion establish inclusion of claims in that export |
 | Non-zero refunds | **Unverified** | Examples were zero |
 | Non-zero chargebacks | **Unverified** | Examples were zero |
 | Wishlist removals/net change | **Confirmed for the portal CSV example** | A selected-period value of `-1` was present; daily reconciliation remains unverified |
-| Download events versus users | **Inferred** | Monthly response handling distinguishes download and user fields; no raw fixture or portal definition retained |
+| Download events versus users | **Fixture-backed shape, semantics inferred** | Monthly fixture has distinct free/entitled download and user fields; portal definitions and daily equivalence remain unverified |
 | Localized API number strings | **Defensive only** | `toNumber()` accepts comma/dot/currency variants; no localized raw API response was retained |
 | USD across publishers | **Unverified** | Only the original dollar-denominated account was seen |
 | Empty publisher account | **Unverified** | No empty catalog/ledger account tested |
@@ -48,7 +49,7 @@ The exact total catalog size, unpublished-package count, and number of metadata 
 | Authentication expiry during sync | **Unverified** | No expiry/re-authentication test retained |
 | Rate limiting and server timeout | **Unverified** | Fixed sleeps exist; no 429/backoff or adaptive split test |
 | Browser refresh during active API call | **Unverified** | Resume starts from last saved checkpoint; in-flight behavior not explicitly exercised |
-| Publisher account switching | **Known unsafe** | Storage and records are not publisher-namespaced |
+| Publisher account switching | **Implemented, second account unverified** | Storage, checkpoints, preferences, and records are publisher-namespaced and fail closed; no retained live two-account switch test |
 | Extension move/reinstall | **Observed** | Moving to a separately loaded unpacked extension produced a different extension origin and apparently empty storage; migration was deliberately not added |
 | Desktop visual behavior | **Manually iterated** | Dashboard, charts, filters, legends, menus, tooltips, and sync states were repeatedly reviewed in the original browser session |
 | Mobile-width layout | **CSS implemented, not formally validated** | Responsive rules exist; no retained viewport matrix or screenshots |
@@ -102,18 +103,20 @@ These appear to have been expedient implementation choices rather than conscious
 
 1. Unknown response shapes often normalize to empty strings or zero rather than fail visibly.
 2. Defensive aliases lack fixtures and may hide API changes.
-3. Daily/monthly gross, sales, and refund semantics are not reconciled.
-4. Missing days and explicit zero days are indistinguishable.
-5. Partial current months are not consistently identified in the interface.
+3. The fixture-backed `first_published_at` package field is not normalized.
+4. Captured daily `revenue` and `chargebacks` fields are discarded by `normalizeDaily()`.
+5. Daily/monthly gross, sales, and refund semantics are not reconciled beyond one limited paid sample.
+6. Explicit empty days, explicit zero-valued days, and omitted days are indistinguishable after normalization.
+7. Partial current months are not consistently identified in the interface.
 
 ## Test and evidence backlog
 
 Work should proceed in this order:
 
 1. Validate publisher isolation and fail-closed switching with two live publisher accounts.
-2. Capture all raw endpoint fixtures using [api-fixtures/README.md](api-fixtures/README.md).
-3. Add pure normalizer tests using those fixtures, including unknown-shape failures.
-4. Add paired daily boundary and zero-day tests.
+2. Add pure normalizer tests using the retained fixtures, including `first_published_at` and unknown-shape failures.
+3. Capture the missing empty, non-zero refund/chargeback, negative-wishlist, rating, category-object, pagination, and localized-value variants using [api-fixtures/README.md](api-fixtures/README.md).
+4. Add paired daily boundary and omitted/empty/zero-day tests.
 5. Reconcile representative complete months and document tolerances.
 6. Run recent-data snapshot tests to determine the lag and overlap window.
 7. Add catalog lifecycle tests for new, renamed, removed, and re-categorized packages.

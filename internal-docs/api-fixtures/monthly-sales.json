@@ -1,0 +1,26 @@
+[
+  {
+    "chargebacks": "0",
+    "first": "2024-07-10T14:01:12Z",
+    "gross": "40",
+    "last": "2024-07-10T14:01:12Z",
+    "name": "Package 3",
+    "package_id": "100003",
+    "price": "20",
+    "refunds": "0",
+    "revenue": "28",
+    "sales": "2"
+  },
+  {
+    "chargebacks": "0",
+    "first": "2024-07-05T07:25:16Z",
+    "gross": "5",
+    "last": "2024-07-05T07:25:16Z",
+    "name": "Package 4",
+    "package_id": "100004",
+    "price": "2.5",
+    "refunds": "0",
+    "revenue": "3.5",
+    "sales": "2"
+  }
+]

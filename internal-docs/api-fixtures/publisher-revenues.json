@@ -1,0 +1,30 @@
+[
+  {
+    "description": "Ledger entry 1",
+    "debit": 28,
+    "credit": 0,
+    "balance": 28,
+    "date": "2020-04-01T05:47:16Z"
+  },
+  {
+    "description": "Ledger entry 2",
+    "debit": 28,
+    "credit": 0,
+    "balance": 56,
+    "date": "2020-05-01T05:20:37Z"
+  },
+  {
+    "description": "Ledger entry 3",
+    "debit": 28,
+    "credit": 0,
+    "balance": 84,
+    "date": "2020-06-01T05:17:55Z"
+  },
+  {
+    "description": "Ledger entry 4",
+    "debit": 56,
+    "credit": 0,
+    "balance": 140,
+    "date": "2020-07-01T05:23:37Z"
+  }
+]
