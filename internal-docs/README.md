@@ -6,6 +6,7 @@ These documents describe implementation decisions, evidence, risks, and validati
 
 - [DESIGN.md](DESIGN.md) defines the shared interface system.
 - [RENDERING.md](RENDERING.md) records the visualization architecture.
+- [DEVELOPMENT.md](DEVELOPMENT.md) covers local setup, validation, chart builds, and Chrome Web Store packaging.
 
 ## Data trust
 

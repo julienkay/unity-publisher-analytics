@@ -1,71 +1,26 @@
 # Publisher Analytics+
 
-A Chrome extension that turns Unity Publisher Portal data into a clearer historical dashboard.
+Long-term analytics for Unity Asset Store publishers, directly inside the Publisher Portal.
 
-See [VISION.md](VISION.md) for the product direction and guiding principles.
+[**Install from the Chrome Web Store**](https://chromewebstore.google.com/detail/publisher-analytics+-asse/ejchldapebffjngpijaiamjiennfahfp)
 
-Maintainer documentation, including the interface system, rendering architecture,
-data evidence, and decision log, lives in [internal-docs](internal-docs/README.md).
+[Unity Discussions](https://github.com/julienkay/unity-publisher-analytics) · [Vision](VISION.md)
 
-## Install locally
+Publisher Analytics+ builds a private, local history of your Asset Store performance beyond the Portal's one-year window. Explore revenue, sales, claims, downloads, pageviews, conversion, wishlists, refunds, and package performance across your catalog's available lifetime.
 
-1. Open `chrome://extensions`.
-2. Enable **Developer mode**.
-3. Click **Load unpacked** and select this folder.
-4. Open or refresh any page under `https://publisher.unity.com/` while signed in.
-5. Click the **Publisher Analytics+** button or the extension toolbar icon.
+## Features
 
-After updating an existing unpacked installation, click **Reload** on its `chrome://extensions` card and refresh the Publisher Portal.
+- Complete available history with automatic, resumable sync
+- Flexible date ranges and daily, weekly, monthly, quarterly, or yearly views
+- Catalog-wide, package-group, and individual-package comparisons
+- Performance, lifetime growth, daily-pattern, and revenue-composition charts
+- Local data storage with no telemetry or external analytics service
+- JSON backup and high-resolution chart exports
 
-## Getting started
+## Install
 
-Click **Sync full history** to build your dashboard. The extension finds the packages and available history for the signed-in publisher automatically—there is no fixed publisher ID, package list, or publisher-specific start date.
+Install [Publisher Analytics+ from the Chrome Web Store](https://chromewebstore.google.com/detail/publisher-analytics+-asse/ejchldapebffjngpijaiamjiennfahfp), then sign in at [publisher.unity.com](https://publisher.unity.com/). Click the Publisher Analytics+ icon in the bottom-left corner to open the extension, then click **Sync full history**.
 
-The dashboard brings together:
+## Privacy
 
-- Monthly sales, units, refunds, chargebacks, gross revenue, and publisher revenue.
-- Downloads and users.
-- Debits, credits, payouts, and current balance.
-- Daily sales, purchases and claims, pageviews, conversion, downloads, wishlist changes, refunds, ratings, quick looks, and cart activity.
-- Catalog-wide and per-package performance.
-
-The main Performance view supports automatic or explicit daily, weekly, monthly, quarterly, and yearly intervals. It starts with the complete catalog and shows gross revenue, purchases and claims, pageviews, and downloads in separate charts. Select any combination of "All assets," reusable package groups, and individual assets. Each selected scope gets one consistently colored line across all four charts; a group line aggregates its member assets. Choose a preset or exact start and end dates, then scroll or pinch to zoom, drag to pan, or use the navigator handles to focus on a precise window.
-
-The Asset group menu on Performance is the single entry point for choosing multiple groups and individual assets. Its visually separated Manage groups action opens the dedicated package-group manager for creation and editing. A package may belong to several selected scopes; when that happens, an in-menu notice explains that the package remains included in each matching comparison line. Groups are tied to the signed-in publisher and use Unity package IDs, so package renames do not break membership.
-
-Additional views reveal patterns that are hard to see in a timeline:
-
-- A lifetime growth chart compares cumulative gross revenue, sales quantity, downloads, or pageviews by package. It defaults to a calendar-time stacked area view of asset composition; publishers can switch to separate lines, align packages at their first activity to compare trajectories, and toggle series directly from the legend.
-- A stacked calendar compares daily revenue, purchases, pageviews, or downloads across every available year.
-- A filterable Sankey diagram groups total gross revenue by the Asset Store categories assigned in the Publisher Portal, then splits each category into package contributions. Publishers can switch to a direct package split.
-- Every chart can be saved as a high-resolution PNG or shared through the device's native share surface when available. Performance exports add a color-coded, one-scope-per-row legend beneath the chart without adding that list to the live chart cards.
-
-The left navigation separates a general Dashboard from the deeper Analytics workspace. Its top summary pairs selected-range asset allocation and revenue concentration with six headline metrics; when enough earlier data exists, selected-range metrics include a comparison with the preceding equivalent period. Aligned revenue, pageview, and download timelines and a ranked package table follow below. Within Analytics, focused tabs switch between Performance, Lifetime growth, Daily patterns, Revenue composition, and Packages. Lifetime growth always uses all available history; the selected date range remains shared across the other views.
-
-The publisher block at the bottom of the navigation follows the publisher currently active in the signed-in portal. It uses the store profile name and picture when available. Its upward menu opens Settings or returns to the Publisher Portal; data coverage, JSON export, and local-data clearing are kept separate from the analytics workspace.
-
-Progress is saved as the history is synced. If the page is refreshed, the extension continues from where it left off. Once the full history is ready, recent results are refreshed automatically whenever the Publisher Portal is visited.
-
-## Storage and privacy
-
-Your analytics data and preferences stay in this browser. The extension communicates only with the Unity Publisher Portal and has no telemetry, remote scripts, or external server.
-
-The signed-in Asset Store publisher ID selects an independent local workspace. Switching publishers loads that publisher's records, sync progress, and preferences without showing or combining another publisher's data.
-
-Removing the extension deletes every local workspace. Selecting **Clear data** deletes only the active publisher's synced analytics and saved sync progress; it keeps preferences and package groups, and does not affect data saved for other publishers. Use **Export data** to create a local JSON backup for the active publisher.
-
-## Technical notes
-
-The extension uses the signed-in portal session and the reporting endpoints already used by the Unity Publisher Portal. Normalized data and the resumable checkpoint are stored in an extension-owned IndexedDB database; preferences, publisher presentation details, and package groups use `chrome.storage.local`.
-
-Daily history is requested for the complete catalog and for each package. The start is derived from the earliest package-publication or ledger date, but the current prototype clamps daily collection to `2019-01-01`. Unity's actual retention boundary, date semantics, revision behavior, currency contract, and completeness guarantees remain undocumented and are tracked in [internal-docs/DATA-EVIDENCE.md](internal-docs/DATA-EVIDENCE.md).
-
-Apache ECharts is bundled locally with the extension; no runtime code is loaded from a CDN. To rebuild the committed chart bundle after changing `scripts/echarts-entry.js`, run `npm install` and `npm run build:charts`.
-
-## Package for the Chrome Web Store
-
-Run `npm run package` to rebuild the chart bundle and create a versioned ZIP in
-`dist/`. Upload that ZIP to the Chrome Web Store developer dashboard. The archive
-contains only the extension's runtime files and bundled license notices.
-
-The Publisher Portal endpoints are implementation details and can change without notice. The extension deliberately trusts this single source instead of maintaining alternate ingestion paths.
+Your analytics and preferences stay in your browser. The extension communicates only with `publisher.unity.com` and does not include telemetry, remote scripts, or an external backend.
