@@ -21,7 +21,7 @@ The exact total catalog size, unpublished-package count, and number of metadata 
 | Area | Status | Evidence and limits |
 |---|---|---|
 | Current endpoint paths and request shapes | **Fixture-backed on one account** | Sanitized responses retained for `/user` and all eight analytics endpoints; two earlier 400 variants remain undocumented |
-| Package publication date | **Captured implementation mismatch** | Published packages returned `first_published_at`; `fetchPackages()` does not read that key, so the earliest-date calculation falls back to the ledger for this shape |
+| Package publication date | **Fixture-backed and implemented** | Published packages return `first_published_at`; `fetchPackages()` reads it and the earliest-date calculation includes it |
 | Publisher identity and local isolation | **Implemented, second account unverified** | Official Portal bundle distinguishes `publisherId` from organization IDs; source checks cover namespace propagation, but no retained live switch test exists |
 | Publisher-scoped package groups | **Implemented, manual UI validation pending** | Groups use `package_id`, survive analytics clearing, and render as independently aggregated comparison lines; multi-scope selection, overlap notices, and dedicated create/edit/manage pages still need an unpacked-extension smoke test |
 | Chrome and Firefox support | **Validated** | Target manifests are generated from one canonical manifest; archive validation proves identical runtime payloads; Mozilla's linter reports no errors; and the temporary Firefox package operates successfully on the signed-in Publisher Portal. |
@@ -103,18 +103,17 @@ These appear to have been expedient implementation choices rather than conscious
 
 1. Unknown response shapes often normalize to empty strings or zero rather than fail visibly.
 2. Defensive aliases lack fixtures and may hide API changes.
-3. The fixture-backed `first_published_at` package field is not normalized.
-4. Captured daily `revenue` and `chargebacks` fields are discarded by `normalizeDaily()`.
-5. Daily/monthly gross, sales, and refund semantics are not reconciled beyond one limited paid sample.
-6. Explicit empty days, explicit zero-valued days, and omitted days are indistinguishable after normalization.
-7. Partial current months are not consistently identified in the interface.
+3. Captured daily `revenue` and `chargebacks` fields are discarded by `normalizeDaily()`.
+4. Daily/monthly gross, sales, and refund semantics are not reconciled beyond one limited paid sample.
+5. Explicit empty days, explicit zero-valued days, and omitted days are indistinguishable after normalization.
+6. Partial current months are not consistently identified in the interface.
 
 ## Test and evidence backlog
 
 Work should proceed in this order:
 
 1. Validate publisher isolation and fail-closed switching with two live publisher accounts.
-2. Add pure normalizer tests using the retained fixtures, including `first_published_at` and unknown-shape failures.
+2. Extend pure normalizer tests to the remaining retained fields and unknown-shape failures.
 3. Capture the missing empty, non-zero refund/chargeback, negative-wishlist, rating, category-object, pagination, and localized-value variants using [api-fixtures/README.md](api-fixtures/README.md).
 4. Add paired daily boundary and omitted/empty/zero-day tests.
 5. Reconcile representative complete months and document tolerances.

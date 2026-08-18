@@ -16,7 +16,7 @@ The original session retained no API responses. On 2026-08-18, a temporary opt-i
 ## Executive assessment
 
 - The endpoint paths, request shapes, response containers, and primary field names are now **fixture-backed on one account**.
-- The capture exposed an implementation mismatch: published packages returned `first_published_at`, which the current normalizer does not read.
+- Published packages use `first_published_at`. The package normalizer reads this field as the publication date.
 - Most camelCase variants and semantic synonyms accepted by `valueFrom()` are **defensive**, not demonstrated response variants.
 - A retained month response includes `start_date` through `end_date - 1` and excludes `end_date`, directly supporting half-open handling for that request. The stricter paired boundary suite is still missing.
 - In the retained package response, inactive dates were present as explicit empty objects `{}`. No omitted-day variant or explicit all-zero inactive object has been captured.
@@ -62,7 +62,7 @@ The table below separates names present in the retained 2026-08-18 capture from 
 
 | Response | Present in retained capture | Other accepted or previously observed variants |
 |---|---|---|
-| Published package | `package_id`, `name`, `first_published_at`, `status` | `packageId`, generic `id`, `title`, `package_name`, `first_published_time`, `firstPublishedTime`, `first_published` are accepted, but none matches the captured publication-date key |
+| Published package | `package_id`, `name`, `first_published_at`, `status` | `packageId`, generic `id`, `title`, `package_name`, `first_published_time`, `firstPublishedTime`, and `first_published` are accepted compatibility aliases |
 | Category definition | `assetstore_name`, `id`, `multiple`, `name`, `status` | `category_id`, `categoryId`, `assetstoreName`, `title`, `category_name`, `categoryName` |
 | Package metadata envelope | `package_versions`, `package_key_images`, `counts`, `total` | `packageVersions` |
 | Package metadata identity | `id`, `package_id`, `name`; nested `vetting.id` and `vetting.genesis_vetting_id` also occurred | `packageId`, `genesis_product_id`, `genesisProductId`, `product_id`, `productId`, and exact normalized package name |
@@ -72,7 +72,7 @@ The table below separates names present in the retained 2026-08-18 capture from 
 | Revenue ledger | Direct `date`, `description`, `debit`, `credit`, and `balance` | None |
 | Daily performance | Date-keyed object; observed metric keys were `carted`, `chargebacks`, `downloads`, `free_obtained`, `gross`, `page_views`, `quick_looks`, `refunds`, `revenue`, `sales`, and `wishlisted`; metrics were JSON numbers | `rating` did not occur in the captured month; `paid_sales`, `paidSales`, `freeObtained`, `pageViews`, `ratingAvg`, `quickLooks` remain unfixture-backed |
 
-The broad aliases were pragmatic prototype hardening. Before they become a maintained compatibility layer, each actual variant should have a fixture and an origin note. Unused aliases should then be removed. In particular, the current package normalizer omits the captured `first_published_at` key, so `firstPublished` is empty for this response shape.
+The broad aliases were pragmatic prototype hardening. Before they become a maintained compatibility layer, each actual variant should have a fixture and an origin note. Unused aliases should then be removed. The package normalizer maps the captured `first_published_at` value to `firstPublished`.
 
 ## Date behavior and sync constants
 
@@ -235,7 +235,7 @@ Known remaining risks include ambiguous name matching, duplicate names, multiple
 
 Before treating the numbers as production-trustworthy:
 
-1. Add fixture-driven normalizer tests, including an assertion for the captured `first_published_at` key and unknown-shape failures, before changing aliases.
+1. Extend fixture-driven normalizer tests to the remaining canonical fields and unknown-shape failures before changing their mappings.
 2. Capture the still-missing variants: empty account/period, non-zero refunds and chargebacks, negative daily wishlist movement, rating-bearing days, multi-price packages, later metadata pages, nested category objects, and any localized number/currency form.
 3. Complete the three-request daily boundary suite around known active and inactive dates.
 4. Reconcile at least three complete months—paid-only, free-heavy, and refund-bearing—between all package daily responses, catalog daily, monthly reports, and portal CSV exports.

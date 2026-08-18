@@ -5,6 +5,7 @@
     "build:charts": "esbuild scripts/echarts-entry.js --bundle --minify --format=iife --global-name=echarts --outfile=vendor/echarts.min.js --legal-comments=linked",
     "capture:marketing": "node scripts/capture-marketing.mjs",
     "create:promos": "node scripts/create-promo-tiles.mjs",
+    "test:fixtures": "node scripts/validate-api-fixtures.js",
     "test:isolation": "node scripts/validate-publisher-isolation.js",
     "test:chrome-smoke": "node scripts/smoke-chrome.mjs",
     "validate:manifests": "node scripts/validate-manifests.mjs",

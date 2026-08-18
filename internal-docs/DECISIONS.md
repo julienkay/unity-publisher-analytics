@@ -21,7 +21,7 @@ This log makes data policies reviewable. “Provisional” means the code uses t
 ## D-003 — Start daily history no earlier than 2019-01-01
 
 - **Status:** Provisional and unsupported.
-- **Current behavior:** The intended earliest package publication or ledger date is clamped to `2019-01-01`. The retained package response uses `first_published_at`, which the current normalizer does not read, so this shape currently falls back to the earliest ledger date.
+- **Current behavior:** The extension compares the earliest `first_published_at` package date with the earliest ledger date. It uses the earlier date as the full-history start date and clamps that date to `2019-01-01`.
 - **Basis:** The constant existed in the initial commit; no provenance was recorded.
 - **Risk:** Older retained publisher history is silently excluded.
 - **Target decision:** Discover the retention boundary empirically per account or document a verified Unity boundary. Until then, describe the result as “history available since the attempted boundary,” not inherently complete history.

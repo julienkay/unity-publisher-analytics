@@ -46,6 +46,8 @@ The fixtures do not preserve private account values. Some publisher data arrays 
 | Revenue ledger | An array with numeric `debit`, `credit`, and `balance` values, plus `date` and `description` |
 | Daily performance | An object that uses dates as keys and numbers as metric values |
 
+Publisher Analytics+ uses `first_published_at` as the package publication date. A full-history sync compares the earliest package publication date with the earliest revenue date. It uses the earlier date as its start date. The `2019-01-01` minimum date still applies.
+
 The daily fixtures use a half-open request interval. Each response contains the start date and the dates before the end date. The response does not contain the end date. The package fixture contains an empty object for some inactive dates.
 
 These observations apply only to the retained fixtures. They do not prove that Unity uses the same structure for all accounts and all dates.

@@ -300,7 +300,7 @@
       const name = valueFrom(item, ["name", "title", "package_name"]) || `Package ${id}`;
       const metadataCategory = metadata.categoriesByIdentifier.get(id) || metadata.categoriesByName.get(compact(name).toLocaleLowerCase());
       const categoryId = String(valueFrom(item, ["category_id", "categoryId"]) || metadataCategory?.id || "");
-      return { id, name, categoryId, category: categories.get(categoryId) || packageCategory(item) || metadataCategory?.name || "", firstPublished: parseDate(valueFrom(item, ["first_published_time", "firstPublishedTime", "first_published"])) };
+      return { id, name, categoryId, category: categories.get(categoryId) || packageCategory(item) || metadataCategory?.name || "", firstPublished: parseDate(valueFrom(item, ["first_published_at", "first_published_time", "firstPublishedTime", "first_published"])) };
     }).filter(item => item.id);
   }
 
