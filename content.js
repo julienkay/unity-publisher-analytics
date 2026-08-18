@@ -461,7 +461,7 @@
   async function runFullSync(publisherId = publisherIdentity.id, generation = workspaceGeneration) {
     try {
       if (!ownsWorkspace(publisherId, generation)) return;
-      if (!syncJob?.active || !syncJob.phase) await prepareFullSync(publisherId, generation);
+      if (!syncJob?.active || !syncJob.phase || syncJob.phase === "preparing") await prepareFullSync(publisherId, generation);
       if (!ownsWorkspace(publisherId, generation)) return;
       const job = syncJob;
       if (job.publisherId !== publisherId) throw new Error("The saved sync does not belong to this publisher.");
@@ -506,12 +506,18 @@
   }
 
   async function startFullSync() {
+    syncJob = { publisherId: publisherIdentity.id, active: true, phase: "preparing", startedAt: new Date().toISOString(), completed: 0, total: 0, label: "Preparing your history" };
+    isOpen = true;
+    render();
     const identity = await fetchPublisherIdentity(true);
     if (identity.id !== publisherIdentity.id) await activatePublisher(identity, { resume: false });
     const publisherId = identity.id, generation = workspaceGeneration;
     await clearPublisherData(publisherId);
     if (!ownsWorkspace(publisherId, generation)) return;
-    records = []; syncJob = null; isOpen = true; render(); await runFullSync(publisherId, generation);
+    records = [];
+    syncJob = { publisherId, active: true, phase: "preparing", startedAt: new Date().toISOString(), completed: 0, total: 0, label: "Preparing your history" };
+    render();
+    await runFullSync(publisherId, generation);
   }
 
   async function incrementalSync(announce = false, publisherId = publisherIdentity.id, generation = workspaceGeneration) {
@@ -1314,13 +1320,14 @@
     const viewTabs = views.map(item => `<button class="upa-view-tab ${item.id === view ? "upa-active" : ""}" type="button" role="tab" aria-selected="${item.id === view}" aria-controls="upa-view-${item.id}" data-view="${item.id}">${item.label}</button>`).join("");
     const syncIncomplete = Boolean(syncJob && !syncJob.active && ["months", "daily"].includes(syncJob.phase));
     const syncTitle = syncJob?.active ? syncJob.label : syncJob?.phase === "error" ? "Sync couldn't be completed" : "Sync paused";
+    const syncPreparing = syncJob?.active && syncJob.phase === "preparing";
     const syncDetail = syncJob?.active
-      ? `${syncJob.completed || 0} of ${syncJob.total || "?"} steps complete`
+      ? syncPreparing ? "Finding your assets and available history…" : `${syncJob.completed || 0} of ${syncJob.total || "?"} steps complete`
       : syncJob?.phase === "error"
         ? "Try again. If it keeps happening, refresh the Publisher Portal first."
         : "Continue when you're ready. Your progress has been saved.";
     const syncIcon = syncJob?.active
-      ? `<div class="upa-sync-icon upa-sync-progress" style="--upa-progress-angle:${progress * 3.6}deg" aria-hidden="true"><span>${progress}%</span></div>`
+      ? syncPreparing ? '<div class="upa-sync-icon upa-sync-preparing" aria-hidden="true"><i></i></div>' : `<div class="upa-sync-icon upa-sync-progress" style="--upa-progress-angle:${progress * 3.6}deg" aria-hidden="true"><span>${progress}%</span></div>`
       : syncJob?.phase === "error"
         ? '<div class="upa-sync-icon upa-sync-error" aria-hidden="true">!</div>'
         : '<div class="upa-sync-icon" aria-hidden="true">Ⅱ</div>';
@@ -1380,7 +1387,7 @@
         </aside>
         <section class="upa-workspace">
           <header class="upa-header ${section === "dashboard" || section === "groups" || section === "settings" ? "upa-header-compact" : ""}"><div class="upa-header-main"><div class="upa-header-copy"><small>Publisher workspace</small><h1>${hasData || ["groups", "settings"].includes(section) ? sectionMeta.label : "Welcome"}</h1><div class="upa-header-subline"><p>${hasData || ["groups", "settings"].includes(section) ? sectionMeta.description : "Build a complete, configurable view of your publishing business."}</p>${refreshAction}</div></div><div class="upa-header-actions">${intervalControl}${rangeControl}</div></div>${hasData ? `<nav class="upa-mobile-nav" aria-label="Workspace sections"><button class="${section === "dashboard" ? "upa-active" : ""}" type="button" data-section="dashboard">Dashboard</button><button class="${section === "analytics" ? "upa-active" : ""}" type="button" data-section="analytics">Analytics</button><button class="${section === "settings" ? "upa-active" : ""}" type="button" data-section="settings">Settings</button></nav>` : ""}${hasData && section === "analytics" ? `<nav class="upa-view-tabs" role="tablist" aria-label="Analytics views">${viewTabs}</nav>` : ""}</header>
-          ${(syncJob?.active || syncJob?.phase === "error" || syncIncomplete) ? `<section class="upa-sync ${syncJob?.active ? "upa-syncing" : ""}">${syncIcon}<div class="upa-sync-copy"><strong>${escapeHtml(syncTitle)}</strong><span>${escapeHtml(syncDetail)}</span>${syncJob?.active ? '<small class="upa-sync-note">Large catalogs can take several minutes. Keep this tab open; if interrupted, progress resumes when you return.</small>' : ""}</div><div class="upa-sync-actions">${syncJob?.active ? '<button data-action="stop-sync">Pause</button>' : syncIncomplete ? '<button data-action="continue-sync">Continue</button>' : '<button data-action="sync-all">Try full sync again</button>'}</div>${syncJob?.active ? `<div class="upa-progress"><i style="width:${progress}%"></i></div>` : ""}</section>` : ""}
+          ${(syncJob?.active || syncJob?.phase === "error" || syncIncomplete) ? `<section class="upa-sync ${syncJob?.active ? "upa-syncing" : ""}" role="status" aria-live="polite">${syncIcon}<div class="upa-sync-copy"><strong>${escapeHtml(syncTitle)}</strong><span>${escapeHtml(syncDetail)}</span>${syncJob?.active ? '<small class="upa-sync-note">Large catalogs can take several minutes. Keep this tab open; if interrupted, progress resumes when you return.</small>' : ""}</div><div class="upa-sync-actions">${syncPreparing ? "" : syncJob?.active ? '<button data-action="stop-sync">Pause</button>' : syncIncomplete ? '<button data-action="continue-sync">Continue</button>' : '<button data-action="sync-all">Try full sync again</button>'}</div>${syncJob?.active ? `<div class="upa-progress ${syncPreparing ? "upa-progress-preparing" : ""}"><i style="width:${progress}%"></i></div>` : ""}</section>` : ""}
           <main class="upa-content" data-section="${section}" data-view="${view}">${publisherIdentityState !== "ready" ? `<section class="upa-welcome"><div class="upa-welcome-copy"><small>PUBLISHER WORKSPACE</small><h2>${publisherIdentityState === "loading" ? "Checking your publisher…" : "We couldn't identify the active publisher."}</h2><p>${publisherIdentityState === "loading" ? "Your local workspace will open in a moment." : "Refresh the Publisher Portal, or try again while signed in."}</p>${publisherIdentityState === "error" ? '<button class="upa-primary upa-large" data-action="retry-publisher">Try again</button>' : ""}</div></section>` : section === "groups" ? groupsPanel(performanceOptions) : section === "settings" ? settingsPanel() : records.length ? `<section class="upa-dashboard-view upa-view-panel upa-view-dashboard" id="upa-view-dashboard">${dashboardSummary}<article class="upa-dashboard-chart"><div class="upa-section-title"><div><small>BUSINESS ACTIVITY</small><h2>Performance over time</h2><p>${intervalName(overviewChartData.interval)} revenue, pageviews, and downloads on aligned timelines.</p></div><div class="upa-section-tools"><span>${overviewChartData.points.length} periods</span>${chartActions("overview")}</div></div><div class="upa-pulse-legend"><span><i class="upa-pulse-revenue"></i>Gross revenue</span><span><i class="upa-pulse-views"></i>Pageviews</span><span><i class="upa-pulse-downloads"></i>Downloads</span></div><div id="upa-overview-chart" class="upa-overview-chart" role="img" aria-label="Aligned gross revenue, pageviews, and downloads timelines"></div></article>${dashboardPackageTable}</section>
             <section class="upa-dashboard-grid"><section class="upa-view-panel upa-view-revenue upa-performance-view" id="upa-view-revenue"><article class="upa-card upa-performance-controls"><div class="upa-performance-control-layout"><div><small>CATALOG PERFORMANCE</small><h2>Compare the signals that drive your business</h2><p>Choose All assets, a saved group, or an individual asset. Every included asset gets its own line across all four charts.</p></div>${performanceScopeControls}</div>${performanceLegend}</article><div class="upa-performance-chart-grid">${performanceChartsMarkup}</div></section>
             <article class="upa-card upa-packages-card upa-view-panel upa-view-packages" id="upa-view-packages"><div class="upa-section-title"><div><small>AUDIENCE &amp; CONVERSION</small><h2>Package performance</h2><p>Top packages ranked by gross sales.</p></div><span>${packages.length} packages</span></div><div class="upa-package-list">${packages.slice(0, 10).map((item, index) => `<div class="upa-package-row"><b>${String(index + 1).padStart(2, "0")}</b><div><strong>${escapeHtml(item.name)}</strong><span>${number(item.pageViews)} views · ${item.conversion.toFixed(2)}% conversion · ${number(item.downloads)} downloads</span></div><em>${money(item.sales)}</em></div>`).join("")}</div></article></section>

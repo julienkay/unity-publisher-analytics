@@ -130,6 +130,8 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 .upa-sync-progress { position:relative;background:conic-gradient(var(--upa-accent) var(--upa-progress-angle),#e5e2f5 0); }
 .upa-sync-progress::before { content:"";position:absolute;inset:4px;border-radius:50%;background:#f8f7ff; }
 .upa-sync-progress span { position:relative;z-index:1;color:#4f437e;font-size:8px;font-weight:850;letter-spacing:-.25px; }
+.upa-sync-preparing i { width:16px;height:16px;border:2px solid #cfc8fa;border-top-color:var(--upa-accent);border-radius:50%;animation:upa-sync-turn .8s linear infinite; }
+@keyframes upa-sync-turn { to { transform:rotate(360deg); } }
 .upa-sync-complete { background:#e6f5ed;color:#27865a; }
 .upa-sync-error { background:#fbeaec;color:#b23c4a; }
 .upa-sync-copy { display:flex;flex:1;min-width:0;flex-direction:column; }
@@ -141,6 +143,8 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 .upa-sync-actions .upa-primary { border-color:var(--upa-accent);background:var(--upa-accent);color:#fff; }
 .upa-progress { position:absolute;right:12px;bottom:-1px;left:12px;height:3px;overflow:hidden;border-radius:3px;background:#dfdbf6; }
 .upa-progress i { display:block;height:100%;border-radius:3px;background:var(--upa-accent);transition:width .25s; }
+.upa-progress-preparing i { width:32%!important;animation:upa-progress-prepare 1.15s ease-in-out infinite; }
+@keyframes upa-progress-prepare { from { transform:translateX(-110%); } to { transform:translateX(340%); } }
 .upa-content { flex:1;overflow:auto;padding:22px clamp(24px,4vw,58px) 52px;scroll-behavior:smooth; }
 .upa-settings-page { display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;max-width:1120px; }
 .upa-groups-page { max-width:900px; }
@@ -410,4 +414,4 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 @media (max-width:760px) { .upa-coverage-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.upa-settings-page{gap:14px}.upa-danger-zone{align-items:flex-start;flex-direction:column}.upa-danger-zone button{width:100%} }
 @media (max-width:540px) { .upa-group-row:not(.upa-group-built-in){align-items:stretch;flex-direction:column}.upa-group-row>div:last-child{width:100%}.upa-group-row button{flex:1}.upa-group-built-in{align-items:flex-start}.upa-settings-primary{width:100%} }
 @media (max-width:760px) { .upa-performance-scope-control{align-items:flex-start;width:100%;flex-direction:column}.upa-performance-scope-picker,.upa-performance-scope-trigger{width:100%}.upa-performance-scope-menu{right:auto;left:0} }
-@media (prefers-reduced-motion:reduce) { .upa-panel,.upa-fab,.upa-toast,.upa-progress i,.upa-refresh-action,.upa-refresh-tooltip,.upa-kpi-tooltip,.upa-lifetime-legend button,.upa-performance-legend button,.upa-account-trigger,.upa-account-chevron{transition:none}.upa-refresh-action.upa-refreshing svg{animation:none} }
+@media (prefers-reduced-motion:reduce) { .upa-panel,.upa-fab,.upa-toast,.upa-progress i,.upa-refresh-action,.upa-refresh-tooltip,.upa-kpi-tooltip,.upa-lifetime-legend button,.upa-performance-legend button,.upa-account-trigger,.upa-account-chevron{transition:none}.upa-refresh-action.upa-refreshing svg,.upa-sync-preparing i,.upa-progress-preparing i{animation:none} }
