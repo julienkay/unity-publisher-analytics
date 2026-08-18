@@ -23,4 +23,4 @@ Install [Publisher Analytics+ from the Chrome Web Store](https://chromewebstore.
 
 ## Privacy
 
-Your analytics and preferences stay in your browser. The extension communicates only with `publisher.unity.com` and does not include telemetry, remote scripts, or an external backend.
+Your analytics and preferences stay in your browser. Chrome and Firefox keep separate local copies and do not transfer them automatically. The extension communicates only with `publisher.unity.com` and does not include telemetry, remote scripts, or an external backend.

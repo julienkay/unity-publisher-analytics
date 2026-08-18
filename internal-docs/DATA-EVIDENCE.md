@@ -166,7 +166,7 @@ The original account's CSV exports used `$`, so USD was **observed once on one p
 
 ## Publisher identity and isolation
 
-The interface requires `publisherId` before opening a local workspace. IndexedDB remains one physical database, but every record contains the publisher ID and all record queries are filtered through its index. Sync checkpoints use publisher-qualified keys, and `chrome.storage.local` preferences and cached presentation metadata are keyed per publisher.
+The interface requires `publisherId` before opening a local workspace. IndexedDB remains one physical database, but every record contains the publisher ID and all record queries are filtered through its index. Sync checkpoints use publisher-qualified keys, and local extension-storage preferences and cached presentation metadata are keyed per publisher.
 
 Changing publishers increments a workspace generation, hides the previous workspace immediately, and loads only the new publisher's records. In-flight sync work checks both the generation and the current Portal identity before committing a batch. Identity lookup failure hides local analytics until ownership can be established again.
 

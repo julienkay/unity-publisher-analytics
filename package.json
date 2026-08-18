@@ -6,7 +6,12 @@
     "capture:marketing": "node scripts/capture-marketing.mjs",
     "create:promos": "node scripts/create-promo-tiles.mjs",
     "test:isolation": "node scripts/validate-publisher-isolation.js",
-    "package": "npm run build:charts && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-extension.ps1"
+    "test:chrome-smoke": "node scripts/smoke-chrome.mjs",
+    "validate:manifests": "node scripts/validate-manifests.mjs",
+    "validate:packages": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-packages.ps1 -Target All",
+    "package": "npm run build:charts && npm run validate:manifests && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-extension.ps1 -Target All && npm run validate:packages",
+    "package:chrome": "npm run build:charts && npm run validate:manifests && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-extension.ps1 -Target Chrome && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-packages.ps1 -Target Chrome",
+    "package:firefox": "npm run build:charts && npm run validate:manifests && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-extension.ps1 -Target Firefox && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-packages.ps1 -Target Firefox"
   },
   "devDependencies": {
     "echarts": "6.1.0",

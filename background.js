@@ -1,3 +1,4 @@
+const extensionApi = globalThis.browser ?? globalThis.chrome;
 const DB_NAME = "unity-publisher-analytics-api";
 const DB_VERSION = 2;
 const ANALYTICS_META_KEYS = ["apiSyncV1"];
@@ -91,11 +92,11 @@ async function handleDatabaseMessage(message) {
   }
 }
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+extensionApi.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "UPA_CONSUME_OPEN") {
     const key = `${OPEN_REQUEST_PREFIX}${sender.tab?.id}`;
-    chrome.storage.session.get(key)
-      .then(values => chrome.storage.session.remove(key).then(() => sendResponse({ open: values[key] === true })))
+    extensionApi.storage.session.get(key)
+      .then(values => extensionApi.storage.session.remove(key).then(() => sendResponse({ open: values[key] === true })))
       .catch(() => sendResponse({ open: false }));
     return true;
   }
@@ -106,16 +107,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
-chrome.action.onClicked.addListener(async tab => {
+extensionApi.action.onClicked.addListener(async tab => {
   if (!tab.id) return;
   if (tab.url?.startsWith(PUBLISHER_PORTAL_URL)) {
-    try { await chrome.tabs.sendMessage(tab.id, { type: "UPA_TOGGLE" }); } catch { /* Reload the portal once after installing. */ }
+    try { await extensionApi.tabs.sendMessage(tab.id, { type: "UPA_TOGGLE" }); } catch { /* Reload the portal once after installing. */ }
     return;
   }
-  const portalTab = await chrome.tabs.create({ url: "about:blank" });
+  const portalTab = await extensionApi.tabs.create({ url: "about:blank" });
   if (!portalTab.id) return;
   const key = `${OPEN_REQUEST_PREFIX}${portalTab.id}`;
-  await chrome.storage.session.set({ [key]: true });
-  try { await chrome.tabs.update(portalTab.id, { url: PUBLISHER_PORTAL_URL }); }
-  catch (error) { await chrome.storage.session.remove(key); throw error; }
+  await extensionApi.storage.session.set({ [key]: true });
+  try { await extensionApi.tabs.update(portalTab.id, { url: PUBLISHER_PORTAL_URL }); }
+  catch (error) { await extensionApi.storage.session.remove(key); throw error; }
 });

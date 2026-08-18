@@ -6,7 +6,8 @@ These documents describe implementation decisions, evidence, risks, and validati
 
 - [DESIGN.md](DESIGN.md) defines the shared interface system.
 - [RENDERING.md](RENDERING.md) records the visualization architecture.
-- [DEVELOPMENT.md](DEVELOPMENT.md) covers local setup, validation, chart builds, and Chrome Web Store packaging.
+- [DEVELOPMENT.md](DEVELOPMENT.md) covers local setup, validation, chart builds, and Chrome and Firefox packaging.
+- [SCRIPTS.md](SCRIPTS.md) documents every repository script, its prerequisites, inputs, outputs, and commands.
 
 ## Data trust
 

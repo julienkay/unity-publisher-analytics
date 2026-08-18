@@ -1,5 +1,6 @@
 (() => {
   "use strict";
+  const extensionApi = globalThis.browser ?? globalThis.chrome;
   if (window.__unityPublisherAnalyticsLoaded) return;
   window.__unityPublisherAnalyticsLoaded = true;
 
@@ -108,7 +109,7 @@
     if (!id) throw new Error("The active Publisher Portal account did not provide a publisher identity.");
     const header = publisherFromHeader();
     const key = publisherStorageKey(PUBLISHER_KEY_PREFIX, id);
-    const stored = await chrome.storage.local.get(key), cached = stored[key];
+    const stored = await extensionApi.storage.local.get(key), cached = stored[key];
     const fresh = !force && cached?.id === id && Date.now() - Number(cached.updatedAt || 0) < 86400000;
     if (fresh) return { ...cached, portalLabel: displayText(cached.portalLabel), name: displayText(cached.name) };
     const apiIcon = typeof user.avatar === "string" ? user.avatar : "";
@@ -122,7 +123,7 @@
       icon: apiIcon || profile?.icon || "",
       updatedAt: Date.now()
     };
-    await chrome.storage.local.set({ [key]: identity });
+    await extensionApi.storage.local.set({ [key]: identity });
     return identity;
   }
   const LIFETIME_METRICS = {
@@ -218,7 +219,7 @@
   }
 
   async function database(message) {
-    const response = await chrome.runtime.sendMessage(message);
+    const response = await extensionApi.runtime.sendMessage(message);
     if (!response?.ok) throw new Error(response?.error || "The local analytics database is unavailable.");
     return response.result;
   }
@@ -388,13 +389,13 @@
 
   async function savePrefs() {
     if (!publisherIdentity.id) return;
-    await chrome.storage.local.set({ [publisherStorageKey(PREFS_KEY_PREFIX)]: prefs });
+    await extensionApi.storage.local.set({ [publisherStorageKey(PREFS_KEY_PREFIX)]: prefs });
   }
 
   async function savePackageGroups() {
     if (!publisherIdentity.id) return;
     packageGroups = sanitizedPackageGroups(packageGroups);
-    await chrome.storage.local.set({ [publisherStorageKey(GROUPS_KEY_PREFIX)]: packageGroups });
+    await extensionApi.storage.local.set({ [publisherStorageKey(GROUPS_KEY_PREFIX)]: packageGroups });
   }
 
   function ownsWorkspace(publisherId, generation) {
@@ -414,13 +415,13 @@
     isRefreshing = false;
     render();
     const preferencesKey = publisherStorageKey(PREFS_KEY_PREFIX, identity.id), groupsKey = publisherStorageKey(GROUPS_KEY_PREFIX, identity.id);
-    const stored = await chrome.storage.local.get([preferencesKey, groupsKey]);
+    const stored = await extensionApi.storage.local.get([preferencesKey, groupsKey]);
     if (!ownsWorkspace(identity.id, generation)) return;
     prefs = sanitizedPreferences(stored[preferencesKey] || {});
     packageGroups = sanitizedPackageGroups(stored[groupsKey] || []);
     prefs.performanceScopes = sanitizedPerformanceScopes(prefs.performanceScopes).filter(scope => scope.type !== "group" || packageGroups.some(group => group.id === scope.id));
     if (!prefs.performanceScopes.length) prefs.performanceScopes = [{ type: "all", id: "all" }];
-    await chrome.storage.local.set({ [preferencesKey]: prefs });
+    await extensionApi.storage.local.set({ [preferencesKey]: prefs });
     const [publisherRecords, publisherJob] = await Promise.all([getAll(identity.id), getMeta(SYNC_KEY, identity.id)]);
     if (!ownsWorkspace(identity.id, generation)) return;
     records = publisherRecords;
@@ -1223,7 +1224,7 @@
     const downloadMonths = new Set(records.filter(item => item.type === "downloads").map(item => item.period)).size;
     const performanceDays = new Set(records.filter(item => item.type === "daily" && item.scope === "all").map(item => item.date)).size;
     const revenueEntries = records.filter(item => item.type === "revenue").length;
-    return `<section class="upa-settings-page"><article class="upa-card upa-settings-card"><div class="upa-section-title"><div><small>LOCAL DATA</small><h2>Data coverage</h2><p>Available history stored for ${escapeHtml(publisherIdentity.name)} in this browser.</p></div></div><div class="upa-coverage-grid"><div><span>Sales</span><strong>${number(salesMonths)}</strong><small>months</small></div><div><span>Downloads</span><strong>${number(downloadMonths)}</strong><small>months</small></div><div><span>Performance</span><strong>${number(performanceDays)}</strong><small>days</small></div><div><span>Revenue</span><strong>${number(revenueEntries)}</strong><small>entries</small></div></div></article><article class="upa-card upa-settings-card"><div class="upa-section-title"><div><small>DATA MANAGEMENT</small><h2>Browser storage</h2><p>Your analytics stays in this browser and is never sent to an external service. Each publisher has a separate local workspace.</p></div></div><button class="upa-data-action" type="button" data-action="export" ${records.length ? "" : "disabled"}><span><strong>Export data</strong><small>Download a JSON backup of this publisher's analytics.</small></span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5v10m-4-4 4 4 4-4"></path><path d="M3.5 14v2.5h13V14"></path></svg></button><div class="upa-danger-zone"><div><strong>Clear local data</strong><span>Deletes this publisher's synced analytics and saved sync progress. Preferences and package groups are kept.</span></div><button type="button" data-action="clear" ${records.length || syncJob ? "" : "disabled"}>Clear data</button></div></article></section>`;
+    return `<section class="upa-settings-page"><article class="upa-card upa-settings-card"><div class="upa-section-title"><div><small>LOCAL DATA</small><h2>Data coverage</h2><p>Available history stored for ${escapeHtml(publisherIdentity.name)} in this browser.</p></div></div><div class="upa-coverage-grid"><div><span>Sales</span><strong>${number(salesMonths)}</strong><small>months</small></div><div><span>Downloads</span><strong>${number(downloadMonths)}</strong><small>months</small></div><div><span>Performance</span><strong>${number(performanceDays)}</strong><small>days</small></div><div><span>Revenue</span><strong>${number(revenueEntries)}</strong><small>entries</small></div></div></article><article class="upa-card upa-settings-card"><div class="upa-section-title"><div><small>DATA MANAGEMENT</small><h2>Browser storage</h2><p>Your analytics stays in this browser and is never sent to an external service. Each publisher has a separate local workspace, and a different browser starts with its own copy.</p></div></div><button class="upa-data-action" type="button" data-action="export" ${records.length ? "" : "disabled"}><span><strong>Export data</strong><small>Download a JSON backup of this publisher's analytics.</small></span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5v10m-4-4 4 4 4-4"></path><path d="M3.5 14v2.5h13V14"></path></svg></button><div class="upa-danger-zone"><div><strong>Clear local data</strong><span>Deletes this publisher's synced analytics and saved sync progress. Preferences and package groups are kept.</span></div><button type="button" data-action="clear" ${records.length || syncJob ? "" : "disabled"}>Clear data</button></div></article></section>`;
   }
 
   function render() {
@@ -1377,7 +1378,7 @@
     const dashboardPackageTable = `<article class="upa-dashboard-packages"><div class="upa-section-title"><div><small>PACKAGE BREAKDOWN</small><h2>Package performance</h2><p>Selected-range results ranked by gross revenue, with trailing revenue context.</p></div><div class="upa-section-tools"><span>${number(packages.length)} packages</span><button class="upa-table-link" type="button" data-view="packages">Explore packages</button></div></div>${dashboardPackages.length ? `<div class="upa-package-table-wrap"><table class="upa-package-table"><thead><tr><th scope="col">Package</th><th scope="col">Revenue / share</th><th scope="col">Monthly avg. (12m)</th><th scope="col">Growth (12m)</th><th scope="col">Conversion</th><th scope="col">Pageviews</th><th scope="col">Downloads</th></tr></thead><tbody>${dashboardPackages.map(item => `<tr><th scope="row"><div class="upa-package-identity" title="${number(item.paidQty)} paid units${item.freeQty ? ` · ${number(item.freeQty)} claims` : ""}"><span class="upa-package-avatar" aria-hidden="true">${escapeHtml(item.name?.trim().slice(0, 1).toUpperCase() || "P")}</span><strong class="upa-package-name">${escapeHtml(item.name)}</strong></div></th><td><span class="upa-table-value">${money(item.sales)}</span><span class="upa-table-inline-detail">${percent(item.share)}</span></td><td><span class="upa-table-value">${item.trailing.monthCount ? money(item.trailing.monthlyAverage) : "—"}</span></td><td><span class="upa-table-value ${revenueGrowthClass(item.trailing)}">${revenueGrowthLabel(item.trailing)}</span></td><td><span class="upa-table-value">${item.pageViews ? percent(item.conversion) : "—"}</span></td><td><span class="upa-table-value">${number(item.pageViews)}</span></td><td><span class="upa-table-value">${number(item.downloads)}</span></td></tr>`).join("")}</tbody></table></div><div class="upa-package-table-footer"><span>${packages.length > dashboardPackages.length ? `Showing the top ${dashboardPackages.length} of ${packages.length} packages` : `Showing all ${packages.length} packages in this range`}</span></div>` : '<div class="upa-package-table-empty">No package activity is available for this date range.</div>'}</article>`;
     host.classList.toggle("upa-open", isOpen);
     document.documentElement.classList.toggle("upa-dashboard-open", isOpen);
-    const logoUrl = chrome.runtime.getURL("icons/publisher-analytics-128.png");
+    const logoUrl = extensionApi.runtime.getURL("icons/publisher-analytics-128.png");
     host.innerHTML = `<button class="upa-fab" aria-label="Open Publisher Analytics+" title="Publisher Analytics+"><img src="${logoUrl}" alt=""></button><aside class="upa-panel" aria-label="Publisher Analytics+ dashboard">
       <div class="upa-shell">
         <aside class="upa-sidebar" aria-label="Analytics workspace">
@@ -1601,7 +1602,7 @@
       isRangePopoverOpen = false; isCustomRangeEditorOpen = false; render();
       requestAnimationFrame(() => document.querySelector("#upa-root .upa-range-trigger")?.focus());
     });
-    chrome.runtime.onMessage.addListener(message => {
+    extensionApi.runtime.onMessage.addListener(message => {
       if (message?.type !== "UPA_TOGGLE") return;
       isOpen = !isOpen;
       if (!isOpen) { isRangePopoverOpen = false; isCustomRangeEditorOpen = false; isPerformanceScopeMenuOpen = false; accountMenuOpen = false; groupEditor = null; }
@@ -1610,7 +1611,7 @@
   }
 
   async function init() {
-    try { isOpen = Boolean((await chrome.runtime.sendMessage({ type: "UPA_CONSUME_OPEN" }))?.open); }
+    try { isOpen = Boolean((await extensionApi.runtime.sendMessage({ type: "UPA_CONSUME_OPEN" }))?.open); }
     catch { /* The in-page launcher remains available if the service worker is unavailable. */ }
     const root = document.createElement("div"); root.id = "upa-root"; document.body.appendChild(root); bindEvents(); render();
     try { await activatePublisher(await fetchPublisherIdentity(), { initial: true }); }

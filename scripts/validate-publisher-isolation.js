@@ -58,6 +58,15 @@ function validateNamespacePropagation() {
   assert.ok(!background.includes('transaction("meta", "readwrite", store => deletePublisherRows'), "Analytics clearing must not delete all publisher metadata.");
 }
 
+function validateCrossBrowserApiFacade() {
+  const content = fs.readFileSync(path.join(root, "content.js"), "utf8");
+  const background = fs.readFileSync(path.join(root, "background.js"), "utf8");
+  for (const [fileName, source] of [["content.js", content], ["background.js", background]]) {
+    assert.ok(source.includes("globalThis.browser ?? globalThis.chrome"), `${fileName} must select the native promise-based extension API.`);
+    assert.ok(!/\bchrome\./.test(source), `${fileName} must not call the callback-oriented Chrome namespace directly.`);
+  }
+}
+
 function validatePackageGroupPersistence() {
   const content = fs.readFileSync(path.join(root, "content.js"), "utf8");
   const background = fs.readFileSync(path.join(root, "background.js"), "utf8");
@@ -84,6 +93,7 @@ function validatePackageGroupPersistence() {
 Promise.resolve()
   .then(validateIdentityAllowlist)
   .then(validateNamespacePropagation)
+  .then(validateCrossBrowserApiFacade)
   .then(validatePackageGroupPersistence)
   .then(() => console.log("Publisher isolation and package-group validation passed."))
   .catch(error => { console.error(error); process.exitCode = 1; });
