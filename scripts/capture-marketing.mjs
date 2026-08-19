@@ -33,6 +33,10 @@ const capture = async (name, section, view = "revenue", extra = "") => {
   await page.waitForFunction(() => document.querySelector("#upa-root")?.textContent.includes("Northstar Studio"));
   if (!extra.includes("sync=1")) await page.evaluate(() => window.__openAnalytics());
   await page.locator(".upa-panel").waitFor({ state: "visible" });
+  if (extra.includes("select-dark=1")) {
+    await page.locator('[data-theme="dark"]').click();
+    await page.locator("#upa-root.upa-theme-dark").waitFor({ state: "attached" });
+  }
   await page.waitForTimeout(300);
   const source = join(output, `.${name}-source.png`);
   const destination = join(output, `${name}.png`);
@@ -56,7 +60,9 @@ try {
     ["04-daily-calendar", "analytics", "calendar"],
     ["05-revenue-composition", "analytics", "sankey"],
     ["06-packages", "analytics", "packages"],
-    ["07-settings", "settings"]
+    ["07-settings", "settings"],
+    ["08-dashboard-dark", "dashboard", "revenue", "theme=dark"],
+    ["09-settings-dark", "settings", "revenue", "select-dark=1"]
   ];
   for (const item of captures.filter(([name]) => !requested || name === requested)) await capture(...item);
 } finally {

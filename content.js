@@ -26,7 +26,7 @@
     daily: "/publisher-v2-api/dashboard/daily"
   };
   let records = [];
-  let prefs = { section: "dashboard", view: "revenue", range: "all", interval: "auto", start: "", end: "", performanceScopes: [{ type: "all", id: "all" }], performanceHiddenScopes: [], calendarMetric: "sales", lifetimeMetric: "revenue", lifetimeStyle: "area", lifetimeAlign: "calendar", lifetimeStackDefaultApplied: true, lifetimePackages: [], lifetimeHiddenPackages: [], sankeyPackages: [], sankeyGroupBy: "category", sankeyCategoryDefaultApplied: true };
+  let prefs = { section: "dashboard", view: "revenue", range: "all", interval: "auto", start: "", end: "", theme: "system", performanceScopes: [{ type: "all", id: "all" }], performanceHiddenScopes: [], calendarMetric: "sales", lifetimeMetric: "revenue", lifetimeStyle: "area", lifetimeAlign: "calendar", lifetimeStackDefaultApplied: true, lifetimePackages: [], lifetimeHiddenPackages: [], sankeyPackages: [], sankeyGroupBy: "category", sankeyCategoryDefaultApplied: true };
   let packageGroups = [];
   let groupEditor = null;
   let syncJob = null;
@@ -45,6 +45,7 @@
   const chartResizeObservers = new Map();
   const chartShareMetadata = new Map();
   const pendingApiRequests = new Map();
+  const systemDarkTheme = matchMedia("(prefers-color-scheme: dark)");
 
   const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
   const compact = value => String(value ?? "").trim().replace(/\s+/g, " ");
@@ -59,6 +60,16 @@
   const money = value => new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Number(value) || 0);
   const metricValue = (metric, value) => metric.currency ? money(value) : number(value);
   const publisherStorageKey = (prefix, publisherId = publisherIdentity.id) => `${prefix}:${encodeURIComponent(publisherId)}`;
+  const darkThemeActive = () => prefs.theme === "dark" || (prefs.theme === "system" && systemDarkTheme.matches);
+  const chartTheme = () => darkThemeActive() ? {
+    axis: "#98a5ba", axisLine: "#3b475b", grid: "#2c3749", zoom: "#273246", zoomLine: "#66738a", zoomArea: "#3a475d", handle: "#e6ebf3",
+    pieBorder: "#1c2636", calendarSplit: "#1c2636", calendarEmpty: "#263246", calendarYear: "#dbe2ee", calendarMonth: "#9ca7b9", calendarDay: "#7d899e",
+    calendarScale: "#263246", calendarScaleBorder: "#3a465a", sankeyLabel: "#dbe2ee"
+  } : {
+    axis: "#81899b", axisLine: "#dfe2e9", grid: "#eceef3", zoom: "#f0f1f5", zoomLine: "#aaa2ec", zoomArea: "#ddd9fa", handle: "#fff",
+    pieBorder: "#fff", calendarSplit: "#fff", calendarEmpty: "#f3f4f7", calendarYear: "#434b5d", calendarMonth: "#858da0", calendarDay: "#a0a6b5",
+    calendarScale: "#f7f7fa", calendarScaleBorder: "#ebeaf1", sankeyLabel: "#343b4d"
+  };
 
   function publisherFromHeader() {
     const button = [...document.querySelectorAll("button")].find(item => /User menu/i.test(item.getAttribute("aria-label") || "")) || document.querySelector('nav[aria-label="User"] button:last-of-type');
@@ -362,7 +373,7 @@
     const lifetimeStyle = storedPrefs.lifetimeStackDefaultApplied === true ? storedLifetimeStyle : "area";
     return {
       section: ["dashboard", "analytics", "groups", "settings"].includes(storedPrefs.section) ? storedPrefs.section : (storedPrefs.view && storedPrefs.view !== "overview" ? "analytics" : "dashboard"),
-      view: analyticsViews.includes(storedPrefs.view) ? storedPrefs.view : "revenue", range: ranges.includes(storedPrefs.range) ? storedPrefs.range : "all", interval: storedPrefs.interval || "auto", start: storedPrefs.start || "", end: storedPrefs.end || "",
+      view: analyticsViews.includes(storedPrefs.view) ? storedPrefs.view : "revenue", range: ranges.includes(storedPrefs.range) ? storedPrefs.range : "all", interval: storedPrefs.interval || "auto", start: storedPrefs.start || "", end: storedPrefs.end || "", theme: ["system", "light", "dark"].includes(storedPrefs.theme) ? storedPrefs.theme : "system",
       performanceScopes: sanitizedPerformanceScopes(storedPrefs.performanceScopes), performanceHiddenScopes: Array.isArray(storedPrefs.performanceHiddenScopes) ? [...new Set(storedPrefs.performanceHiddenScopes.map(String).filter(Boolean))] : [], calendarMetric: storedPrefs.calendarMetric || "sales", lifetimeMetric: LIFETIME_METRICS[storedPrefs.lifetimeMetric] ? storedPrefs.lifetimeMetric : "revenue", lifetimeStyle, lifetimeAlign: lifetimeStyle === "area" ? "calendar" : storedLifetimeAlign, lifetimeStackDefaultApplied: true, lifetimePackages: Array.isArray(storedPrefs.lifetimePackages) ? storedPrefs.lifetimePackages : [], lifetimeHiddenPackages: Array.isArray(storedPrefs.lifetimeHiddenPackages) ? storedPrefs.lifetimeHiddenPackages : [], sankeyPackages: Array.isArray(storedPrefs.sankeyPackages) ? storedPrefs.sankeyPackages : [], sankeyGroupBy: storedPrefs.sankeyCategoryDefaultApplied === true ? storedSankeyGroupBy : "category", sankeyCategoryDefaultApplied: true
     };
   }
@@ -815,6 +826,7 @@
       : { maximumFractionDigits: 0 }).format(value || 0);
     const dateLabel = timestamp => new Intl.DateTimeFormat(undefined, { month: "short", year: "numeric", timeZone: "UTC" }).format(timestamp);
     const axisLabel = value => viewModel.align === "age" ? `Month ${Math.round(value) + 1}` : dateLabel(value);
+    const theme = chartTheme();
     const chart = createChart("lifetime", container); if (!chart) return;
     chart.setOption({
       animation: false,
@@ -830,12 +842,12 @@
         }
       },
       xAxis: viewModel.align === "age"
-        ? { type: "value", min: 0, minInterval: 1, axisLine: { lineStyle: { color: "#dfe2e9" } }, axisTick: { show: false }, axisLabel: { color: "#81899b", fontSize: 10, formatter: value => `${Math.round(value) + 1}m` }, splitLine: { show: false } }
-        : { type: "time", boundaryGap: false, axisLine: { lineStyle: { color: "#dfe2e9" } }, axisTick: { show: false }, axisLabel: { color: "#81899b", fontSize: 10, hideOverlap: true }, splitLine: { show: false } },
-      yAxis: { type: "value", min: 0, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: "#81899b", fontSize: 10, formatter: compactValue }, splitLine: { lineStyle: { color: "#eceef3" } } },
+        ? { type: "value", min: 0, minInterval: 1, axisLine: { lineStyle: { color: theme.axisLine } }, axisTick: { show: false }, axisLabel: { color: theme.axis, fontSize: 10, formatter: value => `${Math.round(value) + 1}m` }, splitLine: { show: false } }
+        : { type: "time", boundaryGap: false, axisLine: { lineStyle: { color: theme.axisLine } }, axisTick: { show: false }, axisLabel: { color: theme.axis, fontSize: 10, hideOverlap: true }, splitLine: { show: false } },
+      yAxis: { type: "value", min: 0, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: theme.axis, fontSize: 10, formatter: compactValue }, splitLine: { lineStyle: { color: theme.grid } } },
       dataZoom: [
         { type: "inside", filterMode: "none", zoomOnMouseWheel: true, moveOnMouseMove: true, moveOnMouseWheel: true, preventDefaultMouseMove: true },
-        { type: "slider", filterMode: "none", height: 20, bottom: 16, borderColor: "transparent", backgroundColor: "#f0f1f5", fillerColor: "rgba(108,92,231,.12)", dataBackground: { lineStyle: { color: "#aaa2ec" }, areaStyle: { color: "#ddd9fa" } }, selectedDataBackground: { lineStyle: { color: "#6c5ce7" }, areaStyle: { color: "#c8c1f5" } }, handleStyle: { color: "#fff", borderColor: "#6c5ce7" }, moveHandleStyle: { color: "#6c5ce7" }, textStyle: { color: "#81899b", fontSize: 9 } }
+        { type: "slider", filterMode: "none", height: 20, bottom: 16, borderColor: "transparent", backgroundColor: theme.zoom, fillerColor: "rgba(108,92,231,.18)", dataBackground: { lineStyle: { color: theme.zoomLine }, areaStyle: { color: theme.zoomArea } }, selectedDataBackground: { lineStyle: { color: "#6c5ce7" }, areaStyle: { color: "#5a4f8f" } }, handleStyle: { color: theme.handle, borderColor: "#6c5ce7" }, moveHandleStyle: { color: "#6c5ce7" }, textStyle: { color: theme.axis, fontSize: 9 } }
       ],
       series: viewModel.series.map(item => ({
         name: item.name, type: "line", data: item.points, stack: viewModel.style === "area" ? "lifetime" : undefined, smooth: .12, showSymbol: false,
@@ -913,6 +925,7 @@
       : { maximumFractionDigits: 0 }).format(value || 0);
     const dateLabel = timestamp => new Intl.DateTimeFormat(undefined, ["day", "week"].includes(viewModel.interval) ? { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" } : { month: "short", year: "numeric", timeZone: "UTC" }).format(timestamp);
     const allPoints = viewModel.series.flatMap(item => item.points).sort((a, b) => a[0] - b[0]);
+    const theme = chartTheme();
     const chart = createChart(key, container); if (!chart) return;
     chart.group = "upa-performance";
     globalThis.UPAECharts.connect?.("upa-performance");
@@ -929,11 +942,11 @@
           return `<strong>${dateLabel(visible[0].data[0])}</strong>${visible.map(parameter => `<br/><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${parameter.color};margin-right:6px"></span>${escapeHtml(parameter.seriesName)}&nbsp;&nbsp;${fullValue(parameter.data[1])}`).join("")}`;
         }
       },
-      xAxis: { type: "time", boundaryGap: false, axisLine: { lineStyle: { color: "#dfe2e9" } }, axisTick: { show: false }, axisLabel: { color: "#81899b", fontSize: 10, hideOverlap: true }, splitLine: { show: false } },
-      yAxis: { type: "value", min: 0, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: "#81899b", fontSize: 10, formatter: compactValue }, splitLine: { lineStyle: { color: "#eceef3" } } },
+      xAxis: { type: "time", boundaryGap: false, axisLine: { lineStyle: { color: theme.axisLine } }, axisTick: { show: false }, axisLabel: { color: theme.axis, fontSize: 10, hideOverlap: true }, splitLine: { show: false } },
+      yAxis: { type: "value", min: 0, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: theme.axis, fontSize: 10, formatter: compactValue }, splitLine: { lineStyle: { color: theme.grid } } },
       dataZoom: [
         { type: "inside", filterMode: "none", zoomOnMouseWheel: true, moveOnMouseMove: true, moveOnMouseWheel: true, preventDefaultMouseMove: true },
-        { type: "slider", filterMode: "none", height: 18, bottom: 14, borderColor: "transparent", backgroundColor: "#f0f1f5", fillerColor: "rgba(108,92,231,.12)", dataBackground: { lineStyle: { color: "#aaa2ec" }, areaStyle: { color: "#ddd9fa" } }, selectedDataBackground: { lineStyle: { color: "#6c5ce7" }, areaStyle: { color: "#c8c1f5" } }, handleStyle: { color: "#fff", borderColor: "#6c5ce7" }, moveHandleStyle: { color: "#6c5ce7" }, textStyle: { color: "#81899b", fontSize: 9 } }
+        { type: "slider", filterMode: "none", height: 18, bottom: 14, borderColor: "transparent", backgroundColor: theme.zoom, fillerColor: "rgba(108,92,231,.18)", dataBackground: { lineStyle: { color: theme.zoomLine }, areaStyle: { color: theme.zoomArea } }, selectedDataBackground: { lineStyle: { color: "#6c5ce7" }, areaStyle: { color: "#5a4f8f" } }, handleStyle: { color: theme.handle, borderColor: "#6c5ce7" }, moveHandleStyle: { color: "#6c5ce7" }, textStyle: { color: theme.axis, fontSize: 9 } }
       ],
       series: viewModel.series.map(item => ({
         name: item.name, type: "line", data: item.points, smooth: .14, sampling: "lttb", showSymbol: item.points.length <= 80, symbol: "circle", symbolSize: 5,
@@ -947,6 +960,7 @@
     if (!container) return;
     if (!viewModel.points.length) { container.innerHTML = '<div class="upa-empty-chart">No activity is available for this date range.</div>'; return; }
     if (!globalThis.UPAECharts?.init) { container.innerHTML = '<div class="upa-empty-chart">The chart renderer could not be loaded.</div>'; return; }
+    const theme = chartTheme();
     const chart = createChart("overview", container); if (!chart) return;
     const lookup = new Map(viewModel.points.map(point => [Date.parse(`${point.date}T00:00:00Z`), point]));
     const dateLabel = timestamp => new Intl.DateTimeFormat(undefined, ["day", "week"].includes(viewModel.interval) ? { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" } : { month: "short", year: "numeric", timeZone: "UTC" }).format(timestamp);
@@ -954,8 +968,8 @@
     const compactMoney = value => new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 }).format(value || 0);
     const fullMoney = value => new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value || 0);
     const axes = [0, 1, 2].map(index => ({
-      type: "time", gridIndex: index, boundaryGap: false, axisLine: { show: index === 2, lineStyle: { color: "#dfe2e9" } }, axisTick: { show: false },
-      axisLabel: { show: index === 2, color: "#81899b", fontSize: 10, hideOverlap: true }, splitLine: { show: false }
+      type: "time", gridIndex: index, boundaryGap: false, axisLine: { show: index === 2, lineStyle: { color: theme.axisLine } }, axisTick: { show: false },
+      axisLabel: { show: index === 2, color: theme.axis, fontSize: 10, hideOverlap: true }, splitLine: { show: false }
     }));
     const yAxes = [
       { name: "REVENUE", formatter: compactMoney, color: "#6c5ce7" },
@@ -963,7 +977,7 @@
       { name: "DOWNLOADS", formatter: compactNumber, color: "#d99721" }
     ].map((axis, index) => ({
       type: "value", gridIndex: index, min: 0, name: axis.name, nameLocation: "end", nameGap: 7, nameTextStyle: { color: axis.color, fontSize: 9, fontWeight: 800, align: "left" },
-      axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: "#8b92a3", fontSize: 10, formatter: axis.formatter }, splitLine: { lineStyle: { color: "#eef0f4" } }
+      axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: theme.axis, fontSize: 10, formatter: axis.formatter }, splitLine: { lineStyle: { color: theme.grid } }
     }));
     const series = [
       { name: "Gross revenue", key: "revenue", color: "#6c5ce7", area: ["rgba(108,92,231,.2)", "rgba(108,92,231,0)"] },
@@ -990,6 +1004,7 @@
     const container = document.getElementById("upa-revenue-mix-chart");
     if (!container || !viewModel.items.length) return;
     if (!globalThis.UPAECharts?.init) { container.innerHTML = '<div class="upa-empty-chart">The chart renderer could not be loaded.</div>'; return; }
+    const theme = chartTheme();
     const chart = createChart("revenueMix", container); if (!chart) return;
     const centerLabel = document.getElementById("upa-revenue-mix-label"), centerValue = document.getElementById("upa-revenue-mix-value");
     const updateCenter = item => {
@@ -1004,7 +1019,7 @@
       series: [{
         name: "Revenue mix", type: "pie", radius: ["65%", "86%"], center: ["50%", "50%"], avoidLabelOverlap: true, selectedMode: false,
         label: { show: false }, labelLine: { show: false }, emphasis: { scale: true, scaleSize: 5, itemStyle: { shadowBlur: 14, shadowColor: "rgba(31,36,53,.16)" } },
-        itemStyle: { borderColor: "#fff", borderWidth: 3, borderRadius: 5 },
+        itemStyle: { borderColor: theme.pieBorder, borderWidth: 3, borderRadius: 5 },
         data: viewModel.items.map(item => ({ name: item.name, value: item.value, itemStyle: { color: item.color } }))
       }]
     });
@@ -1037,6 +1052,7 @@
     if (!container) return;
     if (!viewModel.points.length) { container.innerHTML = '<div class="upa-empty-chart">No daily activity is available for this date range.</div>'; return; }
     if (!globalThis.UPAECharts?.init) { container.innerHTML = '<div class="upa-empty-chart">The chart renderer could not be loaded.</div>'; return; }
+    const theme = chartTheme();
     const formatValue = value => viewModel.metric.currency
       ? new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value || 0)
       : number(value);
@@ -1057,10 +1073,10 @@
       const chartHeight = Math.max(250, firstRowTop + viewModel.years.length * rowStep + 22);
       const calendars = viewModel.years.map((year, index) => ({
         range: year, top: firstRowTop + index * rowStep, left, cellSize: [cellSize, cellSize],
-        splitLine: { show: true, lineStyle: { color: "#fff", width: 3 } },
-        itemStyle: { color: "#f3f4f7", borderColor: "#fff", borderWidth: 2 },
-        yearLabel: { show: true, position: "left", margin: 35, color: "#434b5d", fontSize: 12, fontWeight: 750 },
-        monthLabel: { color: "#858da0", fontSize: 10, margin: 7 }, dayLabel: { firstDay: 1, color: "#a0a6b5", fontSize: 9, margin: 7 }
+        splitLine: { show: true, lineStyle: { color: theme.calendarSplit, width: 3 } },
+        itemStyle: { color: theme.calendarEmpty, borderColor: theme.calendarSplit, borderWidth: 2 },
+        yearLabel: { show: true, position: "left", margin: 35, color: theme.calendarYear, fontSize: 12, fontWeight: 750 },
+        monthLabel: { color: theme.calendarMonth, fontSize: 10, margin: 7 }, dayLabel: { firstDay: 1, color: theme.calendarDay, fontSize: 9, margin: 7 }
       }));
       container.style.height = `${chartHeight}px`;
       chart.resize({ height: chartHeight });
@@ -1071,8 +1087,8 @@
         visualMap: {
           min: 0, max: viewModel.scaleMax, calculable: false, orient: "horizontal", left: "center", bottom: 6,
           itemWidth: 8, itemHeight: 148, text: ["Higher", "Lower"], textGap: 10,
-          textStyle: { color: "#737b8e", fontSize: 10, fontWeight: 650 },
-          padding: [8, 12], backgroundColor: "#f7f7fa", borderColor: "#ebeaf1", borderWidth: 1, borderRadius: 14,
+          textStyle: { color: theme.axis, fontSize: 10, fontWeight: 650 },
+          padding: [8, 12], backgroundColor: theme.calendarScale, borderColor: theme.calendarScaleBorder, borderWidth: 1, borderRadius: 14,
           inRange: { color: ["#f1f0f8", "#d9d4f6", "#a99def", "#6c5ce7", "#372c83"] }, seriesIndex: series.map((_, index) => index)
         },
         calendar: calendars, series
@@ -1127,6 +1143,7 @@
     if (!container) return;
     if (!viewModel.links.length) { container.innerHTML = '<div class="upa-empty-chart">No package revenue is available for this date range.</div>'; return; }
     if (!globalThis.UPAECharts?.init) { container.innerHTML = '<div class="upa-empty-chart">The chart renderer could not be loaded.</div>'; return; }
+    const theme = chartTheme();
     const chart = createChart("sankey", container); if (!chart) return;
     const fullMoney = value => new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value || 0);
     chart.setOption({
@@ -1135,7 +1152,7 @@
       tooltip: { trigger: "item", triggerOn: "mousemove", confine: true, backgroundColor: "#151927", borderWidth: 0, padding: [10, 12], textStyle: { color: "#fff", fontSize: 11 }, formatter: parameter => parameter.dataType === "edge" ? `<strong>${escapeHtml(parameter.data.sourceLabel)}</strong><br/><span style="color:#aaa3d8">to ${escapeHtml(parameter.data.targetLabel)}</span>&nbsp;&nbsp;${fullMoney(parameter.value)}` : `<strong>${escapeHtml(parameter.data.displayLabel)}</strong><br/>${fullMoney(parameter.value)}` },
       series: [{
         type: "sankey", left: 110, right: 205, top: 22, bottom: 20, nodeWidth: 14, nodeGap: 13, nodeAlign: "justify", draggable: false, layoutIterations: 36,
-        data: viewModel.nodes, links: viewModel.links, label: { color: "#343b4d", fontSize: 11, fontWeight: 650, lineHeight: 16, width: 185, overflow: "truncate", formatter: parameter => parameter.data.kind === "total" ? `Gross revenue\n${money(viewModel.total)}` : parameter.data.displayLabel },
+        data: viewModel.nodes, links: viewModel.links, label: { color: theme.sankeyLabel, fontSize: 11, fontWeight: 650, lineHeight: 16, width: 185, overflow: "truncate", formatter: parameter => parameter.data.kind === "total" ? `Gross revenue\n${money(viewModel.total)}` : parameter.data.displayLabel },
         lineStyle: { color: "gradient", curveness: .52, opacity: .3 }, emphasis: { focus: "adjacency", lineStyle: { opacity: .65 } }, itemStyle: { borderWidth: 0, borderRadius: 3 }
       }]
     });
@@ -1163,7 +1180,7 @@
       exportChart.setOption(option, { notMerge: true, lazyUpdate: false });
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       exportChart.getZr().flush();
-      return exportChart.getDataURL({ type: "png", pixelRatio: 1, backgroundColor: "#ffffff" });
+      return exportChart.getDataURL({ type: "png", pixelRatio: 1, backgroundColor: darkThemeActive() ? "#1d2939" : "#ffffff" });
     } finally {
       exportChart.dispose();
       container.remove();
@@ -1176,22 +1193,22 @@
     const image = new Image(); image.src = source; await image.decode();
     const scopeLegend = Array.isArray(metadata.scopeLegend) ? metadata.scopeLegend : [], headerHeight = 150, footerHeight = scopeLegend.length ? 60 + scopeLegend.length * 28 : 0;
     const canvas = document.createElement("canvas"); canvas.width = image.naturalWidth; canvas.height = image.naturalHeight + headerHeight + footerHeight;
-    const context = canvas.getContext("2d"); context.fillStyle = "#fff"; context.fillRect(0, 0, canvas.width, canvas.height);
-    context.fillStyle = "#172033"; context.font = "700 32px Segoe UI, sans-serif"; context.fillText(metadata.title, 40, 56);
-    context.fillStyle = "#70798d"; context.font = "20px Segoe UI, sans-serif"; context.fillText(metadata.subtitle, 40, 91);
+    const context = canvas.getContext("2d"), darkExport = darkThemeActive(); context.fillStyle = darkExport ? "#1d2939" : "#fff"; context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = darkExport ? "#e7ebf3" : "#172033"; context.font = "700 32px Segoe UI, sans-serif"; context.fillText(metadata.title, 40, 56);
+    context.fillStyle = darkExport ? "#98a3b6" : "#70798d"; context.font = "20px Segoe UI, sans-serif"; context.fillText(metadata.subtitle, 40, 91);
     context.fillStyle = "#6c5ce7"; context.font = "700 18px Segoe UI, sans-serif"; context.textAlign = "right"; context.fillText("Publisher Analytics+", canvas.width - 40, 56); context.textAlign = "left";
     context.drawImage(image, 0, headerHeight);
     if (scopeLegend.length) {
       const footerTop = headerHeight + image.naturalHeight, maxLabelWidth = canvas.width - 105;
-      context.strokeStyle = "#e8eaf0"; context.lineWidth = 1; context.beginPath(); context.moveTo(40, footerTop + .5); context.lineTo(canvas.width - 40, footerTop + .5); context.stroke();
-      context.fillStyle = "#8a91a1"; context.font = "700 14px Segoe UI, sans-serif"; context.fillText("COMPARED SCOPES", 40, footerTop + 30);
+      context.strokeStyle = darkExport ? "#303b4e" : "#e8eaf0"; context.lineWidth = 1; context.beginPath(); context.moveTo(40, footerTop + .5); context.lineTo(canvas.width - 40, footerTop + .5); context.stroke();
+      context.fillStyle = darkExport ? "#98a3b6" : "#8a91a1"; context.font = "700 14px Segoe UI, sans-serif"; context.fillText("COMPARED SCOPES", 40, footerTop + 30);
       context.font = "18px Segoe UI, sans-serif";
       scopeLegend.forEach((entry, index) => {
         const baseline = footerTop + 60 + index * 28;
         context.fillStyle = entry.color || "#6c5ce7"; context.beginPath(); context.arc(46, baseline - 6, 5, 0, Math.PI * 2); context.fill();
         let label = String(entry.name || "Unnamed scope"), shortened = false;
         while (label.length > 1 && context.measureText(`${label}…`).width > maxLabelWidth) { label = label.slice(0, -1); shortened = true; }
-        context.fillStyle = "#4e5669"; context.fillText(shortened ? `${label.trimEnd()}…` : label, 62, baseline);
+        context.fillStyle = darkExport ? "#d7dde7" : "#4e5669"; context.fillText(shortened ? `${label.trimEnd()}…` : label, 62, baseline);
       });
     }
     const blob = await new Promise((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error("Could not create the chart image.")), "image/png"));
@@ -1245,7 +1262,16 @@
     const downloadMonths = new Set(records.filter(item => item.type === "downloads").map(item => item.period)).size;
     const performanceDays = new Set(records.filter(item => item.type === "daily" && item.scope === "all").map(item => item.date)).size;
     const revenueEntries = records.filter(item => item.type === "revenue").length;
-    return `<section class="upa-settings-page"><article class="upa-card upa-settings-card"><div class="upa-section-title"><div><small>LOCAL DATA</small><h2>Data coverage</h2><p>Available history stored for ${escapeHtml(publisherIdentity.name)} in this browser.</p></div></div><div class="upa-coverage-grid"><div><span>Sales</span><strong>${number(salesMonths)}</strong><small>months</small></div><div><span>Downloads</span><strong>${number(downloadMonths)}</strong><small>months</small></div><div><span>Performance</span><strong>${number(performanceDays)}</strong><small>days</small></div><div><span>Revenue</span><strong>${number(revenueEntries)}</strong><small>entries</small></div></div></article><article class="upa-card upa-settings-card"><div class="upa-section-title"><div><small>DATA MANAGEMENT</small><h2>Browser storage</h2><p>Your analytics stays in this browser and is never sent to an external service. Each publisher has a separate local workspace, and a different browser starts with its own copy.</p></div></div><button class="upa-data-action" type="button" data-action="export" ${records.length ? "" : "disabled"}><span><strong>Export data</strong><small>Download a JSON backup of this publisher's analytics.</small></span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5v10m-4-4 4 4 4-4"></path><path d="M3.5 14v2.5h13V14"></path></svg></button><div class="upa-danger-zone"><div><strong>Clear local data</strong><span>Deletes this publisher's synced analytics and saved sync progress. Preferences and package groups are kept.</span></div><button type="button" data-action="clear" ${records.length || syncJob ? "" : "disabled"}>Clear data</button></div></article></section>`;
+    const themeOptions = [
+      { id: "system", label: "System", icon: "◐" },
+      { id: "light", label: "Light", icon: "☀" },
+      { id: "dark", label: "Dark", icon: "☾" }
+    ].map(option => `<button type="button" data-theme="${option.id}" aria-pressed="${prefs.theme === option.id}"><span aria-hidden="true">${option.icon}</span>${option.label}</button>`).join("");
+    return `<section class="upa-settings-page">
+      <section class="upa-settings-section"><div class="upa-settings-intro"><h2>Appearance</h2><p>Choose how Publisher Analytics+ looks in this browser.</p></div><article class="upa-settings-panel"><div class="upa-settings-row"><div><strong>Color theme</strong><small>System follows your browser or device preference.</small></div><div class="upa-theme-options" role="group" aria-label="Color theme">${themeOptions}</div></div></article></section>
+      <section class="upa-settings-section"><div class="upa-settings-intro"><h2>Local data</h2><p>See how much publisher history is currently available.</p></div><article class="upa-settings-panel"><div class="upa-settings-panel-head"><strong>Data coverage</strong><small>Stored for ${escapeHtml(publisherIdentity.name)} in this browser.</small></div><div class="upa-coverage-grid"><div><span>Sales</span><strong>${number(salesMonths)}</strong><small>months</small></div><div><span>Downloads</span><strong>${number(downloadMonths)}</strong><small>months</small></div><div><span>Performance</span><strong>${number(performanceDays)}</strong><small>days</small></div><div><span>Revenue</span><strong>${number(revenueEntries)}</strong><small>entries</small></div></div></article></section>
+      <section class="upa-settings-section"><div class="upa-settings-intro"><h2>Data management</h2><p>Back up or remove analytics kept for this publisher.</p></div><article class="upa-settings-panel"><div class="upa-settings-panel-head"><strong>Browser storage</strong><small>Your analytics stays in this browser and is never sent to an external service. Each publisher has a separate local workspace.</small></div><button class="upa-data-action" type="button" data-action="export" ${records.length ? "" : "disabled"}><span><strong>Export data</strong><small>Download a JSON backup of this publisher's analytics.</small></span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5v10m-4-4 4 4 4-4"></path><path d="M3.5 14v2.5h13V14"></path></svg></button><div class="upa-danger-zone"><div><strong>Clear local data</strong><span>Deletes this publisher's synced analytics and saved sync progress. Preferences and package groups are kept.</span></div><button type="button" data-action="clear" ${records.length || syncJob ? "" : "disabled"}>Clear data</button></div></article></section>
+    </section>`;
   }
 
   function render() {
@@ -1391,6 +1417,7 @@
     const dashboardSummary = `<div class="upa-dashboard-summary"><section class="upa-dashboard-mix-card"><div class="upa-section-title"><div><small>ASSET ALLOCATION</small><h2>Revenue mix</h2></div></div>${revenueMixData.items.length ? `<div class="upa-revenue-mix-layout"><div class="upa-revenue-mix-visual"><div id="upa-revenue-mix-chart" class="upa-revenue-mix-chart" role="img" aria-label="Gross revenue contribution by asset for ${escapeHtml(revenueMixData.label)}"></div><div class="upa-revenue-mix-center"><small id="upa-revenue-mix-label">${escapeHtml(revenueMixData.label)}</small><strong id="upa-revenue-mix-value">${money(revenueMixData.total)}</strong></div></div><div class="upa-revenue-concentration"><small>REVENUE CONCENTRATION</small><dl><div><dt>Largest asset share</dt><dd>${revenueMixData.largest ? percent(revenueMixData.largest.value / revenueMixData.total * 100) : "—"}</dd><span>${revenueMixData.largest ? escapeHtml(revenueMixData.largest.name) : "No revenue yet"}</span></div><div><dt>Top 3 share</dt><dd>${percent(revenueMixData.topThreeShare)}</dd><span>${prefs.range === "all" ? "Of lifetime gross revenue" : "Of gross revenue in this range"}</span></div><div><dt>Revenue-generating assets</dt><dd>${number(revenueMixData.packageCount)}</dd><span>With recorded gross revenue</span></div></dl></div></div>` : '<div class="upa-revenue-mix-empty">No gross revenue is available for this range.</div>'}</section><div class="upa-kpi-groups"><div class="upa-kpis upa-kpis-selected"><article><div><small>Gross revenue</small></div><strong>${money(revenueChartData.total)}</strong><span>${number(paidUnits)} paid units in the selected period</span>${revenueChange}</article><article><div><small>Pageviews</small></div><strong>${number(pageViews)}</strong><span>${number(salesQty)} purchases and claims</span>${pageViewsChange}</article><article><div><small>Conversion rate</small></div><strong>${percent(conversionRate)}</strong><span>Views that became purchases or claims</span>${conversionChange}</article><article><div><small>Downloads</small></div><strong>${number(downloads)}</strong><span>Across the selected period</span>${downloadsChange}</article></div><div class="upa-kpis upa-kpis-trailing"><article><div><small>Average monthly revenue</small>${kpiHelp("upa-average-revenue-help", "About average monthly revenue", averageRevenueHelp)}</div><strong>${money(trailingRevenue.monthlyAverage)}</strong>${averageRevenueChange}</article><article><div><small>Revenue growth</small>${kpiHelp("upa-revenue-growth-help", "About revenue growth", "Compares gross revenue from the last 12 complete months with the preceding 12 months. It requires 24 months of history.")}</div><strong>${revenueGrowthValue}</strong></article></div></div></div>`;
     const dashboardPackageTable = `<article class="upa-dashboard-packages"><div class="upa-section-title"><div><small>PACKAGE BREAKDOWN</small><h2>Package performance</h2><p>Selected-range results ranked by gross revenue, with trailing revenue context.</p></div><div class="upa-section-tools"><span>${number(packages.length)} packages</span><button class="upa-table-link" type="button" data-view="packages">Explore packages</button></div></div>${dashboardPackages.length ? `<div class="upa-package-table-wrap"><table class="upa-package-table"><thead><tr><th scope="col">Package</th><th scope="col">Revenue / share</th><th scope="col">Monthly avg. (12m)</th><th scope="col">Growth (12m)</th><th scope="col">Conversion</th><th scope="col">Pageviews</th><th scope="col">Downloads</th></tr></thead><tbody>${dashboardPackages.map(item => `<tr><th scope="row"><div class="upa-package-identity" title="${number(item.paidQty)} paid units${item.freeQty ? ` · ${number(item.freeQty)} claims` : ""}"><span class="upa-package-avatar" aria-hidden="true">${escapeHtml(item.name?.trim().slice(0, 1).toUpperCase() || "P")}</span><strong class="upa-package-name">${escapeHtml(item.name)}</strong></div></th><td><span class="upa-table-value">${money(item.sales)}</span><span class="upa-table-inline-detail">${percent(item.share)}</span></td><td><span class="upa-table-value">${item.trailing.monthCount ? money(item.trailing.monthlyAverage) : "—"}</span></td><td><span class="upa-table-value ${revenueGrowthClass(item.trailing)}">${revenueGrowthLabel(item.trailing)}</span></td><td><span class="upa-table-value">${item.pageViews ? percent(item.conversion) : "—"}</span></td><td><span class="upa-table-value">${number(item.pageViews)}</span></td><td><span class="upa-table-value">${number(item.downloads)}</span></td></tr>`).join("")}</tbody></table></div><div class="upa-package-table-footer"><span>${packages.length > dashboardPackages.length ? `Showing the top ${dashboardPackages.length} of ${packages.length} packages` : `Showing all ${packages.length} packages in this range`}</span></div>` : '<div class="upa-package-table-empty">No package activity is available for this date range.</div>'}</article>`;
     host.classList.toggle("upa-open", isOpen);
+    host.classList.toggle("upa-theme-dark", darkThemeActive());
     document.documentElement.classList.toggle("upa-dashboard-open", isOpen);
     const logoUrl = extensionApi.runtime.getURL("icons/publisher-analytics-128.png");
     host.innerHTML = `<button class="upa-fab" aria-label="Open Publisher Analytics+" title="Publisher Analytics+"><img src="${logoUrl}" alt=""></button><aside class="upa-panel" aria-label="Publisher Analytics+ dashboard">
@@ -1473,6 +1500,11 @@
         document.querySelector("#upa-root .upa-performance-scope-trigger")?.setAttribute("aria-expanded", "false");
       }
       const action = event.target.closest("[data-action]")?.dataset.action;
+      const themeButton = event.target.closest("[data-theme]");
+      if (themeButton) {
+        prefs.theme = ["system", "light", "dark"].includes(themeButton.dataset.theme) ? themeButton.dataset.theme : "system";
+        await savePrefs(); render(); return;
+      }
       if (action === "retry-publisher") {
         publisherIdentityState = "loading"; render();
         try { await activatePublisher(await fetchPublisherIdentity(true), { initial: true }); }
@@ -1619,6 +1651,7 @@
       isRangePopoverOpen = false; isCustomRangeEditorOpen = false; updateRangePopover();
       requestAnimationFrame(() => document.querySelector("#upa-root .upa-range-trigger")?.focus());
     });
+    systemDarkTheme.addEventListener("change", () => { if (prefs.theme === "system") scheduleRender(); });
     extensionApi.runtime.onMessage.addListener(message => {
       if (message?.type !== "UPA_TOGGLE") return;
       isOpen = !isOpen;
