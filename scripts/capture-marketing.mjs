@@ -62,7 +62,8 @@ try {
     ["06-packages", "analytics", "packages"],
     ["07-settings", "settings"],
     ["08-dashboard-dark", "dashboard", "revenue", "theme=dark"],
-    ["09-settings-dark", "settings", "revenue", "select-dark=1"]
+    ["09-settings-dark", "settings", "revenue", "select-dark=1"],
+    ["10-daily-calendar-dark", "analytics", "calendar", "theme=dark"]
   ];
   for (const item of captures.filter(([name]) => !requested || name === requested)) await capture(...item);
 } finally {

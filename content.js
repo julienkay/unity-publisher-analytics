@@ -64,11 +64,11 @@
   const chartTheme = () => darkThemeActive() ? {
     axis: "#98a5ba", axisLine: "#3b475b", grid: "#2c3749", zoom: "#273246", zoomLine: "#66738a", zoomArea: "#3a475d", handle: "#e6ebf3",
     pieBorder: "#1c2636", calendarSplit: "#1c2636", calendarEmpty: "#263246", calendarYear: "#dbe2ee", calendarMonth: "#9ca7b9", calendarDay: "#7d899e",
-    calendarScale: "#263246", calendarScaleBorder: "#3a465a", sankeyLabel: "#dbe2ee"
+    calendarScale: "#263246", calendarScaleBorder: "#3a465a", calendarRange: ["#302d55", "#443b78", "#5b4db3", "#7565df", "#a496ff"], sankeyLabel: "#dbe2ee"
   } : {
     axis: "#81899b", axisLine: "#dfe2e9", grid: "#eceef3", zoom: "#f0f1f5", zoomLine: "#aaa2ec", zoomArea: "#ddd9fa", handle: "#fff",
     pieBorder: "#fff", calendarSplit: "#fff", calendarEmpty: "#f3f4f7", calendarYear: "#434b5d", calendarMonth: "#858da0", calendarDay: "#a0a6b5",
-    calendarScale: "#f7f7fa", calendarScaleBorder: "#ebeaf1", sankeyLabel: "#343b4d"
+    calendarScale: "#f7f7fa", calendarScaleBorder: "#ebeaf1", calendarRange: ["#f1f0f8", "#d9d4f6", "#a99def", "#6c5ce7", "#372c83"], sankeyLabel: "#343b4d"
   };
 
   function publisherFromHeader() {
@@ -1073,7 +1073,7 @@
       const chartHeight = Math.max(250, firstRowTop + viewModel.years.length * rowStep + 22);
       const calendars = viewModel.years.map((year, index) => ({
         range: year, top: firstRowTop + index * rowStep, left, cellSize: [cellSize, cellSize],
-        splitLine: { show: true, lineStyle: { color: theme.calendarSplit, width: 3 } },
+        splitLine: { show: false },
         itemStyle: { color: theme.calendarEmpty, borderColor: theme.calendarSplit, borderWidth: 2 },
         yearLabel: { show: true, position: "left", margin: 35, color: theme.calendarYear, fontSize: 12, fontWeight: 750 },
         monthLabel: { color: theme.calendarMonth, fontSize: 10, margin: 7 }, dayLabel: { firstDay: 1, color: theme.calendarDay, fontSize: 9, margin: 7 }
@@ -1089,7 +1089,7 @@
           itemWidth: 8, itemHeight: 148, text: ["Higher", "Lower"], textGap: 10,
           textStyle: { color: theme.axis, fontSize: 10, fontWeight: 650 },
           padding: [8, 12], backgroundColor: theme.calendarScale, borderColor: theme.calendarScaleBorder, borderWidth: 1, borderRadius: 14,
-          inRange: { color: ["#f1f0f8", "#d9d4f6", "#a99def", "#6c5ce7", "#372c83"] }, seriesIndex: series.map((_, index) => index)
+          inRange: { color: theme.calendarRange }, seriesIndex: series.map((_, index) => index)
         },
         calendar: calendars, series
       }, { notMerge: true });
