@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Publisher Analytics+ | Asset Store Insights",
   "short_name": "Analytics+",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Better analytics for Asset Store publishers.",
   "icons": {
     "16": "icons/publisher-analytics-16.png",
