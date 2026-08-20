@@ -8,6 +8,7 @@ These documents describe implementation decisions, evidence, risks, and validati
 - [RENDERING.md](RENDERING.md) records the visualization architecture.
 - [DEVELOPMENT.md](DEVELOPMENT.md) covers local setup, validation, chart builds, and Chrome and Firefox packaging.
 - [SCRIPTS.md](SCRIPTS.md) documents every repository script, its prerequisites, inputs, outputs, and commands.
+- [EXPORTS.md](EXPORTS.md) documents the JSON export schema, record types, privacy and coverage limits, and CSV availability.
 
 ## Data trust
 
