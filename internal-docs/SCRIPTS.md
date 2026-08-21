@@ -30,8 +30,8 @@ npm run capture:marketing
 | `npm run build:charts` | Build the local ECharts runtime used by the extension. | `vendor/echarts.min.js` and its legal notice |
 | `npm run test:isolation` | Check publisher ownership and package-group source invariants. | Console pass/fail result |
 | `npm run test:chrome-smoke` | Load the unpacked extension in a temporary browser profile and exercise its background storage APIs. | Console pass/fail result |
-| `npm run capture:marketing` | Render every Chrome Web Store feature screenshot from fictional data. | `marketing/screenshots/*.png` |
-| `npm run capture:marketing -- <capture-name>` | Render one named marketing screenshot. | One file in `marketing/screenshots/` |
+| `npm run capture:marketing` | Render every Chrome Web Store feature screenshot in light mode from fictional data. | `marketing/screenshots/*.png` |
+| `npm run capture:marketing -- [light\|dark] [capture-name]` | Render all screenshots, or one named screenshot, in the selected theme. | Files in `marketing/screenshots/` |
 | `npm run create:promos` | Compose the small and marquee promotional tiles. | `marketing/promos/*.png` |
 | `npm run validate:manifests` | Validate the generated Chrome and Firefox manifests and their allowlisted differences. | Console pass/fail result |
 | `npm run validate:packages` | Validate both packaged archives and compare their runtime payloads. | Console pass/fail result |
@@ -95,10 +95,22 @@ Generate the complete screenshot set:
 npm run capture:marketing
 ```
 
+Light mode is the default. Generate the complete dark-mode set with:
+
+```shell
+npm run capture:marketing -- dark
+```
+
 Generate one screenshot by its capture name:
 
 ```shell
 npm run capture:marketing -- 04-daily-calendar
+```
+
+Pass `light` or `dark` before the capture name to select a theme explicitly:
+
+```shell
+npm run capture:marketing -- dark 04-daily-calendar
 ```
 
 Available capture names:
@@ -114,7 +126,7 @@ Available capture names:
 | `06-packages` | Package ranking |
 | `07-settings` | Data coverage and local storage settings |
 
-The browser first renders at 3200×2000. Sharp then downsamples with Lanczos filtering to exactly 1280×800 and writes opaque, 24-bit RGB PNG files suitable for the Chrome Web Store.
+The browser first renders at 3200×2000. Sharp then downsamples with Lanczos filtering to exactly 1280×800 and writes opaque, 24-bit RGB PNG files suitable for the Chrome Web Store. Light-mode outputs retain the base capture name; dark-mode outputs add `-dark`, for example `04-daily-calendar-dark.png`, so both sets can coexist.
 
 Outputs under `marketing/screenshots/` are generated artifacts and are ignored by Git. The fixture and preview must never contain real publisher data, IDs, package names, or account-specific history.
 
