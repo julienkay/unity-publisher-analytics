@@ -31,7 +31,7 @@ npm run capture:marketing
 | `npm run test:isolation` | Check publisher ownership and package-group source invariants. | Console pass/fail result |
 | `npm run test:chrome-smoke` | Load the unpacked extension in a temporary browser profile and exercise its background storage APIs. | Console pass/fail result |
 | `npm run capture:marketing` | Render every Chrome Web Store feature screenshot in light mode from fictional data. | `marketing/screenshots/*.png` |
-| `npm run capture:marketing -- [light\|dark] [capture-name]` | Render all screenshots, or one named screenshot, in the selected theme. | Files in `marketing/screenshots/` |
+| `npm run capture:marketing -- [light\|dark] [png\|webp] [capture-name]` | Render all screenshots, or one named screenshot, in the selected theme and format. | Files in `marketing/screenshots/` |
 | `npm run create:promos` | Compose the small and marquee promotional tiles. | `marketing/promos/*.png` |
 | `npm run validate:manifests` | Validate the generated Chrome and Firefox manifests and their allowlisted differences. | Console pass/fail result |
 | `npm run validate:packages` | Validate both packaged archives and compare their runtime payloads. | Console pass/fail result |
@@ -113,6 +113,15 @@ Pass `light` or `dark` before the capture name to select a theme explicitly:
 npm run capture:marketing -- dark 04-daily-calendar
 ```
 
+PNG is the default output format. Pass `webp` to produce high-quality WebP files instead:
+
+```shell
+npm run capture:marketing -- webp
+npm run capture:marketing -- dark webp 04-daily-calendar
+```
+
+Theme, format, and capture-name arguments may appear in any order. WebP output uses quality 95, effort 6, and smart chroma subsampling.
+
 Available capture names:
 
 | Name | Surface |
@@ -126,7 +135,7 @@ Available capture names:
 | `06-packages` | Package ranking |
 | `07-settings` | Data coverage and local storage settings |
 
-The browser first renders at 3200×2000. Sharp then downsamples with Lanczos filtering to exactly 1280×800 and writes opaque, 24-bit RGB PNG files suitable for the Chrome Web Store. Light-mode outputs retain the base capture name; dark-mode outputs add `-dark`, for example `04-daily-calendar-dark.png`, so both sets can coexist.
+The browser first renders at 3200×2000. Sharp then downsamples with Lanczos filtering to exactly 1280×800 and writes opaque RGB PNG or WebP files. PNG remains suitable for the Chrome Web Store; WebP is available for other marketing channels. Light-mode outputs retain the base capture name; dark-mode outputs add `-dark`, for example `04-daily-calendar-dark.webp`, so both sets can coexist.
 
 Outputs under `marketing/screenshots/` are generated artifacts and are ignored by Git. The fixture and preview must never contain real publisher data, IDs, package names, or account-specific history.
 

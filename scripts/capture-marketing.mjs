@@ -8,9 +8,11 @@ import sharp from "sharp";
 const root = normalize(join(fileURLToPath(new URL(".", import.meta.url)), ".."));
 const output = join(root, "marketing", "screenshots");
 const themes = new Set(["light", "dark"]);
+const formats = new Set(["png", "webp"]);
 const args = process.argv.slice(2);
 const selectedTheme = args.find(argument => themes.has(argument)) || "light";
-const captureArgs = args.filter(argument => !themes.has(argument));
+const selectedFormat = args.find(argument => formats.has(argument)) || "png";
+const captureArgs = args.filter(argument => !themes.has(argument) && !formats.has(argument));
 if (captureArgs.length > 1) throw new Error(`Expected at most one capture name, received: ${captureArgs.join(" ")}`);
 const requested = captureArgs[0];
 const captures = [
@@ -58,16 +60,19 @@ const capture = async (name, section, view = "revenue", extra = "") => {
   await page.waitForTimeout(300);
   const outputName = selectedTheme === "light" ? name : `${name}-${selectedTheme}`;
   const source = join(output, `.${outputName}-source.png`);
-  const destination = join(output, `${outputName}.png`);
+  const destination = join(output, `${outputName}.${selectedFormat}`);
   await page.screenshot({ path: source });
-  await sharp(source)
+  const image = sharp(source)
     .flatten({ background: "#ffffff" })
     .removeAlpha()
-    .resize(1280, 800, { fit: "fill", kernel: sharp.kernel.lanczos3 })
-    .png({ palette: false, compressionLevel: 9 })
-    .toFile(destination);
+    .resize(1280, 800, { fit: "fill", kernel: sharp.kernel.lanczos3 });
+  if (selectedFormat === "webp") {
+    await image.webp({ quality: 95, effort: 6, smartSubsample: true }).toFile(destination);
+  } else {
+    await image.png({ palette: false, compressionLevel: 9 }).toFile(destination);
+  }
   await rm(source, { force: true });
-  console.log(`${outputName}.png`);
+  console.log(`${outputName}.${selectedFormat}`);
 };
 try {
   for (const item of captures.filter(([name]) => !requested || name === requested)) await capture(...item);
