@@ -242,25 +242,22 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-extension.ps
 
 The package commands generate manifests only in temporary packaging files. They do not change the canonical `manifest.json` or bump the extension version.
 
-## Required validation before finishing
+## Validation matrix
 
-The repository guidance requires rebuilding charts, checking every JavaScript file, and validating the manifest before finishing a change. On PowerShell:
+Run the checks that apply to the changed files and behavior:
 
-```powershell
-npm run build:charts
-$files = @(rg --files -g '*.js' -g '*.mjs')
-foreach ($file in $files) {
-  node --check $file
-  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-}
-node scripts/validate-manifests.mjs
-npm run test:fixtures
-npm run test:isolation
-npm run test:chrome-smoke
-npm run package
-```
+| Change | Required checks |
+|---|---|
+| Changed `.js` or `.mjs` files | Run `node --check` on each changed file. |
+| Chart entry point, ECharts version, or chart build configuration | Run `npm run build:charts`. Review and commit both generated chart files. |
+| API fixtures, response fields, or normalized data | Run `npm run test:fixtures`. Add focused checks when the existing fixture test does not cover the change. |
+| Publisher identity, storage, sync, preferences, exports, clearing behavior, or package groups | Run `npm run test:isolation`. |
+| Service-worker startup, session storage, or IndexedDB behavior | Run `npm run test:chrome-smoke`. |
+| Manifest inputs, generation, permissions, or packaging | Run `npm run validate:manifests`. Run the applicable package command when packaged contents can change. |
+| Release preparation | Run `npm run package`. This command performs the complete package validation. |
+| Documentation only | Check links and examples that the change affects. Run `git diff --check`. |
 
-The package command validates both archive manifests and their exact file lists.
-It also checks that shared runtime files have identical bytes. Run the isolation
-check when a change can affect publisher isolation or package groups. Include
-this inexpensive check in the normal validation pass.
+The package command rebuilds the chart bundle. It validates both archive
+manifests and their exact file lists. It also checks that shared runtime files
+have identical bytes. Do not run the complete package sequence for an unrelated
+documentation or source change.

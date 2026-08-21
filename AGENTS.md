@@ -45,8 +45,15 @@ request path and parser.
 
 ## Before finishing
 
-- Rebuild the committed chart bundle.
-- Run `node --check` on every JavaScript file.
-- Validate `manifest.json` with the repository manifest validator.
-- Run the change-specific checks listed in `internal-docs/SCRIPTS.md`, including
-  fixture and publisher-isolation checks when data behavior is involved.
+- Run the checks that apply to the changed files and behavior. Use the validation
+  matrix in `internal-docs/SCRIPTS.md`.
+- Run `node --check` on each changed `.js` or `.mjs` file.
+- Rebuild the committed chart bundle after a change to its entry point, ECharts
+  version, or build configuration.
+- Validate the manifests after a change to manifest inputs, generation,
+  permissions, or packaging. Validate them before a release.
+- Run fixture checks when a change affects API evidence or normalized data.
+- Run publisher-isolation checks when a change affects identity, storage, sync,
+  preferences, exports, clearing behavior, or package groups.
+- Run the complete package validation only for release preparation or packaging
+  changes.
