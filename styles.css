@@ -202,7 +202,7 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 .upa-danger-zone span { margin-top:4px;color:var(--upa-muted);font-size:var(--upa-font-support);line-height:1.45; }
 .upa-danger-zone button { flex:0 0 auto;min-height:40px;padding:0 14px;border:1px solid #efc7cc;border-radius:10px;background:#fff6f7;color:#b63341;font:750 11px inherit;cursor:pointer; }
 .upa-danger-zone button:hover { border-color:#e7adb5;background:#fff0f2; }
-.upa-group-editor { display:flex;width:100%;flex-direction:column;overflow:hidden;border:1px solid var(--upa-line);border-radius:17px;background:#fff;box-shadow:0 5px 22px rgba(28,36,55,.045); }
+.upa-group-editor { display:flex;width:100%;flex-direction:column;overflow:hidden;border:1px solid var(--upa-line);border-radius:17px;background:var(--upa-card);box-shadow:0 5px 22px rgba(28,36,55,.045); }
 .upa-group-editor-head { display:flex;align-items:flex-start;justify-content:space-between;gap:24px;padding:22px 24px 16px; }
 .upa-group-editor-head small { color:var(--upa-muted);font-size:var(--upa-font-label);font-weight:800;letter-spacing:1px; }
 .upa-group-editor-head h2 { margin:5px 0 4px;color:var(--upa-ink);font-size:var(--upa-font-section-title);letter-spacing:-.4px; }
