@@ -1,6 +1,7 @@
 # Repository scripts
 
-This page is the command reference for maintainers. Run commands from the repository root unless a section says otherwise.
+This page is the command reference for maintainers. Run commands from the
+repository root unless a section gives a different location.
 
 ## Setup
 
@@ -10,7 +11,9 @@ Install the pinned development dependencies before running the Node-based script
 npm install
 ```
 
-Node.js 20.9 or newer is required by the image-processing dependency. Marketing screenshot capture also needs a Chromium-family browser. On Windows, the default is Microsoft Edge at:
+The image-processing dependency requires Node.js 20.9 or newer. Marketing
+screenshot capture also requires a Chromium-family browser. On Windows, the
+default browser is Microsoft Edge at this location:
 
 ```text
 C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
@@ -28,6 +31,7 @@ npm run capture:marketing
 | Command | Purpose | Output |
 |---|---|---|
 | `npm run build:charts` | Build the local ECharts runtime used by the extension. | `vendor/echarts.min.js` and its legal notice |
+| `npm run test:fixtures` | Check the fixture-backed package publication-date mapping. | Console pass/fail result |
 | `npm run test:isolation` | Check publisher ownership and package-group source invariants. | Console pass/fail result |
 | `npm run test:chrome-smoke` | Load the unpacked extension in a temporary browser profile and exercise its background storage APIs. | Console pass/fail result |
 | `npm run capture:marketing` | Render every Chrome Web Store feature screenshot in light mode from fictional data. | `marketing/screenshots/*.png` |
@@ -54,6 +58,25 @@ Commit both generated files after changing the entry point or the ECharts versio
 - `vendor/echarts.min.js`
 - `vendor/echarts.min.js.LEGAL.txt`
 
+## API fixture validation
+
+Source: [`scripts/validate-api-fixtures.js`](../scripts/validate-api-fixtures.js)
+
+```shell
+npm run test:fixtures
+```
+
+This validation currently checks one mapping. It confirms that the package
+publication-date aliases in `content.js` include `first_published_at`, and that
+the mapping parses every publication date in
+`once-published-packages.json`. It does not run the other normalizers. It does
+not validate the fixture manifest, provenance files, boundary behavior, privacy,
+or live Portal responses.
+
+Extend this script, or add a focused validator, when a new fixture field,
+response variant, or record type becomes part of normalized behavior. A passing
+result does not prove that Unity's undocumented responses are unchanged.
+
 ## Publisher-isolation validation
 
 Source: [`scripts/validate-publisher-isolation.js`](../scripts/validate-publisher-isolation.js)
@@ -64,12 +87,13 @@ npm run test:isolation
 
 This lightweight source validation checks that:
 
-- API forwarding still permits only the expected Unity paths and methods;
-- publisher IDs propagate through records, metadata, sync jobs, and preferences;
-- IndexedDB ownership checks and publisher-qualified indexes remain present; and
-- package groups remain publisher-scoped and outside analytics-data clearing.
+- API forwarding still permits only the expected Unity paths and methods.
+- Publisher IDs propagate through records, metadata, sync jobs, and preferences.
+- IndexedDB ownership checks and publisher-qualified indexes remain present.
+- Package groups remain publisher-scoped and outside analytics-data clearing.
 
-It is not a browser integration test or proof that Unity's undocumented response shapes are unchanged.
+This validation is not a browser integration test. It does not prove that
+Unity's undocumented response shapes are unchanged.
 
 ## Chrome extension smoke test
 
@@ -79,7 +103,12 @@ Source: [`scripts/smoke-chrome.mjs`](../scripts/smoke-chrome.mjs)
 npm run test:chrome-smoke
 ```
 
-The smoke test starts Microsoft Edge with the repository root loaded as an unpacked extension in a temporary profile. It verifies that the MV3 service worker starts and that session storage and IndexedDB are available. It does not open the Publisher Portal or use an existing browser profile, credentials, or real publisher data. The marketing preview separately exercises the injected interface with fictional data. Set `UPA_BROWSER_PATH` to another Chromium-family executable when Edge is unavailable.
+The smoke test starts Microsoft Edge with a temporary profile. It loads the
+repository root as an unpacked extension. It checks the MV3 service worker,
+session storage, and IndexedDB. It does not open the Publisher Portal. It does
+not use an existing profile, credentials, or real publisher data. The marketing
+preview tests the injected interface with fictional data. Set `UPA_BROWSER_PATH`
+to another Chromium-family browser when Edge is unavailable.
 
 ## Marketing screenshots
 
@@ -135,7 +164,11 @@ Available capture names:
 | `06-packages` | Package ranking |
 | `07-settings` | Data coverage and local storage settings |
 
-The browser first renders at 3200×2000. Sharp then downsamples with Lanczos filtering to exactly 1280×800 and writes opaque RGB PNG or WebP files. PNG remains suitable for the Chrome Web Store; WebP is available for other marketing channels. Light-mode outputs retain the base capture name; dark-mode outputs add `-dark`, for example `04-daily-calendar-dark.webp`, so both sets can coexist.
+The browser first renders at 3200×2000. Sharp uses Lanczos filtering to reduce
+the image to 1280×800. It writes opaque RGB PNG or WebP files. Use PNG for the
+Chrome Web Store. WebP is available for other marketing channels. Light-mode
+files keep the base capture name. Dark-mode files add `-dark`, for example
+`04-daily-calendar-dark.webp`. Thus, both sets can exist together.
 
 Outputs under `marketing/screenshots/` are generated artifacts and are ignored by Git. The fixture and preview must never contain real publisher data, IDs, package names, or account-specific history.
 
@@ -145,7 +178,7 @@ Source: [`scripts/create-promo-tiles.mjs`](../scripts/create-promo-tiles.mjs)
 
 Tracked inputs:
 
-- [`scripts/marketing-assets/promo-background.png`](../scripts/marketing-assets/promo-background.png) — reusable generated background artwork;
+- [`scripts/marketing-assets/promo-background.png`](../scripts/marketing-assets/promo-background.png) — reusable generated background artwork.
 - `icons/publisher-analytics-128.png` — extension icon.
 
 Generated input:
@@ -187,7 +220,12 @@ Recommended command:
 npm run package
 ```
 
-This rebuilds the chart bundle, validates both target manifests, creates `dist/publisher-analytics-chrome-<manifest version>.zip` and `dist/publisher-analytics-firefox-<manifest version>.zip`, then validates their contents. Both packages contain the same runtime files. Chrome uses an extension service worker; Firefox uses a non-persistent background script and includes its Mozilla-specific identity, minimum version, and no-data-collection declaration.
+This command rebuilds the chart bundle and validates both target manifests. It
+creates the Chrome and Firefox ZIP files in `dist/`. It then validates their
+contents. Both packages contain the same runtime files. Chrome uses an extension
+service worker. Firefox uses a non-persistent background script. The Firefox
+manifest also contains its identity, minimum version, and data-collection
+declaration.
 
 Create one target only:
 
@@ -216,9 +254,13 @@ foreach ($file in $files) {
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 node scripts/validate-manifests.mjs
+npm run test:fixtures
 npm run test:isolation
 npm run test:chrome-smoke
 npm run package
 ```
 
-The package command validates both archive manifests, their exact file lists, and byte-identical shared runtime payloads. The isolation check is mandatory when publisher isolation or package groups may be affected and is inexpensive enough to include in the normal validation pass.
+The package command validates both archive manifests and their exact file lists.
+It also checks that shared runtime files have identical bytes. Run the isolation
+check when a change can affect publisher isolation or package groups. Include
+this inexpensive check in the normal validation pass.

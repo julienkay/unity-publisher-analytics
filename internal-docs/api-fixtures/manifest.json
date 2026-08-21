@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "lastReviewed": "2026-08-18",
   "source": "Signed-in Publisher Portal capture on one publisher account",
-  "warning": "These are sanitized, representative samples from one account, not a supported Unity API contract. Read each provenance sidecar before drawing semantic or cardinality conclusions.",
+  "warning": "These are safe copies of real responses from one account. Private identities, dates, counts, and financial values were replaced. These files are not a supported Unity API contract. Read each provenance file before you make a semantic or cardinality claim.",
   "endpoints": [
     {
       "id": "user",

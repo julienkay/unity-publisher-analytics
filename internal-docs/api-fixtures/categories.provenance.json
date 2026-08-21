@@ -4,12 +4,11 @@
   "endpoint": "/publisher-v2-api/proxy?path=%2Fmanagement%2Fcategories&type=array",
   "method": "GET",
   "accountContext": "Non-empty category definition response; four representative active rows retained.",
-  "captureMethod": "A temporary opt-in local capture block sanitized the parsed JSON in the page before emitting it. Authentication material and raw response JSON were never logged or retained.",
+  "captureMethod": "A temporary opt-in local helper parsed the JSON in the Portal page. It replaced private values before output. It did not log or retain authentication material or raw response JSON.",
   "sanitization": [
     "Limited the category array to four representative rows.",
     "Replaced category IDs, display names, slugs, and the value of the string-valued multiple field.",
     "Preserved key spelling, nesting, JSON types, and status values."
   ],
-  "boundarySemantics": "Not applicable.",
-  "commit": "pending"
+  "boundarySemantics": "Not applicable."
 }

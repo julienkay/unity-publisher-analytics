@@ -5,7 +5,8 @@ This is the shared visual contract for every Publisher Analytics+ surface. New v
 ## Principles
 
 - **Readable before dense.** Publishers should understand the hierarchy without leaning in or hunting for context.
-- **One question per view.** Keep each analytics page focused; use tabs to switch questions instead of stacking unrelated charts.
+- **One question per view.** Keep each analytics page focused. Use tabs to
+  switch questions instead of stacking unrelated charts.
 - **Quiet structure.** Prefer spacing, type, and subtle borders over heavy decoration.
 - **Consistent meaning.** A color, label, metric, or interaction should mean the same thing everywhere.
 - **Progressive detail.** Keep common controls visible and place advanced choices in an anchored popover or focused panel.
@@ -27,11 +28,12 @@ The type tokens live on `#upa-root` in `styles.css`.
 - Use at least 1.4 line-height for prose.
 - Never render explanatory prose below 10px.
 - Reserve uppercase, tracking, and 9px labels for short categories such as `PERFORMANCE` or `FROM`.
-- Use weight and color to create hierarchy; do not shrink important text to make it fit.
+- Use weight and color to create hierarchy. Do not shrink important text to make
+  it fit.
 
 ## Layout and surfaces
 
-- Build spacing from 4px increments; prefer 8, 12, 16, 24, and 32px.
+- Build spacing from 4px increments. Prefer 8, 12, 16, 24, and 32px.
 - Keep page gutters responsive with the existing `clamp(24px, 4vw, 58px)` pattern.
 - Use white cards on the neutral workspace background, a subtle border, and restrained shadow.
 - Keep the page title and global controls in the header. Place the time range at the top right and preserve it across views.
@@ -42,19 +44,25 @@ The type tokens live on `#upa-root` in `styles.css`.
 
 - Controls are 38–42px high, use a 9px uppercase label, and expose a visible focus state.
 - Menus and advanced editors open beneath their trigger and dismiss with outside click or Escape.
-- Primary actions use the violet accent; destructive actions require explicit wording and confirmation.
+- Primary actions use the violet accent. Destructive actions require explicit
+  wording and confirmation.
 - Cards begin with an eyebrow, title, one-sentence explanation, and optional tools aligned on the right.
 - Dense package tables use a strong identity column, single-line values, clear row separators, and horizontal scrolling instead of compressed text.
-- Keep metric comparisons secondary to the current value, state the preceding period explicitly, and omit them when the baseline is incomplete or zero.
+- Keep metric comparisons secondary to the current value. State the preceding
+  period. Omit the comparison when its baseline is incomplete or zero.
 - Move calculation details into a focused, keyboard-accessible info tooltip when persistent helper text would repeat across a compact metric grid.
 - Empty, loading, error, and success states use publisher-facing language and keep the next action obvious.
-- Tooltips must add information or context; never use them to repeat the visible label or value unchanged.
+- Tooltips must add information or context. Do not use them to repeat the
+  visible label or value.
 
 ## Charts
 
 - Start with the question the chart answers, then choose the visualization.
-- Use the shared semantic colors: violet for revenue, cyan for pageviews, amber for downloads, green for positive performance/status, and rose for negative movement.
-- Keep axes and legends at 10px or larger when space allows; tooltips use at least 11px.
+- Use the shared semantic colors. Use violet for revenue and cyan for pageviews.
+  Use amber for downloads, green for positive states, and rose for negative
+  movement.
+- Keep axes and legends at 10px or larger when space allows. Tooltips use at
+  least 11px.
 - Put units in labels or tooltips, format values consistently, and make the active date range explicit near the chart.
 - Avoid visual noise: hide meaningless zero hover states, soften grid lines, and keep legends separated from plotted data.
 - Preserve zoom, pan, export, and share behavior where those interactions are useful.

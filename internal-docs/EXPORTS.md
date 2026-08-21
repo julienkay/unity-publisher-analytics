@@ -1,6 +1,9 @@
 # Analytics exports
 
-This document describes the JSON file created by **Settings > Data management > Export data**. It documents the normalized export format, not Unity's raw API responses. Source-data evidence and metric semantics are in [DATA-EVIDENCE.md](DATA-EVIDENCE.md).
+This document describes the JSON file created by **Settings > Data management >
+Export data**. It documents the normalized export format. It does not document
+Unity's raw API responses. [DATA-EVIDENCE.md](DATA-EVIDENCE.md) contains source
+evidence and metric semantics.
 
 ## Export operation
 
@@ -8,7 +11,9 @@ The export downloads `publisher-analytics-YYYY-MM-DD.json` with the media type `
 
 The file does not contain raw API responses, charts, preferences, package groups, or sync progress. The extension has no JSON import or restore action. The file is a copy of analytics data, not a restorable workspace.
 
-The file contains the publisher name and publisher ID. Treat it as private publisher data and sanitize it before sharing.
+The file contains private publisher data. Before you share it, remove or replace
+the publisher name, publisher ID, package identities, ledger descriptions, and
+exact financial values. Make these changes only in the copy that you share.
 
 ## Top-level format
 
@@ -49,12 +54,12 @@ Select records by `type`. Fields are not uniform across record types.
 
 Daily records contain catalog-wide or per-asset performance. `scope` distinguishes the two forms:
 
-- `all`: combined catalog result; `packageId` is `null`.
-- `package`: one asset; `packageId` identifies it.
+- `all`: Combined catalog result. `packageId` is `null`.
+- `package`: One asset. `packageId` identifies it.
 
 Adding `all` records to `package` records counts the same activity twice. Package rows do not always sum to the catalog row because scopes can be missing and catalog or sync coverage can differ.
 
-Sanitized per-asset example:
+Per-asset example with fictional private values:
 
 ```json
 {
@@ -90,9 +95,9 @@ Sanitized per-asset example:
 | `period` | Calendar month derived from `date`, formatted `YYYY-MM`. |
 | `date` | Activity date, formatted `YYYY-MM-DD`. |
 | `scope` | `all` for the catalog or `package` for one asset. |
-| `packageId` | Unity package ID for a package scope; `null` for the catalog scope. |
+| `packageId` | Unity package ID for a package scope. The value is `null` for the catalog scope. |
 | `package` | Asset or catalog display label captured during sync. |
-| `category` | Asset category captured during sync; it can be empty. |
+| `category` | Asset category captured during sync. The value can be empty. |
 | `sales` | **Gross revenue**, despite the field name. It is derived from daily `gross`. |
 | `salesQty` | `paidQty + freeQty`. |
 | `paidQty` | Paid quantity derived from daily `sales`. |
@@ -100,9 +105,9 @@ Sanitized per-asset example:
 | `pageViews` | Daily page views. |
 | `conversionRate` | Extension-calculated `(salesQty / pageViews) * 100`, capped at 100%. |
 | `downloads` | Daily downloads. Its equivalence to the monthly event count is not confirmed. |
-| `wishlisted` | Daily net wishlist movement; it can be negative. |
+| `wishlisted` | Daily net wishlist movement. The value can be negative. |
 | `refunds` | Daily refund value, treated as a count. |
-| `ratingAvg` | Daily rating value when returned; otherwise normalized to zero. |
+| `ratingAvg` | Daily rating value when Unity returns it. Otherwise, the normalizer sets it to zero. |
 | `quickLooks` | Daily quick-look count. |
 | `carted` | Daily cart-addition count. |
 | `currency` | Value set to `USD` by the extension. |
@@ -140,7 +145,7 @@ Sales records contain one monthly asset-and-price row. One asset can have more t
 | Field | Meaning |
 |---|---|
 | `period` | Report month, formatted `YYYY-MM`. |
-| `date` | First calendar day of `period`; it is not a sale date. |
+| `date` | First calendar day of `period`. It is not a sale date. |
 | `packageId`, `package`, `category` | Asset identity and category captured during sync. |
 | `price` | Price for this monthly row. |
 | `qty` | Monthly paid quantity derived from monthly `sales`. |
@@ -148,7 +153,7 @@ Sales records contain one monthly asset-and-price row. One asset can have more t
 | `chargebacks` | Monthly chargebacks, treated as a count. |
 | `gross` | Monthly gross revenue. |
 | `net` | Monthly value derived from Unity's `revenue` field. Its publisher-facing net interpretation is inferred, not a documented Unity contract. |
-| `first`, `last` | First and last activity dates returned for the row; either can be empty. |
+| `first`, `last` | First and last activity dates returned for the row. Either value can be empty. |
 | `currency` | Value set to `USD` by the extension. |
 
 ## `downloads` records
@@ -183,14 +188,14 @@ Download records contain one monthly row per asset.
 | Field | Meaning |
 |---|---|
 | `period` | Report month, formatted `YYYY-MM`. |
-| `date` | First calendar day of `period`; it is not a download date. |
+| `date` | First calendar day of `period`. It is not a download date. |
 | `packageId`, `package`, `category` | Asset identity and category captured during sync. |
 | `downloads` | `freeDownloads + entitledDownloads`. |
 | `users` | `freeUsers + entitledUsers`. |
 | `freeDownloads`, `freeUsers` | Monthly free download events and users. |
 | `entitledDownloads`, `entitledUsers` | Monthly entitled download events and users. |
-| `freeFirst`, `freeLast` | First and last free-download timestamps or dates returned for the row; either can be empty. |
-| `entitledFirst`, `entitledLast` | First and last entitled-download timestamps or dates returned for the row; either can be empty. |
+| `freeFirst`, `freeLast` | First and last free-download timestamps or dates returned for the row. Either value can be empty. |
+| `entitledFirst`, `entitledLast` | First and last entitled-download timestamps or dates returned for the row. Either value can be empty. |
 
 ## `revenue` records
 

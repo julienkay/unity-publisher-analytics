@@ -4,13 +4,12 @@
   "endpoint": "/publisher-v2-api/proxy?path=%2Fmanagement%2Fonce-published-packages&type=array",
   "method": "GET",
   "accountContext": "Non-empty mixed catalog; four representative published rows retained.",
-  "captureMethod": "A temporary opt-in local capture block sanitized the parsed JSON in the page before emitting it. Authentication material and raw response JSON were never logged or retained.",
+  "captureMethod": "A temporary opt-in local helper parsed the JSON in the Portal page. It replaced private values before output. It did not log or retain authentication material or raw response JSON.",
   "sanitization": [
     "Limited the catalog array to four representative rows so the real catalog size is not disclosed.",
     "Replaced package IDs and names with stable values shared by the monthly and daily fixtures.",
     "Shifted dates two calendar years earlier while preserving ordering and time-of-day.",
     "Preserved key spelling, nesting, JSON types, and status values."
   ],
-  "boundarySemantics": "Not applicable.",
-  "commit": "pending"
+  "boundarySemantics": "Not applicable."
 }

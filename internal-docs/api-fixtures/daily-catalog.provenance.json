@@ -9,13 +9,12 @@
     "package_ids": []
   },
   "accountContext": "Catalog-wide active month containing views, quick looks, carts, downloads, and two paid-sale days; refunds and chargebacks were zero where returned.",
-  "captureMethod": "The live request used another month. A temporary opt-in local capture block sanitized the response in the page; the fixture range and date keys were then shifted together. Authentication material and raw response JSON were never logged or retained.",
+  "captureMethod": "The live request used another month. A temporary opt-in local helper replaced private values in the Portal page before output. The fixture range and date keys were then moved together. The helper did not log or retain authentication material or raw response JSON.",
   "sanitization": [
     "Shifted the request range and every date key two calendar years earlier.",
     "Changed counts and monetary values while preserving JSON number types, signs, zeros, missing fields, and daily relationships.",
     "Kept all 31 returned date keys so range coverage remains testable.",
     "Preserved monthly gross and paid-quantity reconciliation with monthly-sales.json."
   ],
-  "boundarySemantics": "The response contained the start date and every following date through 2024-07-31, but no 2024-08-01 key. This directly supports start-inclusive/end-exclusive behavior for this request; the three-request boundary suite is still missing.",
-  "commit": "pending"
+  "boundarySemantics": "The response contained the start date and every following date through 2024-07-31, but no 2024-08-01 key. This directly supports start-inclusive/end-exclusive behavior for this request; the three-request boundary suite is still missing."
 }

@@ -1,33 +1,56 @@
 # Rendering architecture
 
-Status: active. A modular ECharts bundle powers the Dashboard asset-allocation donut and business-activity view, revenue timeline, package lifetime-growth chart, daily calendar, and revenue-composition views.
+Status: active. A modular ECharts bundle powers all analytics charts. These
+charts include the Dashboard views, revenue timeline, lifetime-growth chart,
+daily calendar, and revenue-composition views.
 
 ## Decision
 
 Use three deliberately separate layers:
 
 1. **Native DOM and CSS** for the application shell, controls, KPI cards, tables, empty states, and accessible text summaries.
-2. **Apache ECharts 6** as the primary engine for interactive charts and diagrams, including time series, bars, areas, scatter plots, heatmaps, treemaps, funnels, graphs, and Sankey diagrams.
-3. **Small custom SVG components** only for product-specific micro-visuals that would be simpler than configuring a chart engine, such as a tiny sparkline or coverage strip.
+2. **Apache ECharts 6** is the primary engine for interactive charts and
+   diagrams. It supports time series, bars, areas, scatter plots, heatmaps,
+   treemaps, funnels, graphs, and Sankey diagrams.
+3. **Small custom SVG components** support only simple product-specific visuals.
+   Examples include a small sparkline or coverage strip.
 
-Do not introduce a general UI framework. The current interface is small enough for native DOM rendering, and chart redraws can remain isolated from the rest of the surface.
+Do not introduce a general UI framework. The current interface is small enough
+for native DOM rendering. Chart redraws can remain isolated from the other UI.
 
 ## Why ECharts
 
-ECharts offers the broadest useful coverage in one runtime for this product. It provides more than 20 built-in chart types, Sankey support, datasets and transforms, responsive configuration, accessibility features, progressive rendering, and interchangeable Canvas and SVG renderers.
+ECharts provides the required chart coverage in one runtime. It includes more
+than 20 chart types and supports Sankey diagrams, data transforms, and responsive
+configuration. It also supports accessibility, progressive rendering, Canvas,
+and SVG.
 
-Use SVG by default for ordinary dashboard charts because it remains crisp, inspectable, and styleable. Use Canvas for dense heatmaps, scatter plots, or other views with enough marks to make SVG expensive. Each chart adapter chooses its renderer explicitly.
+Use SVG by default for ordinary dashboard charts. SVG output remains crisp,
+inspectable, and styleable. Use Canvas when dense views make SVG expensive.
+Each chart adapter must select its renderer explicitly.
 
 ## Alternatives considered
 
-- **Observable Plot:** excellent defaults and concise exploratory charts, but it overlaps the standard chart layer while offering less control over specialized interactive diagrams. It would also bring D3 as a second substantial runtime.
-- **Vega-Lite:** a strong declarative grammar for conventional statistical graphics, but Sankey and bespoke interaction are not first-class, and the compile/runtime stack is more machinery than this extension needs.
-- **D3:** unmatched for bespoke visualization, but too low-level as the default dashboard engine. Consider individual D3 modules only if a future visualization cannot be expressed well as an ECharts custom series.
-- **Fully custom Canvas or SVG:** appropriate for tiny visuals, not for a growing catalog of charts. Rebuilding axes, scales, tooltips, selection, accessibility, resizing, and export would consume product time and create inconsistent behavior.
+- **Observable Plot:** It has good defaults and concise exploratory charts. It
+  overlaps the standard chart layer and gives less control over specialized
+  diagrams. It would also add D3 as a second large runtime.
+- **Vega-Lite:** It has a strong grammar for conventional statistical graphics.
+  Sankey and custom interactions are not first-class features. Its compile and
+  runtime stack is larger than this extension needs.
+- **D3:** It supports custom visualizations but is too low-level for the default
+  dashboard engine. Use individual D3 modules only when an ECharts custom series
+  cannot express a required visualization.
+- **Fully custom Canvas or SVG:** Use this option for small visuals, not for a
+  growing chart catalog. Custom code would need axes, scales, tooltips,
+  selection, accessibility, resizing, and export. This work could also create
+  inconsistent behavior.
 
 ## Packaging
 
-Manifest V3 does not permit remotely hosted executable code. Pin ECharts to an exact version, generate a local modular bundle containing only the chart types, components, and renderers in use, and commit the distributable bundle with its license notice. Do not load chart code from a CDN.
+Manifest V3 does not permit remotely hosted executable code. Pin ECharts to an
+exact version. Generate a local modular bundle with only the required charts,
+components, and renderers. Commit the bundle and its license notice. Do not load
+chart code from a CDN.
 
 The modular build includes:
 
@@ -56,11 +79,14 @@ This keeps analytical meaning testable and independent of the rendering library.
 - Observe container size and resize charts only when dimensions change.
 - Dispose chart instances when their view is removed.
 - Disable or reduce animation for large datasets and honor `prefers-reduced-motion`.
-- Use progressive rendering or Canvas when mark counts justify it; do not optimize by guesswork.
+- Use progressive rendering or Canvas when mark counts justify it. Do not
+  optimize by guesswork.
 
 ## Accessibility
 
-Every visualization needs a useful title, a concise textual takeaway or summary, keyboard-reachable controls, non-color-only encodings, and a tabular export of the represented data. ECharts accessibility output supplements these requirements rather than replacing them.
+Each visualization needs a useful title and a concise text summary. It also
+needs keyboard-reachable controls, non-color-only encoding, and a tabular data
+export. ECharts accessibility output does not replace these requirements.
 
 ## References
 

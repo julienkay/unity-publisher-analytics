@@ -9,13 +9,12 @@
     "package_ids": ["100003"]
   },
   "accountContext": "Paid package selected from the same captured monthly-sales response; month contains a paid-sale day and inactive dates.",
-  "captureMethod": "The live request used another month and package ID. A temporary opt-in local capture block sanitized the response in the page; the fixture range, package ID, and date keys were then shifted/replaced together. Authentication material and raw response JSON were never logged or retained.",
+  "captureMethod": "The live request used another month and package ID. A temporary opt-in local helper replaced private values in the Portal page before output. The fixture range, package ID, and date keys were then changed together. The helper did not log or retain authentication material or raw response JSON.",
   "sanitization": [
     "Replaced the package ID with the stable Package 3 identifier used by the catalog and monthly fixtures.",
     "Shifted the request range and every date key two calendar years earlier.",
     "Changed counts and monetary values while preserving JSON number types, signs, zeros, missing fields, empty objects, and daily relationships.",
     "Kept all 31 returned date keys and preserved the package's monthly gross and paid-quantity reconciliation with monthly-sales.json."
   ],
-  "boundarySemantics": "The response contained every requested date through end_date - 1. Three inactive dates were explicit empty objects rather than omitted keys or all-zero metric objects. The three-request boundary suite is still missing.",
-  "commit": "pending"
+  "boundarySemantics": "The response contained every requested date through end_date - 1. Three inactive dates were explicit empty objects rather than omitted keys or all-zero metric objects. The three-request boundary suite is still missing."
 }

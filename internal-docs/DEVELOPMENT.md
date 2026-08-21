@@ -1,6 +1,8 @@
 # Development and packaging
 
-This document contains repository setup and packaging notes for maintainers. Product direction lives in [VISION.md](../VISION.md); data and interface constraints are indexed in the [maintainer documentation](README.md).
+This document contains repository setup and packaging notes for maintainers.
+[VISION.md](../VISION.md) describes product direction. The
+[maintainer documentation](README.md) indexes data and interface constraints.
 
 For the complete command and script reference, see [SCRIPTS.md](SCRIPTS.md).
 
@@ -8,7 +10,12 @@ For the complete command and script reference, see [SCRIPTS.md](SCRIPTS.md).
 
 Publisher Analytics+ is a Manifest V3 extension for Chrome and Firefox, limited to `publisher.unity.com`. It uses the signed-in Portal session and the reporting endpoints already used by the Unity Publisher Portal.
 
-Normalized analytics and the resumable sync checkpoint are stored in an extension-owned IndexedDB database. Preferences, publisher presentation details, and package groups use local extension storage. Each publisher ID selects an independent local workspace. Every browser profile has a separate extension origin, so Chrome and Firefox do not automatically share analytics, preferences, or package groups.
+An extension-owned IndexedDB database stores normalized analytics and the sync
+checkpoint. Local extension storage contains preferences, publisher presentation
+details, and package groups. Each publisher ID selects an independent local
+workspace. Each browser profile has a separate extension origin. Thus, Chrome
+and Firefox do not automatically share analytics, preferences, or package
+groups.
 
 Apache ECharts is bundled with the extension. Runtime dependencies must never be loaded from a CDN.
 
@@ -29,7 +36,11 @@ After changing extension files, reload the unpacked extension and refresh the Pu
 3. Click **Load Temporary Add-on** and select the generated Firefox ZIP in `dist/`.
 4. Open or refresh `https://publisher.unity.com/` while signed in.
 
-Firefox 140 or newer is required. The application APIs are available from Firefox 128, while Firefox's required built-in no-data-collection declaration sets the distributable package floor to Firefox 140 on desktop and 142 on Android. Temporary add-ons are removed when Firefox exits; permanently installed builds must be signed by Mozilla.
+Firefox 140 or newer is required. The application APIs are available from
+Firefox 128. Firefox also requires a built-in no-data-collection declaration.
+This declaration sets the package minimum to Firefox 140 on desktop and 142 on
+Android. Firefox removes temporary add-ons when it exits. Mozilla must sign
+permanently installed builds.
 
 ## Charts
 
@@ -47,8 +58,9 @@ Before finishing a change:
 1. Run `npm run build:charts`.
 2. Run `node --check` on every JavaScript file.
 3. Run `npm run validate:manifests`.
-4. Run `npm run test:isolation`.
-5. Package both targets and validate their archive contents.
+4. Run `npm run test:fixtures`.
+5. Run `npm run test:isolation`.
+6. Package both targets and validate their archive contents.
 
 ## Browser packages
 
