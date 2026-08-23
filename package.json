@@ -10,9 +10,9 @@
     "test:chrome-smoke": "node scripts/smoke-chrome.mjs",
     "validate:manifests": "node scripts/validate-manifests.mjs",
     "validate:packages": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-packages.ps1 -Target All",
-    "package": "npm run build:charts && npm run validate:manifests && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-extension.ps1 -Target All && npm run validate:packages",
-    "package:chrome": "npm run build:charts && npm run validate:manifests && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-extension.ps1 -Target Chrome && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-packages.ps1 -Target Chrome",
-    "package:firefox": "npm run build:charts && npm run validate:manifests && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-extension.ps1 -Target Firefox && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-packages.ps1 -Target Firefox"
+    "package": "node scripts/run-package.mjs All",
+    "package:chrome": "node scripts/run-package.mjs Chrome",
+    "package:firefox": "node scripts/run-package.mjs Firefox"
   },
   "devDependencies": {
     "echarts": "6.1.0",

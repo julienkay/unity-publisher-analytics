@@ -5,15 +5,19 @@ repository root unless a section gives a different location.
 
 ## Setup
 
-Install the pinned development dependencies before running the Node-based scripts:
+Install Node.js 20.9 or newer. Then install the pinned development dependencies
+from a new checkout:
 
 ```shell
-npm install
+npm ci
 ```
 
-The image-processing dependency requires Node.js 20.9 or newer. Marketing
-screenshot capture also requires a Chromium-family browser. On Windows, the
-default browser is Microsoft Edge at this location:
+Run this command before any `npm run` build, test, validation, or package
+command. Use `npm install` instead when you intentionally update a dependency
+or the lock file.
+
+Marketing screenshot capture also requires a Chromium-family browser. On
+Windows, the default browser is Microsoft Edge at this location:
 
 ```text
 C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
@@ -209,6 +213,7 @@ node scripts/create-promo-tiles.mjs "C:\Path\To\background.png"
 
 Sources:
 
+- [`scripts/run-package.mjs`](../scripts/run-package.mjs) runs each package stage and reports the final result.
 - [`scripts/generate-manifest.mjs`](../scripts/generate-manifest.mjs) creates a target manifest from the canonical root manifest.
 - [`scripts/package-extension.ps1`](../scripts/package-extension.ps1) creates one or both browser archives atomically.
 - [`scripts/validate-manifests.mjs`](../scripts/validate-manifests.mjs) checks the canonical and generated manifests.
@@ -225,7 +230,9 @@ creates the Chrome and Firefox ZIP files in `dist/`. It then validates their
 contents. Both packages contain the same runtime files. Chrome uses an extension
 service worker. Firefox uses a non-persistent background script. The Firefox
 manifest also contains its identity, minimum version, and data-collection
-declaration.
+declaration. The command prints `PACKAGE SUCCEEDED` after all stages pass. If a
+stage fails, it prints `PACKAGE FAILED`, names the failed stage, and exits with
+a nonzero status.
 
 Create one target only:
 

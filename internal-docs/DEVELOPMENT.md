@@ -6,6 +6,22 @@ This document contains repository setup and packaging notes for maintainers.
 
 For the complete command and script reference, see [SCRIPTS.md](SCRIPTS.md).
 
+## Prepare a new checkout
+
+Install Node.js 20.9 or newer. Then run this command from the repository root:
+
+```shell
+npm ci
+```
+
+This command installs the pinned development dependencies from
+`package-lock.json`. These dependencies include the local chart builder and the
+validation tools. Run this command before any `npm run` build, test,
+validation, or package command.
+
+Use `npm install` instead when you intentionally update a dependency or the
+lock file.
+
 ## Runtime architecture
 
 Publisher Analytics+ is a Manifest V3 extension for Chrome and Firefox, limited to `publisher.unity.com`. It uses the signed-in Portal session and the reporting endpoints already used by the Unity Publisher Portal.
@@ -44,10 +60,9 @@ permanently installed builds.
 
 ## Charts
 
-After changing `scripts/echarts-entry.js`, install dependencies and rebuild the committed chart bundle:
+After changing `scripts/echarts-entry.js`, rebuild the committed chart bundle:
 
 ```shell
-npm install
 npm run build:charts
 ```
 
