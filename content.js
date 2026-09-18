@@ -36,7 +36,6 @@
   let publisherIdentity = { id: "", organizationId: "", portalLabel: "", name: "Publisher", icon: "" };
   let publisherIdentityState = "loading";
   let workspaceGeneration = 0;
-  let identityRefreshInFlight = false;
   let renderQueued = false;
   let isRangePopoverOpen = false;
   let isCustomRangeEditorOpen = false;
@@ -469,21 +468,11 @@
     else if (records.length) incrementalSync(false, identity.id, generation);
   }
 
-  async function verifyPublisherWorkspace(publisherId, generation) {
-    const identity = await fetchPublisherIdentity();
-    if (identity.id !== publisherId) {
-      if (identity.id !== publisherIdentity.id || publisherIdentityState !== "ready") await activatePublisher(identity);
-      throw new Error("The active publisher changed while data was being synced.");
-    }
-    if (!ownsWorkspace(publisherId, generation)) throw new Error("The publisher workspace changed while data was being synced.");
-    publisherIdentity = identity;
-  }
-
   async function saveJob(job = syncJob, publisherId = publisherIdentity.id) { await setMeta(SYNC_KEY, job, publisherId); }
 
   async function prepareFullSync(publisherId, generation) {
     const [packages, revenueRaw] = await Promise.all([fetchPackages(), apiJson(API.revenue)]);
-    await verifyPublisherWorkspace(publisherId, generation);
+    if (!ownsWorkspace(publisherId, generation)) return;
     const revenue = normalizeRevenue(revenueRaw, publisherId); await putMany(revenue, publisherId);
     if (!ownsWorkspace(publisherId, generation)) return;
     const start = earliestAccountDate(packages, revenue), endInclusive = latestCompleteDailyDate(), months = monthSequence(start, new Date().toISOString().slice(0, 10));
@@ -505,7 +494,7 @@
         while (job.active && ownsWorkspace(publisherId, generation) && job.monthIndex < job.months.length) {
           const month = job.months[job.monthIndex]; job.label = `Syncing sales and downloads · ${month}`; render();
           const [salesRaw, downloadsRaw] = await Promise.all([apiJson(API.sales(month)), apiJson(API.downloads(month))]);
-          await verifyPublisherWorkspace(publisherId, generation);
+          if (!ownsWorkspace(publisherId, generation)) return;
           await putMany([...normalizeSales(salesRaw, month, publisherId), ...normalizeDownloads(downloadsRaw, month, publisherId)], publisherId);
           job.monthIndex += 1; job.completed += 2; await saveJob(job, publisherId); render(); await sleep(80);
         }
@@ -521,7 +510,7 @@
             let raw;
             try { raw = await apiJson(API.daily, { method: "POST", body: { start_date: apiTimestamp(job.cursor), end_date: apiTimestamp(chunkEnd), package_ids: scope.id ? [scope.id] : [] } }); }
             catch (error) { throw new Error(`${error.message} Range ${job.cursor}–${addDays(chunkEnd, -1)}, scope ${scope.name}.`); }
-            await verifyPublisherWorkspace(publisherId, generation);
+            if (!ownsWorkspace(publisherId, generation)) return;
             await putMany(normalizeDaily(raw, scope, publisherId), publisherId);
             job.cursor = chunkEnd; job.completed += 1; await saveJob(job, publisherId); render(); await sleep(120);
           }
@@ -537,17 +526,38 @@
     } catch (error) {
       if (!ownsWorkspace(publisherId, generation)) return;
       console.error("Publisher Analytics+ sync failed:", error);
-      syncJob = { ...(syncJob || {}), publisherId, active: false, phase: "error", error: error.message, label: "Sync couldn't be completed" }; await saveJob(syncJob, publisherId); render(); toast("We couldn't finish syncing your history. Please try again.", "error");
+      syncJob = { ...(syncJob || {}), publisherId, active: false, error: error.message, label: "Sync couldn't be completed" }; await saveJob(syncJob, publisherId); render(); toast("We couldn't finish syncing your history. Please try again.", "error");
     }
   }
 
+  async function continueFullSync() {
+    if (!syncJob || syncJob.active || !["months", "daily"].includes(syncJob.phase)) return;
+    const publisherId = publisherIdentity.id, generation = workspaceGeneration;
+    if (syncJob.publisherId !== publisherId) return;
+    syncJob.active = true;
+    syncJob.error = "";
+    syncJob.label = "Resuming your history";
+    await saveJob(syncJob, publisherId);
+    if (!ownsWorkspace(publisherId, generation)) return;
+    render();
+    await runFullSync(publisherId, generation);
+  }
+
   async function startFullSync() {
-    syncJob = { publisherId: publisherIdentity.id, active: true, phase: "preparing", startedAt: new Date().toISOString(), completed: 0, total: 0, label: "Preparing your history" };
+    let identity;
+    try { identity = await fetchPublisherIdentity(true); }
+    catch (error) {
+      console.warn("Publisher Analytics+ could not verify the publisher before full sync:", error.message);
+      toast("We couldn't confirm your publisher. We did not change your saved analytics. Please try again.", "error");
+      return;
+    }
+    if (identity.id !== publisherIdentity.id) await activatePublisher(identity, { resume: false });
+    else publisherIdentity = identity;
+    const publisherId = identity.id, generation = workspaceGeneration;
+    if (!ownsWorkspace(publisherId, generation)) return;
+    syncJob = { publisherId, active: true, phase: "preparing", startedAt: new Date().toISOString(), completed: 0, total: 0, label: "Preparing your history" };
     isOpen = true;
     render();
-    const identity = await fetchPublisherIdentity(true);
-    if (identity.id !== publisherIdentity.id) await activatePublisher(identity, { resume: false });
-    const publisherId = identity.id, generation = workspaceGeneration;
     await clearPublisherData(publisherId);
     if (!ownsWorkspace(publisherId, generation)) return;
     records = [];
@@ -557,13 +567,13 @@
   }
 
   async function incrementalSync(announce = false, publisherId = publisherIdentity.id, generation = workspaceGeneration) {
-    if (syncJob?.active || isRefreshing || !records.length) return;
+    if (syncJob?.active || ["preparing", "months", "daily"].includes(syncJob?.phase) || isRefreshing || !records.length) return;
     isRefreshing = true; render();
     let notice = "", noticeType = "success";
     try {
       const packages = await fetchPackages(), currentMonth = new Date().toISOString().slice(0, 7);
       const [salesRaw, downloadsRaw, revenueRaw] = await Promise.all([apiJson(API.sales(currentMonth)), apiJson(API.downloads(currentMonth)), apiJson(API.revenue)]);
-      await verifyPublisherWorkspace(publisherId, generation);
+      if (!ownsWorkspace(publisherId, generation)) return;
       await putMany([...normalizeSales(salesRaw, currentMonth, publisherId), ...normalizeDownloads(downloadsRaw, currentMonth, publisherId), ...normalizeRevenue(revenueRaw, publisherId)], publisherId);
       const scopes = [{ id: null, name: "All assets" }, ...packages];
       for (const scope of scopes) {
@@ -572,7 +582,7 @@
         for (const range of incrementalDailyRanges(scope, records, endExclusive)) {
           if (!ownsWorkspace(publisherId, generation)) return;
           const raw = await apiJson(API.daily, { method: "POST", body: { start_date: apiTimestamp(range.start), end_date: apiTimestamp(range.endExclusive), package_ids: scope.id ? [scope.id] : [] } });
-          await verifyPublisherWorkspace(publisherId, generation);
+          if (!ownsWorkspace(publisherId, generation)) return;
           await putMany(normalizeDaily(raw, scope, publisherId), publisherId);
         }
       }
@@ -1385,22 +1395,23 @@
           : { label: "Settings", description: "Manage data coverage and local browser storage." };
     const viewTabs = views.map(item => `<button class="upa-view-tab ${item.id === view ? "upa-active" : ""}" type="button" role="tab" aria-selected="${item.id === view}" aria-controls="upa-view-${item.id}" data-view="${item.id}">${item.label}</button>`).join("");
     const syncIncomplete = Boolean(syncJob && !syncJob.active && ["months", "daily"].includes(syncJob.phase));
-    const syncTitle = syncJob?.active ? syncJob.label : syncJob?.phase === "error" ? "Sync couldn't be completed" : "Sync paused";
+    const syncFailed = Boolean(syncJob?.error);
+    const syncTitle = syncJob?.active ? syncJob.label : syncFailed ? "Sync couldn't be completed" : "Sync paused";
     const syncPreparing = syncJob?.active && syncJob.phase === "preparing";
     const syncDetail = syncJob?.active
       ? syncPreparing ? "Finding your assets and available history…" : `${syncJob.completed || 0} of ${syncJob.total || "?"} steps complete`
-      : syncJob?.phase === "error"
-        ? "Try again. If it keeps happening, refresh the Publisher Portal first."
+      : syncFailed
+        ? syncIncomplete ? "Continue from your saved progress. If it fails again, refresh the Publisher Portal first." : "Try again. If it keeps happening, refresh the Publisher Portal first."
         : "Continue when you're ready. Your progress has been saved.";
     const syncIcon = syncJob?.active
       ? syncPreparing ? '<div class="upa-sync-icon upa-sync-preparing" aria-hidden="true"><i></i></div>' : `<div class="upa-sync-icon upa-sync-progress" style="--upa-progress-angle:${progress * 3.6}deg" aria-hidden="true"><span>${progress}%</span></div>`
-      : syncJob?.phase === "error"
+      : syncFailed
         ? '<div class="upa-sync-icon upa-sync-error" aria-hidden="true">!</div>'
         : '<div class="upa-sync-icon" aria-hidden="true">Ⅱ</div>';
     const latestCapturedAt = records.reduce((latest, item) => item.capturedAt > latest ? item.capturedAt : latest, "");
     const lastRefreshedAt = syncJob?.lastRefreshedAt || syncJob?.finishedAt || latestCapturedAt;
     const refreshTooltip = `Refresh publisher data · ${lastRefreshedAt ? `Last refreshed ${dateTime(lastRefreshedAt)}` : "Not refreshed yet"}`;
-    const showRefreshAction = hasData && !syncJob?.active && syncJob?.phase !== "error" && !syncIncomplete;
+    const showRefreshAction = hasData && !syncJob?.active && !syncFailed && !syncIncomplete;
     const refreshAction = showRefreshAction ? `<button class="upa-refresh-action ${isRefreshing ? "upa-refreshing" : ""}" type="button" data-action="refresh" aria-label="${escapeHtml(refreshTooltip)}" ${isRefreshing ? "disabled" : ""}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 5.9A5.5 5.5 0 1 0 13 10.7"></path><path d="M13.4 2.8v3.5H9.9"></path></svg><span>${isRefreshing ? "Refreshing…" : "Refresh data"}</span><span class="upa-refresh-tooltip" role="tooltip">${escapeHtml(refreshTooltip)}</span></button>` : "";
     const customRangeLabel = `${shortDate(dateBounds.start)} – ${shortDate(dateBounds.end)}`;
     const selectedRangeLabel = prefs.range === "custom" ? customRangeLabel : RANGE_OPTIONS.find(option => option.id === prefs.range)?.label || "All time";
@@ -1447,7 +1458,7 @@
         </aside>
         <section class="upa-workspace">
           <header class="upa-header ${section === "dashboard" || section === "groups" || section === "settings" ? "upa-header-compact" : ""}"><div class="upa-header-main"><div class="upa-header-copy"><small>Publisher workspace</small><h1>${hasData || ["groups", "settings"].includes(section) ? sectionMeta.label : "Welcome"}</h1><div class="upa-header-subline"><p>${hasData || ["groups", "settings"].includes(section) ? sectionMeta.description : "Build a complete, configurable view of your publishing business."}</p>${refreshAction}</div></div><div class="upa-header-actions">${intervalControl}${rangeControl}</div></div>${hasData ? `<nav class="upa-mobile-nav" aria-label="Workspace sections"><button class="${section === "dashboard" ? "upa-active" : ""}" type="button" data-section="dashboard">Dashboard</button><button class="${section === "analytics" ? "upa-active" : ""}" type="button" data-section="analytics">Analytics</button><button class="${section === "settings" ? "upa-active" : ""}" type="button" data-section="settings">Settings</button></nav>` : ""}${hasData && section === "analytics" ? `<nav class="upa-view-tabs" role="tablist" aria-label="Analytics views">${viewTabs}</nav>` : ""}</header>
-          ${(syncJob?.active || syncJob?.phase === "error" || syncIncomplete) ? `<section class="upa-sync ${syncJob?.active ? "upa-syncing" : ""}" role="status" aria-live="polite">${syncIcon}<div class="upa-sync-copy"><strong>${escapeHtml(syncTitle)}</strong><span>${escapeHtml(syncDetail)}</span>${syncJob?.active ? '<small class="upa-sync-note">Large catalogs can take several minutes. Keep this tab open; if interrupted, progress resumes when you return.</small>' : ""}</div><div class="upa-sync-actions">${syncPreparing ? "" : syncJob?.active ? '<button data-action="stop-sync">Pause</button>' : syncIncomplete ? '<button data-action="continue-sync">Continue</button>' : '<button data-action="sync-all">Try full sync again</button>'}</div>${syncJob?.active ? `<div class="upa-progress ${syncPreparing ? "upa-progress-preparing" : ""}"><i style="width:${progress}%"></i></div>` : ""}</section>` : ""}
+          ${(syncJob?.active || syncFailed || syncIncomplete) ? `<section class="upa-sync ${syncJob?.active ? "upa-syncing" : ""}" role="status" aria-live="polite">${syncIcon}<div class="upa-sync-copy"><strong>${escapeHtml(syncTitle)}</strong><span>${escapeHtml(syncDetail)}</span>${syncJob?.active ? '<small class="upa-sync-note">Large catalogs can take several minutes. Keep this tab open; if interrupted, progress resumes when you return.</small>' : ""}</div><div class="upa-sync-actions">${syncPreparing ? "" : syncJob?.active ? '<button data-action="stop-sync">Pause</button>' : syncIncomplete ? '<button data-action="continue-sync">Continue</button>' : '<button data-action="sync-all">Try full sync again</button>'}</div>${syncJob?.active ? `<div class="upa-progress ${syncPreparing ? "upa-progress-preparing" : ""}"><i style="width:${progress}%"></i></div>` : ""}</section>` : ""}
           <main class="upa-content" data-section="${section}" data-view="${view}">${publisherIdentityState !== "ready" ? `<section class="upa-welcome"><div class="upa-welcome-copy"><small>PUBLISHER WORKSPACE</small><h2>${publisherIdentityState === "loading" ? "Checking your publisher…" : "We couldn't identify the active publisher."}</h2><p>${publisherIdentityState === "loading" ? "Your local workspace will open in a moment." : "Refresh the Publisher Portal, or try again while signed in."}</p>${publisherIdentityState === "error" ? '<button class="upa-primary upa-large" data-action="retry-publisher">Try again</button>' : ""}</div></section>` : section === "groups" ? groupsPanel(performanceOptions) : section === "settings" ? settingsPanel() : records.length ? `<section class="upa-dashboard-view upa-view-panel upa-view-dashboard" id="upa-view-dashboard">${dashboardSummary}<article class="upa-dashboard-chart"><div class="upa-section-title"><div><small>BUSINESS ACTIVITY</small><h2>Performance over time</h2><p>${intervalName(overviewChartData.interval)} revenue, pageviews, and downloads on aligned timelines.</p></div><div class="upa-section-tools"><span>${overviewChartData.points.length} periods</span>${chartActions("overview")}</div></div><div class="upa-pulse-legend"><span><i class="upa-pulse-revenue"></i>Gross revenue</span><span><i class="upa-pulse-views"></i>Pageviews</span><span><i class="upa-pulse-downloads"></i>Downloads</span></div><div id="upa-overview-chart" class="upa-overview-chart" role="img" aria-label="Aligned gross revenue, pageviews, and downloads timelines"></div></article>${dashboardPackageTable}</section>
             <section class="upa-dashboard-grid"><section class="upa-view-panel upa-view-revenue upa-performance-view" id="upa-view-revenue"><article class="upa-card upa-performance-controls"><div class="upa-performance-control-layout"><div><small>CATALOG PERFORMANCE</small><h2>Compare the signals that drive your business</h2><p>Choose All assets, a saved group, or an individual asset. Every included asset gets its own line across all four charts.</p></div>${performanceScopeControls}</div>${performanceLegend}</article><div class="upa-performance-chart-grid">${performanceChartsMarkup}</div></section>
             <article class="upa-card upa-packages-card upa-view-panel upa-view-packages" id="upa-view-packages"><div class="upa-section-title"><div><small>AUDIENCE &amp; CONVERSION</small><h2>Package performance</h2><p>Top packages ranked by gross sales.</p></div><span>${packages.length} packages</span></div><div class="upa-package-list">${packages.slice(0, 10).map((item, index) => `<div class="upa-package-row"><b>${String(index + 1).padStart(2, "0")}</b><div><strong>${escapeHtml(item.name)}</strong><span>${number(item.pageViews)} views · ${item.conversion.toFixed(2)}% conversion · ${number(item.downloads)} downloads</span></div><em>${money(item.sales)}</em></div>`).join("")}</div></article></section>
@@ -1651,7 +1662,7 @@
       if (action === "sync-all") await startFullSync();
       if (action === "refresh") await incrementalSync(true);
       if (action === "stop-sync" && syncJob) { syncJob.active = false; syncJob.label = "Sync paused"; await saveJob(); render(); }
-      if (action === "continue-sync" && syncJob) { syncJob.active = true; await saveJob(); render(); await runFullSync(publisherIdentity.id, workspaceGeneration); }
+      if (action === "continue-sync") await continueFullSync();
       if (action === "lifetime-top") { prefs.lifetimePackages = []; prefs.lifetimeHiddenPackages = []; await savePrefs(); render(); }
       if (action === "sankey-top") { prefs.sankeyPackages = []; await savePrefs(); render(); }
       if (action === "export") { download(`publisher-analytics-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ version: 2, exportedAt: new Date().toISOString(), publisher: { id: publisherIdentity.id, name: publisherIdentity.name }, records }, null, 2)); toast("Your analytics backup is downloading."); }
@@ -1704,28 +1715,6 @@
     const root = document.createElement("div"); root.id = "upa-root"; document.body.appendChild(root); bindEvents(); render();
     try { await activatePublisher(await fetchPublisherIdentity(), { initial: true }); }
     catch (error) { publisherIdentityState = "error"; console.warn("Publisher Analytics+ could not identify the active publisher:", error.message); render(); }
-    setInterval(async () => {
-      if (identityRefreshInFlight || document.visibilityState === "hidden") return;
-      identityRefreshInFlight = true;
-      try {
-        const identity = await fetchPublisherIdentity();
-        if (identity.id !== publisherIdentity.id) await activatePublisher(identity);
-        else if (publisherIdentityState !== "ready" || identity.name !== publisherIdentity.name || identity.icon !== publisherIdentity.icon) { publisherIdentity = identity; publisherIdentityState = "ready"; scheduleRender(); }
-      } catch (error) {
-        workspaceGeneration += 1;
-        publisherIdentity = { id: "", organizationId: "", portalLabel: "", name: "Publisher", icon: "" };
-        publisherIdentityState = "error";
-        records = [];
-        syncJob = null;
-        packageGroups = [];
-        groupEditor = null;
-        isPerformanceScopeMenuOpen = false;
-        isRefreshing = false;
-        console.warn("Publisher Analytics+ could not refresh the publisher identity:", error.message);
-        render();
-      }
-      finally { identityRefreshInFlight = false; }
-    }, 30000);
   }
 
   init().catch(error => console.error("Publisher Analytics+ failed to initialize:", error));

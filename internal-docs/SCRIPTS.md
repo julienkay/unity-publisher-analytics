@@ -38,7 +38,7 @@ npm run capture:marketing
 | `npm run build:charts` | Build the local ECharts runtime used by the extension. | `vendor/echarts.min.js` and its legal notice |
 | `npm run test:fixtures` | Test the fixture-backed package publication-date mapping. | Console pass/fail result |
 | `npm run test:isolation` | Test publisher ownership, package groups, and clear-data recovery. | Console pass/fail result |
-| `npm run test:sync` | Test incremental daily scheduling for existing and new packages. | TAP test results |
+| `npm run test:sync` | Test incremental scheduling and full-sync interruption recovery. | TAP test results |
 | `npm run test:chrome-smoke` | Load the unpacked extension in a temporary browser profile and exercise its background storage APIs. | Console pass/fail result |
 | `npm run capture:marketing` | Render every Chrome Web Store feature screenshot in light mode from fictional data. | `marketing/screenshots/*.png` |
 | `npm run capture:marketing -- [light\|dark] [png\|webp] [capture-name]` | Render all screenshots, or one named screenshot, in the selected theme and format. | Files in `marketing/screenshots/` |
@@ -84,9 +84,12 @@ Extend this script, or add a focused validator, when a new fixture field,
 response variant, or record type becomes part of normalized behavior. A passing
 result does not prove that Unity's undocumented responses are unchanged.
 
-## Incremental sync scheduling
+## Sync scheduling and recovery
 
-Source: [`scripts/test-incremental-sync.js`](../scripts/test-incremental-sync.js)
+Sources:
+
+- [`scripts/test-incremental-sync.js`](../scripts/test-incremental-sync.js)
+- [`scripts/test-full-sync-recovery.js`](../scripts/test-full-sync-recovery.js)
 
 ```shell
 npm run test:sync
@@ -104,9 +107,21 @@ retained package fixture for a new-package example. It tests these rules:
 - A missing publication date causes an error.
 - The incremental request loop uses the tested scheduler.
 
-The test does not call Unity. Live release behavior remains unverified. The
-packaging script uses an explicit runtime allowlist. It does not include this
-test or another file under `scripts/` in an extension archive.
+The recovery test executes the full-sync loop from `content.js`. It uses a
+mock publisher with 150 packages and 1,393 progress steps. It tests these rules:
+
+- HTTP 429, timeout, and HTTP 401 failures keep the daily checkpoint.
+- A monthly HTTP 500 failure keeps the monthly checkpoint.
+- A failed request does not discard committed rows.
+- Continue retries the failed range or month.
+- A new runtime can load and continue the saved failed checkpoint.
+- An incremental refresh cannot replace an incomplete full-sync checkpoint.
+- A successful continuation completes the remaining work.
+
+The tests do not call Unity. Live release and failure behavior remain
+unverified. The packaging script uses an explicit runtime allowlist. It does
+not include these tests or another file under `scripts/` in an extension
+archive.
 
 ## Publisher-isolation validation
 
@@ -121,6 +136,8 @@ This lightweight source validation checks that:
 - API forwarding still permits only the expected Unity paths and methods.
 - Publisher IDs propagate through records, metadata, sync jobs, and preferences.
 - IndexedDB ownership checks and publisher-qualified indexes remain present.
+- Sync loops do not poll or recheck publisher identity between batches.
+- A new full sync checks identity before it clears local data.
 - Package groups remain publisher-scoped and outside analytics-data clearing.
 - Data clearing invalidates active sync work before it deletes records.
 - An empty workspace shows the full-sync action.
@@ -290,7 +307,7 @@ Run the checks that apply to the changed files and behavior:
 | Changed `.js` or `.mjs` files | Run `node --check` on each changed file. |
 | Chart entry point, ECharts version, or chart build configuration | Run `npm run build:charts`. Review and commit both generated chart files. |
 | API fixtures, response fields, or normalized data | Run `npm run test:fixtures`. Add focused checks when the existing fixture test does not cover the change. |
-| Incremental sync scheduling or package bootstrap behavior | Run `npm run test:sync`. |
+| Sync scheduling, checkpoint, resume, or package bootstrap behavior | Run `npm run test:sync`. |
 | Publisher identity, storage, sync, preferences, exports, clearing behavior, or package groups | Run `npm run test:isolation`. |
 | Service-worker startup, session storage, or IndexedDB behavior | Run `npm run test:chrome-smoke`. |
 | Manifest inputs, generation, permissions, or packaging | Run `npm run validate:manifests`. Run the applicable package command when packaged contents can change. |

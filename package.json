@@ -8,7 +8,7 @@
     "create:promos": "node scripts/create-promo-tiles.mjs",
     "test:fixtures": "node scripts/validate-api-fixtures.js",
     "test:isolation": "node scripts/validate-publisher-isolation.js",
-    "test:sync": "node --test scripts/test-incremental-sync.js",
+    "test:sync": "node --test scripts/test-incremental-sync.js scripts/test-full-sync-recovery.js",
     "test:chrome-smoke": "node scripts/smoke-chrome.mjs",
     "validate:manifests": "node scripts/validate-manifests.mjs",
     "validate:packages": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-packages.ps1 -Target All",

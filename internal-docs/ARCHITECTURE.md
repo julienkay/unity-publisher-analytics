@@ -60,9 +60,9 @@ Unity JSON response
 ```
 
 Each analytics record and sync checkpoint must include a non-empty
-`publisherId`. The extension checks the active identity before it commits a
-fetched batch. A publisher change replaces the visible workspace. It also
-invalidates work from the previous workspace generation.
+`publisherId`. Page activation assigns that ID to the local workspace. A sync
+job keeps the same ID and workspace generation for its full lifetime. Each
+batch checks the local generation before it writes data.
 
 ## Storage ownership
 
@@ -94,6 +94,16 @@ It starts each existing daily scope at its latest stored date. It starts a newly
 discovered package at its publication date. [`DATA-EVIDENCE.md`](DATA-EVIDENCE.md)
 and [`VALIDATION.md`](VALIDATION.md) record known coverage and lifecycle limits.
 This architecture description does not prove that the resulting history is complete.
+
+The content script does not poll the publisher identity. Page activation checks
+the identity before it loads or resumes a workspace. A new full sync checks the
+identity before it clears local analytics. Sync loops do not request identity
+between analytics batches.
+
+A full-sync request failure makes the job inactive. The saved job keeps its
+phase, cursor, scope, and completed-step count. The Continue action retries the
+failed request. It does not clear committed records or start a new job. An
+incremental refresh does not run while this checkpoint is incomplete.
 
 ## File ownership and change map
 

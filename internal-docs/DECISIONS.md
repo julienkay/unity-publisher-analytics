@@ -99,21 +99,23 @@ behavior is unsafe or incomplete. It requires a product or engineering decision.
 
 - **Status:** Accepted. Multi-account validation remains required.
 - **Current behavior:** The extension requires `publisherId` from the Portal user
-  response before it loads local data. Records, sync checkpoints, display
-  metadata, and preferences are publisher-scoped. An identity change replaces
-  the visible workspace. It does not clear the previous publisher. A missing
-  identity fails closed. Data clearing affects only the active publisher's
-  analytics and checkpoint. It does not clear preferences or package groups.
-  Data clearing invalidates active sync work before it deletes data.
+  response before it activates a workspace. Page activation checks identity
+  before it loads or resumes local data. A new full sync checks identity before
+  it clears local analytics. The extension does not poll identity during sync.
+  A failed full-sync identity check keeps the active workspace unchanged.
+  Records, checkpoints, display metadata, and preferences are publisher-scoped.
+  Data clearing affects only the active publisher's analytics and checkpoint.
+  It does not clear preferences or package groups. Data clearing invalidates
+  active sync work before it deletes data.
 - **Basis:** The production Portal bundle separates `publisherId` from
   `publisherOrgId` and `defaultOrgId`. It uses `publisherId` for the Asset Store
   publisher profile. Analytics and packages belong to that publisher profile.
   Thus, `publisherId` is the appropriate ownership boundary.
 - **Consequence:** A publisher can belong to an organization without using its
-  lifecycle or selection for analytics ownership. Each write batch checks the
-  active publisher before it commits data. Future durable data must use the
-  same publisher boundary. Package groups are an example. This data must remain
-  outside analytics clearing.
+  lifecycle or selection for analytics ownership. A sync job captures the
+  active publisher ID and workspace generation. Each batch checks the local
+  generation before it writes data. Future durable data must use the same
+  publisher boundary. Package groups must remain outside analytics clearing.
 - **Migration:** None. This is unreleased development software. The extension
   cannot safely assign old unscoped records. The IndexedDB v2 upgrade discards
   them. It also ignores legacy global preference keys.
@@ -201,3 +203,18 @@ behavior is unsafe or incomplete. It requires a product or engineering decision.
 - **Review trigger:** Review this policy when you design the first
   capability-limited source. Use retained evidence to select its stored state,
   retry policy, sync ownership, clearing behavior, and publisher-facing terms.
+
+## D-018 — Pause full sync after a request failure
+
+- **Status:** Accepted for the current checkpoint model.
+- **Current behavior:** A full-sync request failure makes the job inactive. The
+  job keeps its `months` or `daily` phase. It also keeps the last committed
+  cursor and completed-step count. Continue retries the failed request.
+- **Basis:** A transient timeout, authentication failure, or HTTP 429 response
+  must not discard completed work from a large catalog.
+- **Consequence:** The extension does not retry automatically. A permanent
+  request failure can fail again at the same checkpoint. A preparation failure
+  still requires a new full sync because no schedule exists yet. An incremental
+  refresh does not run while a full-sync checkpoint is incomplete.
+- **Review trigger:** Add a retry policy with bounded backoff, or replace the
+  current checkpoint with a persisted coverage model.

@@ -29,11 +29,11 @@ timing, response sizes, retries, or rate limits.
 |---|---|---|
 | Current endpoint paths and request shapes | **Fixture-backed on one account** | Safe response fixtures are retained for `/user` and all eight analytics endpoints. The exact forms of two earlier HTTP 400 requests were not retained. |
 | Package publication date | **Fixture-backed and implemented** | Published packages return `first_published_at`. `fetchPackages()` reads it, and the earliest-date calculation includes it. |
-| Publisher identity and local isolation | **Implemented, second account unverified** | The Portal bundle distinguishes `publisherId` from organization IDs. Source checks cover namespace propagation. No retained live switch test exists. |
+| Publisher identity and local isolation | **Source-tested, second account unverified** | Source checks cover namespace propagation and identity-request boundaries. Sync loops do not poll identity. A new full sync checks identity before it clears data. No retained live switch test exists. |
 | Publisher-scoped package groups | **Implemented, manual UI validation pending** | Groups use `package_id`, survive analytics clearing, and render separate aggregate lines. Multi-scope selection, overlap notices, and group-management pages still need an unpacked-extension smoke test. |
 | Chrome and Firefox support | **Validated** | One canonical manifest produces both target manifests. Archive validation confirms identical runtime files. Mozilla's linter reports no errors. The temporary Firefox package works on the signed-in Portal. |
 | Full sync across the original account's available history | **Observed once** | The dashboard showed multi-year history. No persisted coverage report or independent reconciliation exists. |
-| Resumable checkpoint after page refresh | **Plausible prototype behavior** | Each step saves the checkpoint. No manual test refreshed each phase. |
+| Resumable full sync | **Source-tested, browser refresh pending** | Mock large-catalog tests cover daily 429, timeout, and 401 failures. They also cover a monthly 500 failure. A new mock runtime loads and continues a saved failed checkpoint. No browser test interrupts an active request. |
 | Automatic incremental refresh | **Observed once at UI level** | The task used it during iteration. Correction depth remains unverified. |
 | 365-day daily request | **Observed once** | It worked on the original account. No test used another account or catalog size. |
 | Daily end-date exclusivity | **Observed in one retained month** | Catalog and package fixtures include `start_date` through `end_date - 1`. They exclude `end_date`. The paired boundary suite is still missing. |
@@ -54,10 +54,10 @@ timing, response sizes, retries, or rate limits.
 | Clear-data recovery | **Source-tested, manual UI test pending** | Clearing invalidates active sync work. An empty workspace shows the full-sync action. Preferences and package groups remain outside analytics clearing. |
 | Rename/unpublish/category change | **Unverified with known design flaws** | Current identity and record-ID behavior can duplicate or leave inconsistent history |
 | Historical corrections | **Unverified** | Only one daily date and the current month overlap |
-| Authentication expiry during sync | **Unverified** | No expiry/re-authentication test retained |
-| Rate limiting and server timeout | **Unverified** | Fixed delays exist. No test covers HTTP 429, backoff, or adaptive window splitting. |
+| Authentication expiry during sync | **Mock-tested, live flow unverified** | A mock HTTP 401 pauses at the saved checkpoint. Continue completes after the mock session recovers. |
+| Rate limiting and server timeout | **Mock-tested, live limits unverified** | Mock HTTP 429 and timeout failures preserve progress. The extension has no automatic retry, backoff, or adaptive window splitting. |
 | Browser refresh during active API call | **Unverified** | Resume starts from the last saved checkpoint. No test explicitly covers an active request. |
-| Publisher account switching | **Implemented, second account unverified** | Storage, checkpoints, preferences, and records are publisher-scoped. A missing identity fails closed. No retained live two-account switch test exists. |
+| Publisher account switching | **Implemented, second account unverified** | Page activation selects a publisher-scoped workspace. A new full sync also checks identity. No retained live two-account switch test exists. |
 | Extension move/reinstall | **Observed** | A separately loaded unpacked extension used a different origin and appeared to have empty storage. The project deliberately did not add migration. |
 | Desktop visual behavior | **Manually iterated** | Dashboard, charts, filters, legends, menus, tooltips, and sync states were repeatedly reviewed in the original browser session |
 | Mobile-width layout | **CSS implemented, not formally validated** | Responsive rules exist. No retained viewport matrix or screenshots exist. |
@@ -174,7 +174,9 @@ Work should proceed in this order:
 7. Run recent-data snapshot tests to determine the lag and overlap window.
 8. Validate one live new-package bootstrap. Add tests for renamed, unpublished,
    and re-categorized packages.
-9. Add integration coverage for resume, auth expiry, 400/401/403/429/500 responses, adaptive window splitting, and partial writes.
+9. Add browser integration coverage for resume and active-request interruption.
+   Add mock cases for HTTP 400, 403, and partial writes. Add bounded backoff and
+   adaptive window splitting if live evidence requires them.
 10. Add CI for syntax checks, manifest validation, fixture tests, and deterministic aggregations.
 11. Run a manual matrix across at least two publishers, including one account with older history and a materially larger catalog.
 12. Smoke-test package-group creation, overlapping membership, active-group edits/deletion, analytics clearing, unavailable members, and narrow-screen editing in the unpacked extension.

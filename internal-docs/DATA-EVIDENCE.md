@@ -34,7 +34,8 @@ limits, changed values, and evidence limits.
 - Incremental sync starts a newly discovered package at its captured
   `first_published_at` value. Live new-package validation is still required.
 - The Portal's `publisherId` defines publisher ownership. This value isolates
-  records, sync checkpoints, and preferences. A missing identity fails closed.
+  records, sync checkpoints, and preferences. The extension requires this value
+  before it activates a workspace. It does not poll identity during sync.
 - “Complete history” currently means that all scheduled request loops finished without throwing. It does not mean that dates, scopes, or totals were reconciled.
 
 ## Endpoint inventory
@@ -108,9 +109,10 @@ Publisher Analytics+ uses a non-empty `publisherId` string as the local ownershi
 key. Organization IDs are only descriptive identity metadata. They do not select
 analytics storage. Each normalized record includes its publisher ID. IndexedDB
 queries and deletes require this ID. Sync metadata and preferences use the same
-boundary. The extension checks the active identity before it commits a fetched
-batch. It does not load or sync a workspace when it cannot identify the
-publisher.
+boundary. Page activation checks the identity before it loads or resumes a
+workspace. A new full sync checks identity before it clears local analytics.
+The analytics loops use the activated workspace ID. They do not request
+identity between batches.
 
 **Evidence limit:** the key distinction is now supported by both the production
 bundle and a safe captured response. A second publisher account has not been
@@ -188,6 +190,16 @@ Daily requests originally used 60-day windows. Commit `435c4eb` changed them to
 contains no benchmark, retry data, limit discovery, or multi-account validation.
 
 **Evidence level: observed once.** Annual windows worked sufficiently on the original account to remain in use. Reliability for larger catalogs, older accounts, slow connections, or different server limits is unverified.
+
+### Full-sync interruption
+
+A full-sync request failure keeps the last committed month or daily cursor. The
+job becomes inactive and keeps the error message. Continue retries the failed
+request and then processes the remaining schedule.
+
+**Evidence level: source-tested.** Mock tests cover HTTP 401, 429, and 500
+responses. They also cover a request timeout. No retained live failure confirms
+this behavior against Unity.
 
 ### Incremental overlap and revisions
 
@@ -284,11 +296,13 @@ each record query uses the publisher index. Sync checkpoints use
 publisher-qualified keys. Local preferences and cached presentation metadata
 also use publisher-qualified keys.
 
-A publisher change increments the workspace generation. It immediately hides
-the previous workspace and loads only the new publisher's records. An active
-sync checks the generation and current Portal identity before it commits a
-batch. An identity lookup failure hides local analytics until the extension can
-identify the owner again.
+Page activation increments the workspace generation. It loads only the active
+publisher's records. A sync captures the publisher ID and generation when it
+starts. Each batch checks the local generation before it writes data.
+
+The extension does not poll the Portal identity. A new full sync checks the
+identity before it clears local analytics. If this check fails, the active
+workspace and its local data remain visible.
 
 Clearing local data first invalidates active sync work. It then deletes only the
 active publisher's records and sync checkpoint. It does not clear preferences

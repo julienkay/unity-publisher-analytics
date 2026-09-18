@@ -58,6 +58,26 @@ function validateNamespacePropagation() {
   assert.ok(!background.includes('transaction("meta", "readwrite", store => deletePublisherRows'), "Analytics clearing must not delete all publisher metadata.");
 }
 
+function validateIdentityLifecycle() {
+  const content = fs.readFileSync(path.join(root, "content.js"), "utf8");
+  const fullSync = content.slice(content.indexOf("  async function prepareFullSync"), content.indexOf("  async function startFullSync"));
+  const startFullSync = content.slice(content.indexOf("  async function startFullSync"), content.indexOf("  async function incrementalSync"));
+  const incrementalSync = content.slice(content.indexOf("  async function incrementalSync"), content.indexOf("  function availableDateBounds"));
+
+  assert.ok(!content.includes("identityRefreshInFlight"), "Publisher identity must not use a polling lock.");
+  assert.ok(!content.includes("setInterval(async () =>"), "Publisher identity must not use a periodic API poll.");
+  assert.ok(!content.includes("verifyPublisherWorkspace"), "Sync batches must not request publisher identity before each write.");
+  assert.ok(!fullSync.includes("fetchPublisherIdentity("), "Full-sync batches must use the activated workspace identity.");
+  assert.ok(!incrementalSync.includes("fetchPublisherIdentity("), "Incremental-sync batches must use the activated workspace identity.");
+  assert.ok((fullSync.match(/if \(!ownsWorkspace\(publisherId, generation\)\) return;/g) || []).length >= 4, "Full sync must stop stale work at local async boundaries.");
+  assert.ok((incrementalSync.match(/if \(!ownsWorkspace\(publisherId, generation\)\) return;/g) || []).length >= 4, "Incremental sync must stop stale work at local async boundaries.");
+  assert.ok(startFullSync.includes("await fetchPublisherIdentity(true)"), "A new full sync must verify publisher identity before it clears local data.");
+  assert.ok(startFullSync.includes("identity.id !== publisherIdentity.id") && startFullSync.includes("await activatePublisher(identity, { resume: false })"), "A confirmed publisher change must activate the matching workspace.");
+  assert.ok(startFullSync.indexOf("await fetchPublisherIdentity(true)") < startFullSync.indexOf("syncJob ="), "Publisher verification must finish before a new full-sync job starts.");
+  assert.ok(startFullSync.indexOf("await fetchPublisherIdentity(true)") < startFullSync.indexOf("await clearPublisherData"), "Publisher verification must finish before full sync clears local data.");
+  assert.ok(startFullSync.includes("We did not change your saved analytics"), "A failed full-sync identity check must preserve the active workspace.");
+}
+
 function validateCrossBrowserApiFacade() {
   const content = fs.readFileSync(path.join(root, "content.js"), "utf8");
   const background = fs.readFileSync(path.join(root, "background.js"), "utf8");
@@ -153,6 +173,7 @@ async function validateClearRecovery() {
 Promise.resolve()
   .then(validateIdentityAllowlist)
   .then(validateNamespacePropagation)
+  .then(validateIdentityLifecycle)
   .then(validateCrossBrowserApiFacade)
   .then(validatePackageGroupPersistence)
   .then(validateClearRecovery)
