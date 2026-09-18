@@ -89,12 +89,11 @@ The full-history path currently does these tasks:
 5. Stores normalized batches and a resumable checkpoint.
 6. Marks the job complete after the scheduled request loops finish.
 
-The incremental path refreshes the current monthly reports and revenue ledger,
-then resumes each existing daily scope from its latest stored date. Known
-coverage and lifecycle limits are recorded in
-[`DATA-EVIDENCE.md`](DATA-EVIDENCE.md) and
-[`VALIDATION.md`](VALIDATION.md). This architecture description does not prove
-that the resulting history is complete.
+The incremental path refreshes the current monthly reports and revenue ledger.
+It starts each existing daily scope at its latest stored date. It starts a newly
+discovered package at its publication date. [`DATA-EVIDENCE.md`](DATA-EVIDENCE.md)
+and [`VALIDATION.md`](VALIDATION.md) record known coverage and lifecycle limits.
+This architecture description does not prove that the resulting history is complete.
 
 ## File ownership and change map
 

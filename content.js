@@ -365,6 +365,25 @@
     return [dates[0], DAILY_API_MIN_DATE].sort().at(-1);
   }
 
+  function incrementalDailyStart(scope, publisherRecords) {
+    const latest = publisherRecords.filter(item => item.type === "daily" && item.packageId === scope.id).map(item => item.date).sort().at(-1);
+    if (latest) return latest;
+    if (!scope.id) return "";
+    if (!scope.firstPublished) throw new Error(`The asset "${scope.name}" did not include a publication date.`);
+    return [scope.firstPublished, DAILY_API_MIN_DATE].sort().at(-1);
+  }
+
+  function incrementalDailyRanges(scope, publisherRecords, endExclusive) {
+    const ranges = [];
+    let start = incrementalDailyStart(scope, publisherRecords);
+    while (start && start < endExclusive) {
+      const rangeEnd = [addDays(start, DAILY_API_WINDOW_DAYS), endExclusive].sort()[0];
+      ranges.push({ start, endExclusive: rangeEnd });
+      start = rangeEnd;
+    }
+    return ranges;
+  }
+
   function sanitizedPreferences(storedPrefs = {}) {
     const analyticsViews = ["revenue", "lifetime", "calendar", "sankey", "packages"], ranges = ["all", "7d", "30d", "3", "6", "12", "36", "60", "mtd", "ytd", "custom"];
     const storedSankeyGroupBy = ["none", "category"].includes(storedPrefs.sankeyGroupBy) ? storedPrefs.sankeyGroupBy : "category";
@@ -549,15 +568,12 @@
       const scopes = [{ id: null, name: "All assets" }, ...packages];
       for (const scope of scopes) {
         if (!ownsWorkspace(publisherId, generation)) return;
-        const last = records.filter(item => item.type === "daily" && item.packageId === scope.id).map(item => item.date).sort().at(-1);
-        if (!last) continue;
         const endExclusive = addDays(latestCompleteDailyDate(), 1);
-        let cursor = last;
-        while (ownsWorkspace(publisherId, generation) && cursor < endExclusive) {
-          const chunkEnd = [addDays(cursor, DAILY_API_WINDOW_DAYS), endExclusive].sort()[0];
-          const raw = await apiJson(API.daily, { method: "POST", body: { start_date: apiTimestamp(cursor), end_date: apiTimestamp(chunkEnd), package_ids: scope.id ? [scope.id] : [] } });
+        for (const range of incrementalDailyRanges(scope, records, endExclusive)) {
+          if (!ownsWorkspace(publisherId, generation)) return;
+          const raw = await apiJson(API.daily, { method: "POST", body: { start_date: apiTimestamp(range.start), end_date: apiTimestamp(range.endExclusive), package_ids: scope.id ? [scope.id] : [] } });
           await verifyPublisherWorkspace(publisherId, generation);
-          await putMany(normalizeDaily(raw, scope, publisherId), publisherId); cursor = chunkEnd;
+          await putMany(normalizeDaily(raw, scope, publisherId), publisherId);
         }
       }
       if (!ownsWorkspace(publisherId, generation)) return;
@@ -566,6 +582,7 @@
       await saveJob(syncJob, publisherId);
       if (announce) notice = "Your publisher data has been refreshed.";
     } catch (error) {
+      if (!ownsWorkspace(publisherId, generation)) return;
       console.warn("Publisher Analytics+ incremental API sync failed:", error.message);
       if (announce) { notice = "We couldn't refresh your publisher data. Please try again."; noticeType = "error"; }
     } finally { if (ownsWorkspace(publisherId, generation)) { isRefreshing = false; render(); if (notice) toast(notice, noticeType); } }
@@ -1267,7 +1284,7 @@
       { id: "light", label: "Light", icon: "☀" },
       { id: "dark", label: "Dark", icon: "☾" }
     ].map(option => `<button type="button" data-theme="${option.id}" aria-pressed="${prefs.theme === option.id}"><span aria-hidden="true">${option.icon}</span>${option.label}</button>`).join("");
-    return `<section class="upa-settings-page">
+    return `<section class="upa-settings-page"><button class="upa-page-back" type="button" data-action="settings-back-dashboard">← Back to Dashboard</button>
       <section class="upa-settings-section"><div class="upa-settings-intro"><h2>Local data</h2><p>See how much publisher history is currently available.</p></div><article class="upa-settings-panel"><div class="upa-settings-panel-head"><strong>Data coverage</strong><small>Stored for ${escapeHtml(publisherIdentity.name)} in this browser.</small></div><div class="upa-coverage-grid"><div><span>Sales</span><strong>${number(salesMonths)}</strong><small>months</small></div><div><span>Downloads</span><strong>${number(downloadMonths)}</strong><small>months</small></div><div><span>Performance</span><strong>${number(performanceDays)}</strong><small>days</small></div><div><span>Revenue</span><strong>${number(revenueEntries)}</strong><small>entries</small></div></div></article></section>
       <section class="upa-settings-section"><div class="upa-settings-intro"><h2>Data management</h2><p>Back up or remove analytics kept for this publisher.</p></div><article class="upa-settings-panel"><div class="upa-settings-panel-head"><strong>Browser storage</strong><small>Your analytics stays in this browser and is never sent to an external service. Each publisher has a separate local workspace.</small></div><button class="upa-data-action" type="button" data-action="export" ${records.length ? "" : "disabled"}><span><strong>Export data</strong><small>Download a JSON backup of this publisher's analytics.</small></span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5v10m-4-4 4 4 4-4"></path><path d="M3.5 14v2.5h13V14"></path></svg></button><div class="upa-danger-zone"><div><strong>Clear local data</strong><span>Deletes this publisher's synced analytics and saved sync progress. Preferences and package groups are kept.</span></div><button type="button" data-action="clear" ${records.length || syncJob ? "" : "disabled"}>Clear data</button></div></article></section>
       <section class="upa-settings-section"><div class="upa-settings-intro"><h2>Appearance</h2><p>Choose how Publisher Analytics+ looks in this browser.</p></div><article class="upa-settings-panel"><div class="upa-settings-row"><div><strong>Color theme</strong><small>System follows your browser or device preference.</small></div><div class="upa-theme-options" role="group" aria-label="Color theme">${themeOptions}</div></div></article></section>
@@ -1356,7 +1373,8 @@
       { id: "sankey", label: "Revenue composition", description: "Break down gross revenue by category and package." },
       { id: "packages", label: "Packages", description: "Compare attention, conversion, downloads, and gross sales." }
     ];
-    const section = ["dashboard", "analytics", "groups", "settings"].includes(prefs.section) ? prefs.section : "dashboard";
+    const preferredSection = ["dashboard", "analytics", "groups", "settings"].includes(prefs.section) ? prefs.section : "dashboard";
+    const section = hasData ? preferredSection : "dashboard";
     const view = views.some(item => item.id === prefs.view) ? prefs.view : "revenue";
     const sectionMeta = section === "dashboard"
       ? { label: "Dashboard", description: "Your publishing business at a glance." }
@@ -1483,6 +1501,27 @@
     toast(existing ? "Package group updated." : "Package group created.");
   }
 
+  async function clearAnalyticsData() {
+    const publisherId = publisherIdentity.id;
+    workspaceGeneration += 1;
+    const generation = workspaceGeneration;
+    if (syncJob) syncJob.active = false;
+    isRefreshing = false;
+    try {
+      await clearPublisherData(publisherId);
+      if (!ownsWorkspace(publisherId, generation)) return;
+      records = [];
+      syncJob = null;
+      render();
+      toast("This publisher's local analytics data was cleared.");
+    } catch (error) {
+      if (!ownsWorkspace(publisherId, generation)) return;
+      console.warn("Publisher Analytics+ could not clear local analytics:", error.message);
+      render();
+      toast("We couldn't clear this publisher's local analytics. Please try again.", "error");
+    }
+  }
+
   function bindEvents() {
     document.addEventListener("click", async event => {
       if (!event.target.closest("#upa-root")) return;
@@ -1607,6 +1646,7 @@
       if (event.target.closest(".upa-fab")) { isOpen = true; render(); return; }
       if (action === "toggle-account") { accountMenuOpen = !accountMenuOpen; render(); return; }
       if (action === "open-settings") { prefs.section = "settings"; groupEditor = null; accountMenuOpen = false; await savePrefs(); render(); return; }
+      if (action === "settings-back-dashboard") { prefs.section = "dashboard"; accountMenuOpen = false; await savePrefs(); render(); return; }
       if (action === "exit-analytics") { isOpen = false; groupEditor = null; accountMenuOpen = false; render(); return; }
       if (action === "sync-all") await startFullSync();
       if (action === "refresh") await incrementalSync(true);
@@ -1616,9 +1656,7 @@
       if (action === "sankey-top") { prefs.sankeyPackages = []; await savePrefs(); render(); }
       if (action === "export") { download(`publisher-analytics-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ version: 2, exportedAt: new Date().toISOString(), publisher: { id: publisherIdentity.id, name: publisherIdentity.name }, records }, null, 2)); toast("Your analytics backup is downloading."); }
       if (action === "clear" && window.confirm(`Clear locally synced analytics for ${publisherIdentity.name}? Your preferences and package groups will be kept. This can't be undone.`)) {
-        const publisherId = publisherIdentity.id, generation = workspaceGeneration;
-        await clearPublisherData(publisherId);
-        if (ownsWorkspace(publisherId, generation)) { records = []; syncJob = null; render(); toast("This publisher's local analytics data was cleared."); }
+        await clearAnalyticsData();
       }
       if (!action && outsideAccountMenu) render();
     });

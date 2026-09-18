@@ -1,6 +1,6 @@
 # Unity data evidence and semantics
 
-Status: evidence audit updated 2026-08-18.
+Status: evidence audit updated 2026-09-18.
 
 This document records evidence about the undocumented Unity Publisher Portal
 APIs that Publisher Analytics+ uses. It distinguishes prototype behavior from a
@@ -31,6 +31,8 @@ limits, changed values, and evidence limits.
   request. The paired boundary suite is still missing.
 - In the retained package response, inactive dates were present as explicit empty objects `{}`. No omitted-day variant or explicit all-zero inactive object has been captured.
 - The 2019 retention floor, two-day freshness delay, 365-day window, USD currency, and one-day incremental overlap are **provisional policies**, not verified platform contracts.
+- Incremental sync starts a newly discovered package at its captured
+  `first_published_at` value. Live new-package validation is still required.
 - The Portal's `publisherId` defines publisher ownership. This value isolates
   records, sync checkpoints, and preferences. A missing identity fails closed.
 - “Complete history” currently means that all scheduled request loops finished without throwing. It does not mean that dates, scopes, or totals were reconciled.
@@ -191,6 +193,11 @@ contains no benchmark, retry data, limit discovery, or multi-account validation.
 
 Incremental sync begins at the latest stored daily date for each existing scope, so it re-fetches that one date. It does not intentionally revisit a wider recent window.
 
+For a newly discovered package, incremental sync starts at the package's
+`first_published_at` value. The current `2019-01-01` floor still applies. The
+retained package fixture supports the field and date parsing. It does not prove
+the behavior during a live package release.
+
 **Evidence level: implementation fact. Unity revision behavior is unknown.** No
 retained snapshot shows whether Unity revises recent data. The data includes
 gross revenue, refunds, ratings, downloads, and wishlists. The revision period
@@ -283,9 +290,9 @@ sync checks the generation and current Portal identity before it commits a
 batch. An identity lookup failure hides local analytics until the extension can
 identify the owner again.
 
-Clearing local data deletes only the active publisher's records and sync
-checkpoint. It does not clear preferences. Future package groups must also use a
-durable key or store that the analytics-clear operation does not change.
+Clearing local data first invalidates active sync work. It then deletes only the
+active publisher's records and sync checkpoint. It does not clear preferences
+or package groups. The empty workspace shows the full-sync action.
 
 This behavior is implemented but has not yet been exercised against a second live publisher account. Until that test is retained, the endpoint-derived boundary is supported by Portal-bundle evidence rather than multi-account observation.
 
@@ -318,9 +325,13 @@ checks. Users must see partial current months and the daily freshness lag.
 
 ## Incremental sync and catalog changes
 
-The incremental path discovers the current catalog, then looks for the last daily record of each scope. If none exists, it skips that scope. Consequences:
+The incremental path discovers the current catalog. It starts an existing scope
+at its last daily record. It starts a newly discovered package at its recorded
+publication date. If a new package has no publication date, the refresh fails
+instead of reporting completion. Consequences:
 
-- **New package:** skipped entirely until a full resync because it has no last daily record.
+- **New package:** daily sync starts at `first_published_at`. The current
+  `2019-01-01` floor and two-day freshness delay still apply.
 - **Renamed package:** matching by package ID can find the cursor, but new daily record IDs include the new package name. An overlapped date can coexist with the old-name record and be double-counted. Older rows keep the old name.
 - **Unpublished/removed package:** The extension no longer refreshes it because
   the current catalog does not contain it. Historical rows remain.
@@ -328,8 +339,8 @@ The incremental path discovers the current catalog, then looks for the last dail
 - **Historical correction:** only the latest daily date and current monthly report are refreshed. Older corrections are missed.
 - **Package identifier change or metadata mismatch:** may create a new logical package or lose its category mapping.
 
-The original development task recorded no intended policy for these cases. They
-are prototype gaps, not validated behavior.
+The repository now defines the new-package start policy. Live release behavior
+is not validated. The other cases remain prototype gaps.
 
 ## Category-mapping evidence
 
@@ -369,6 +380,7 @@ Before treating the numbers as production-trustworthy:
 4. Reconcile at least three complete months. Use a paid-only month, a free-heavy
    month, and a refund-bearing month. Compare all package and catalog daily
    responses. Also compare monthly reports and Portal CSV exports.
-5. Measure data revisions by snapshotting recent days and months over several weeks.
+5. Validate new-package bootstrap during a live release. Measure data revisions
+   by snapshotting recent days and months over several weeks.
 6. Validate currency and `publisherId` stability across at least two publisher accounts, including a live switch with separate local histories.
 7. Replace request-loop “complete” with persisted, publisher-scoped coverage assertions.

@@ -34,9 +34,11 @@ npm run capture:marketing
 
 | Command | Purpose | Output |
 |---|---|---|
+| `npm test` | Run fixture, incremental-sync, isolation, and recovery tests. | Console pass/fail result |
 | `npm run build:charts` | Build the local ECharts runtime used by the extension. | `vendor/echarts.min.js` and its legal notice |
-| `npm run test:fixtures` | Check the fixture-backed package publication-date mapping. | Console pass/fail result |
-| `npm run test:isolation` | Check publisher ownership and package-group source invariants. | Console pass/fail result |
+| `npm run test:fixtures` | Test the fixture-backed package publication-date mapping. | Console pass/fail result |
+| `npm run test:isolation` | Test publisher ownership, package groups, and clear-data recovery. | Console pass/fail result |
+| `npm run test:sync` | Test incremental daily scheduling for existing and new packages. | TAP test results |
 | `npm run test:chrome-smoke` | Load the unpacked extension in a temporary browser profile and exercise its background storage APIs. | Console pass/fail result |
 | `npm run capture:marketing` | Render every Chrome Web Store feature screenshot in light mode from fictional data. | `marketing/screenshots/*.png` |
 | `npm run capture:marketing -- [light\|dark] [png\|webp] [capture-name]` | Render all screenshots, or one named screenshot, in the selected theme and format. | Files in `marketing/screenshots/` |
@@ -70,16 +72,41 @@ Source: [`scripts/validate-api-fixtures.js`](../scripts/validate-api-fixtures.js
 npm run test:fixtures
 ```
 
-This validation currently checks one mapping. It confirms that the package
-publication-date aliases in `content.js` include `first_published_at`, and that
-the mapping parses every publication date in
-`once-published-packages.json`. It does not run the other normalizers. It does
-not validate the fixture manifest, provenance files, boundary behavior, privacy,
-or live Portal responses.
+This test covers the package publication-date mapping. The script requires
+`content.js` to include `first_published_at`. It also parses each fixture
+publication date.
+
+The validation does not run the other normalizers. It does not validate the
+fixture manifest, provenance files, boundary behavior, privacy, or live Portal
+responses.
 
 Extend this script, or add a focused validator, when a new fixture field,
 response variant, or record type becomes part of normalized behavior. A passing
 result does not prove that Unity's undocumented responses are unchanged.
+
+## Incremental sync scheduling
+
+Source: [`scripts/test-incremental-sync.js`](../scripts/test-incremental-sync.js)
+
+```shell
+npm run test:sync
+```
+
+This test executes the scheduling functions from `content.js`. It uses the
+retained package fixture for a new-package example. It tests these rules:
+
+- A new package starts at `first_published_at`.
+- Other package records do not prevent the new-package bootstrap.
+- The current daily-history floor limits an older start date.
+- Long histories use contiguous half-open request windows.
+- An existing package starts at its latest stored date.
+- A future package schedules no request.
+- A missing publication date causes an error.
+- The incremental request loop uses the tested scheduler.
+
+The test does not call Unity. Live release behavior remains unverified. The
+packaging script uses an explicit runtime allowlist. It does not include this
+test or another file under `scripts/` in an extension archive.
 
 ## Publisher-isolation validation
 
@@ -95,6 +122,11 @@ This lightweight source validation checks that:
 - Publisher IDs propagate through records, metadata, sync jobs, and preferences.
 - IndexedDB ownership checks and publisher-qualified indexes remain present.
 - Package groups remain publisher-scoped and outside analytics-data clearing.
+- Data clearing invalidates active sync work before it deletes records.
+- An empty workspace shows the full-sync action.
+
+The script also runs the clear-data routine with local test doubles. It covers
+database success and failure.
 
 This validation is not a browser integration test. It does not prove that
 Unity's undocumented response shapes are unchanged.
@@ -258,6 +290,7 @@ Run the checks that apply to the changed files and behavior:
 | Changed `.js` or `.mjs` files | Run `node --check` on each changed file. |
 | Chart entry point, ECharts version, or chart build configuration | Run `npm run build:charts`. Review and commit both generated chart files. |
 | API fixtures, response fields, or normalized data | Run `npm run test:fixtures`. Add focused checks when the existing fixture test does not cover the change. |
+| Incremental sync scheduling or package bootstrap behavior | Run `npm run test:sync`. |
 | Publisher identity, storage, sync, preferences, exports, clearing behavior, or package groups | Run `npm run test:isolation`. |
 | Service-worker startup, session storage, or IndexedDB behavior | Run `npm run test:chrome-smoke`. |
 | Manifest inputs, generation, permissions, or packaging | Run `npm run validate:manifests`. Run the applicable package command when packaged contents can change. |

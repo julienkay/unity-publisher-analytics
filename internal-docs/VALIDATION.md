@@ -34,7 +34,7 @@ timing, response sizes, retries, or rate limits.
 | Chrome and Firefox support | **Validated** | One canonical manifest produces both target manifests. Archive validation confirms identical runtime files. Mozilla's linter reports no errors. The temporary Firefox package works on the signed-in Portal. |
 | Full sync across the original account's available history | **Observed once** | The dashboard showed multi-year history. No persisted coverage report or independent reconciliation exists. |
 | Resumable checkpoint after page refresh | **Plausible prototype behavior** | Each step saves the checkpoint. No manual test refreshed each phase. |
-| Automatic incremental refresh | **Observed once at UI level** | The task used it during iteration. Correction depth and new-package behavior remain unverified. |
+| Automatic incremental refresh | **Observed once at UI level** | The task used it during iteration. Correction depth remains unverified. |
 | 365-day daily request | **Observed once** | It worked on the original account. No test used another account or catalog size. |
 | Daily end-date exclusivity | **Observed in one retained month** | Catalog and package fixtures include `start_date` through `end_date - 1`. They exclude `end_date`. The paired boundary suite is still missing. |
 | Explicit zero days versus omitted days | **Partially observed** | The retained package response includes `{}` inactive dates and zero-valued metric objects. No omitted-date fixture exists. Storage loses the distinction. |
@@ -50,7 +50,8 @@ timing, response sizes, retries, or rate limits.
 | Empty publisher account | **Unverified** | No empty catalog/ledger account tested |
 | Large catalog | **Unverified** | The exact original size is unknown. No scale matrix or performance budget exists. |
 | History older than 2019 | **Unverified and currently impossible** | Code clamps daily history to 2019-01-01 |
-| Newly published package during incremental sync | **Known broken** | A scope without an existing daily record is skipped |
+| Newly published package during incremental sync | **Source-tested, live test pending** | Nine tests cover start dates, window boundaries, overlap, and error states. |
+| Clear-data recovery | **Source-tested, manual UI test pending** | Clearing invalidates active sync work. An empty workspace shows the full-sync action. Preferences and package groups remain outside analytics clearing. |
 | Rename/unpublish/category change | **Unverified with known design flaws** | Current identity and record-ID behavior can duplicate or leave inconsistent history |
 | Historical corrections | **Unverified** | Only one daily date and the current month overlap |
 | Authentication expiry during sync | **Unverified** | No expiry/re-authentication test retained |
@@ -128,7 +129,8 @@ These appear to have been expedient implementation choices rather than conscious
 - One-day incremental overlap.
 - Broad aliases without fixtures.
 - A **complete** state based on request-loop completion.
-- Omission of newly discovered packages during incremental sync.
+- Direct use of a new package's current publication date as its incremental
+  start date.
 - Direct use of current package metadata on new historical records.
 
 ## Known issues by priority
@@ -141,12 +143,11 @@ These appear to have been expedient implementation choices rather than conscious
 
 ### P1 — Freshness and lifecycle
 
-1. New packages are skipped by incremental daily sync.
-2. Renames can create separate record IDs and double-count an overlapped date.
-3. Removed packages stop refreshing without a lifecycle marker.
-4. Category changes can split one package's history across categories.
-5. Corrections outside the latest day/current month remain stale.
-6. The daily retention floor and freshness lag are not evidence-based.
+1. Renames can create separate record IDs and double-count an overlapped date.
+2. Unpublished packages stop refreshing without a lifecycle marker.
+3. Category changes can split one package's history across categories.
+4. Corrections outside the latest day/current month remain stale.
+5. The daily retention floor and freshness lag are not evidence-based.
 
 ### P2 — Schema resilience and semantics
 
@@ -171,7 +172,8 @@ Work should proceed in this order:
 5. Add paired daily boundary and omitted/empty/zero-day tests.
 6. Reconcile representative complete months and document tolerances.
 7. Run recent-data snapshot tests to determine the lag and overlap window.
-8. Add catalog lifecycle tests for new, renamed, removed, and re-categorized packages.
+8. Validate one live new-package bootstrap. Add tests for renamed, unpublished,
+   and re-categorized packages.
 9. Add integration coverage for resume, auth expiry, 400/401/403/429/500 responses, adaptive window splitting, and partial writes.
 10. Add CI for syntax checks, manifest validation, fixture tests, and deterministic aggregations.
 11. Run a manual matrix across at least two publishers, including one account with older history and a materially larger catalog.

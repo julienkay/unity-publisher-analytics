@@ -90,10 +90,71 @@ function validatePackageGroupPersistence() {
   assert.ok(!background.includes("unityPublisherAnalyticsPackageGroups"), "Analytics database clearing must not own package-group storage.");
 }
 
+async function validateClearRecovery() {
+  const content = fs.readFileSync(path.join(root, "content.js"), "utf8");
+  const clearFunction = content.match(/  async function clearAnalyticsData\(\) \{[\s\S]*?\n  \}/)?.[0] || "";
+  assert.ok(clearFunction.includes("workspaceGeneration += 1"), "Analytics clearing must invalidate active sync work.");
+  assert.ok(clearFunction.includes("if (syncJob) syncJob.active = false"), "Analytics clearing must stop the active full-sync job.");
+  assert.ok(clearFunction.includes("records = []"), "Analytics clearing must empty only the visible analytics records after storage succeeds.");
+  assert.ok(clearFunction.includes("syncJob = null"), "Analytics clearing must remove the visible sync checkpoint after storage succeeds.");
+  assert.ok(clearFunction.indexOf("workspaceGeneration += 1") < clearFunction.indexOf("await clearPublisherData"), "Analytics clearing must invalidate in-flight work before the database delete starts.");
+  assert.ok(clearFunction.indexOf("await clearPublisherData") < clearFunction.indexOf("records = []"), "Analytics clearing must keep visible records until the database delete succeeds.");
+  assert.ok(content.includes('const section = hasData ? preferredSection : "dashboard"'), "An empty workspace must show the full-sync onboarding action.");
+  assert.ok(!clearFunction.includes("storage.local"), "Analytics clearing must not change publisher preferences or package groups.");
+
+  const successfulJob = { active: true };
+  const successful = {
+    publisherIdentity: { id: "publisher-a" },
+    workspaceGeneration: 4,
+    syncJob: successfulJob,
+    isRefreshing: true,
+    records: [{ id: "publisher-a|daily|1" }],
+    clearPublisherData: async publisherId => { successful.clearedPublisherId = publisherId; },
+    ownsWorkspace: (publisherId, generation) => successful.publisherIdentity.id === publisherId && successful.workspaceGeneration === generation,
+    render: () => { successful.renderCount = (successful.renderCount || 0) + 1; },
+    toast: (message, type) => { successful.notice = { message, type }; },
+    console: { warn: () => {} }
+  };
+  vm.runInNewContext(`${clearFunction}\nthis.clearAnalyticsData = clearAnalyticsData;`, successful);
+  await successful.clearAnalyticsData();
+  assert.equal(successful.clearedPublisherId, "publisher-a");
+  assert.equal(successful.workspaceGeneration, 5);
+  assert.equal(successfulJob.active, false);
+  assert.equal(successful.isRefreshing, false);
+  assert.equal(successful.records.length, 0);
+  assert.equal(successful.syncJob, null);
+  assert.equal(successful.renderCount, 1);
+  assert.match(successful.notice.message, /was cleared/);
+
+  const failedJob = { active: true };
+  const failed = {
+    publisherIdentity: { id: "publisher-a" },
+    workspaceGeneration: 8,
+    syncJob: failedJob,
+    isRefreshing: true,
+    records: [{ id: "publisher-a|daily|1" }],
+    clearPublisherData: async () => { throw new Error("Database unavailable"); },
+    ownsWorkspace: (publisherId, generation) => failed.publisherIdentity.id === publisherId && failed.workspaceGeneration === generation,
+    render: () => { failed.renderCount = (failed.renderCount || 0) + 1; },
+    toast: (message, type) => { failed.notice = { message, type }; },
+    console: { warn: () => {} }
+  };
+  vm.runInNewContext(`${clearFunction}\nthis.clearAnalyticsData = clearAnalyticsData;`, failed);
+  await failed.clearAnalyticsData();
+  assert.equal(failed.workspaceGeneration, 9);
+  assert.equal(failedJob.active, false);
+  assert.equal(failed.isRefreshing, false);
+  assert.equal(failed.records.length, 1);
+  assert.equal(failed.syncJob, failedJob);
+  assert.equal(failed.renderCount, 1);
+  assert.equal(failed.notice.type, "error");
+}
+
 Promise.resolve()
   .then(validateIdentityAllowlist)
   .then(validateNamespacePropagation)
   .then(validateCrossBrowserApiFacade)
   .then(validatePackageGroupPersistence)
-  .then(() => console.log("Publisher isolation and package-group validation passed."))
+  .then(validateClearRecovery)
+  .then(() => console.log("Publisher isolation, package-group, and clear-recovery validation passed."))
   .catch(error => { console.error(error); process.exitCode = 1; });

@@ -2,11 +2,13 @@
   "name": "unity-publisher-analytics",
   "private": true,
   "scripts": {
+    "test": "npm run test:fixtures && npm run test:sync && npm run test:isolation",
     "build:charts": "esbuild scripts/echarts-entry.js --bundle --minify --format=iife --global-name=echarts --outfile=vendor/echarts.min.js --legal-comments=linked",
     "capture:marketing": "node scripts/capture-marketing.mjs",
     "create:promos": "node scripts/create-promo-tiles.mjs",
     "test:fixtures": "node scripts/validate-api-fixtures.js",
     "test:isolation": "node scripts/validate-publisher-isolation.js",
+    "test:sync": "node --test scripts/test-incremental-sync.js",
     "test:chrome-smoke": "node scripts/smoke-chrome.mjs",
     "validate:manifests": "node scripts/validate-manifests.mjs",
     "validate:packages": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-packages.ps1 -Target All",

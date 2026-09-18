@@ -103,7 +103,8 @@ behavior is unsafe or incomplete. It requires a product or engineering decision.
   metadata, and preferences are publisher-scoped. An identity change replaces
   the visible workspace. It does not clear the previous publisher. A missing
   identity fails closed. Data clearing affects only the active publisher's
-  analytics and checkpoint. It does not clear preferences.
+  analytics and checkpoint. It does not clear preferences or package groups.
+  Data clearing invalidates active sync work before it deletes data.
 - **Basis:** The production Portal bundle separates `publisherId` from
   `publisherOrgId` and `defaultOrgId`. It uses `publisherId` for the Asset Store
   publisher profile. Analytics and packages belong to that publisher profile.
@@ -129,10 +130,14 @@ behavior is unsafe or incomplete. It requires a product or engineering decision.
 ## D-013 — Handle catalog changes only through current discovery
 
 - **Status:** Open, priority P1.
-- **Current behavior:** Incremental sync skips packages with no prior daily row, stops refreshing removed packages, and applies current names/categories only to newly written rows.
+- **Current behavior:** Incremental sync starts a new package at its recorded
+  publication date. The current daily-history floor still applies. Incremental
+  sync stops refreshing unpublished packages. It applies current names and
+  categories only to new rows.
 - **Basis:** No lifecycle policy was recorded.
-- **Risk:** New packages are absent. Renames can duplicate records. Historical
-  category attribution becomes inconsistent. The sync also misses corrections.
+- **Risk:** Renames can duplicate records. Historical category attribution can
+  become inconsistent. Unpublished packages do not receive new corrections. The
+  sync also misses older corrections.
 - **Target decision:** Maintain a publisher-scoped package identity table with aliases and lifecycle dates. Bootstrap new packages, preserve unpublished history, define rename/category behavior, and use a deliberate correction window.
 
 ## D-014 — Match category metadata through several identifiers and names

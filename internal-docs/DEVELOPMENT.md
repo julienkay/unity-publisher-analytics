@@ -73,9 +73,8 @@ Before finishing a change:
 1. Run `npm run build:charts`.
 2. Run `node --check` on every JavaScript file.
 3. Run `npm run validate:manifests`.
-4. Run `npm run test:fixtures`.
-5. Run `npm run test:isolation`.
-6. Package both targets and validate their archive contents.
+4. Run `npm test`.
+5. Package both targets and validate their archive contents.
 
 ## Browser packages
 
