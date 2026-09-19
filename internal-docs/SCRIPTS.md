@@ -34,7 +34,7 @@ npm run capture:marketing
 
 | Command | Purpose | Output |
 |---|---|---|
-| `npm test` | Run fixture, incremental-sync, isolation, and recovery tests. | Console pass/fail result |
+| `npm test` | Run fixture, sync, isolation, recovery, and sale-calendar tests. | Console pass/fail result |
 | `npm run build:charts` | Build the local ECharts runtime used by the extension. | `vendor/echarts.min.js` and its legal notice |
 | `npm run test:fixtures` | Test the fixture-backed package publication-date mapping. | Console pass/fail result |
 | `npm run test:isolation` | Test publisher ownership, package groups, and clear-data recovery. | Console pass/fail result |
@@ -43,6 +43,8 @@ npm run capture:marketing
 | `npm run capture:marketing` | Render every Chrome Web Store feature screenshot in light mode from fictional data. | `marketing/screenshots/*.png` |
 | `npm run capture:marketing -- [light\|dark] [png\|webp] [capture-name]` | Render all screenshots, or one named screenshot, in the selected theme and format. | Files in `marketing/screenshots/` |
 | `npm run create:promos` | Compose the small and marquee promotional tiles. | `marketing/promos/*.png` |
+| `npm run inspect:sale` | Read active campaign schedules from the public Asset Store home page. | JSON on standard output. |
+| `npm run test:sales` | Check the manual sale calendar and the schedule-selection rules. | Console pass/fail result. |
 | `npm run validate:manifests` | Validate the generated Chrome and Firefox manifests and their allowlisted differences. | Console pass/fail result |
 | `npm run validate:packages` | Validate both packaged archives and compare their runtime payloads. | Console pass/fail result |
 | `npm run package` | Rebuild charts and create both uploadable browser archives. | Chrome and Firefox ZIPs in `dist/` |
@@ -122,6 +124,39 @@ The tests do not call Unity. Live release and failure behavior remain
 unverified. The packaging script uses an explicit runtime allowlist. It does
 not include these tests or another file under `scripts/` in an extension
 archive.
+
+## Asset Store sale calendar
+
+Source: [`data/asset-store-sales.json`](../data/asset-store-sales.json)
+
+The shipped calendar is a JSON array. Each item contains only `title`,
+`startDate`, and `endDate`. It excludes bundle-only offers and single-publisher
+promotions.
+
+Source notes and the update procedure are in
+[`ASSET-STORE-SALES.md`](ASSET-STORE-SALES.md).
+
+Run the local validation:
+
+```shell
+npm run test:sales
+```
+
+The public Asset Store home page can contain exact UTC visibility schedules.
+Inspect its active schedules with this command:
+
+```shell
+npm run inspect:sale
+```
+
+The inspector does not use cookies. It does not change the calendar. Review its
+output and the public campaign before you add a range. A short banner phase can
+end before the complete sale. The inspector selects the longest active sale
+schedule and excludes Publisher of the Week.
+
+The page structure is undocumented. A failed inspection does not prove that no
+sale is active. Update the parser and its synthetic check when Unity changes the
+embedded page data.
 
 ## Publisher-isolation validation
 
@@ -305,6 +340,7 @@ Run the checks that apply to the changed files and behavior:
 | Change | Required checks |
 |---|---|
 | Changed `.js` or `.mjs` files | Run `node --check` on each changed file. |
+| Sale calendar or sale inspector | Run `npm run test:sales`. Run `npm run inspect:sale` when network access is available. |
 | Chart entry point, ECharts version, or chart build configuration | Run `npm run build:charts`. Review and commit both generated chart files. |
 | API fixtures, response fields, or normalized data | Run `npm run test:fixtures`. Add focused checks when the existing fixture test does not cover the change. |
 | Sync scheduling, checkpoint, resume, or package bootstrap behavior | Run `npm run test:sync`. |

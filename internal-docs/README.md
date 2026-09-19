@@ -36,6 +36,8 @@ documents are required for a given type of change.
   responses from one account. It also contains request shapes, origin records,
   and the remaining evidence gaps.
   Read its local `AGENTS.md` before adding or changing fixture material.
+- [ASSET-STORE-SALES.md](ASSET-STORE-SALES.md) records the sources, scope, and
+  update procedure for the public sale calendar.
 
 ## Terms
 
