@@ -6,7 +6,7 @@
   "method": "GET_OR_POST",
   "sanitizedRequestBody": null,
   "accountContext": "Describe only non-identifying account, catalog, capability, and period characteristics relevant to the response.",
-  "captureMethod": "Describe how the response was captured. State how secrets and private values were removed or replaced before output. State that no raw response or authentication material was retained.",
+  "captureMethod": "Describe how the response was captured. State whether the fixture is raw or sanitized. State that no authentication material was retained.",
   "sanitization": [
     "List every identifier replacement, date shift, value transformation, truncation, or removed row."
   ],

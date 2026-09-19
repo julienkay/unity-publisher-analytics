@@ -37,8 +37,8 @@ A new endpoint requires an updated caller and a narrow allowlist. Tests must
 cover both changes.
 
 Authentication material belongs only to the live page request. Do not put
-cookies, CSRF values, session headers, or raw private responses in retained
-artifacts. Retained artifacts include fixtures, logs, commits, and exports.
+cookies, CSRF values, authorization values, or session headers in retained
+artifacts. Raw API responses can be retained as development evidence.
 
 To sanitize a fixture means to make a safe evidence copy of a real response. The
 capture process removes secrets and replaces private values in that copy. This
@@ -118,7 +118,7 @@ incremental refresh does not run while this checkpoint is incomplete.
 | Charts and presentation | `content.js`, `styles.css`, `scripts/echarts-entry.js` | `DESIGN.md`, `RENDERING.md`, marketing fixture |
 | Browser packaging | `manifest.json`, packaging scripts | `DEVELOPMENT.md`, `SCRIPTS.md` |
 
-Follow [`DATA-SOURCE-WORKFLOW.md`](DATA-SOURCE-WORKFLOW.md) for a new endpoint or
+Follow [`DATA-SOURCES.md`](DATA-SOURCES.md) for a new endpoint or
 previously unseen account capability. Do not treat adding a constant to the
 `API` object as a complete integration.
 
@@ -137,29 +137,14 @@ previously unseen account capability. Do not treat adding a constant to the
 
 ## Why the page-world bridge exists
 
-The content script runs in an isolated extension world. An early direct request
-from that world returned HTTP 400. The exact rejected proxy target, parameters,
-and response body were not retained. This is **Observed once**. It does not prove
-which session rule caused the rejection.
+The content script runs in an isolated extension world. Portal requests need the
+active page session. `api-client.js` therefore runs in the Portal page world.
 
-The working design puts `api-client.js` in the Publisher Portal page world. It
-uses the page origin and the active Portal session. The content script sends a
-request description through `window.postMessage`. The page-world script accepts
-only known request shapes and returns the parsed result.
+The content script sends a request through `window.postMessage`. The page-world
+script accepts only known request shapes. It returns the parsed response.
 
-The Chrome control investigation confirmed a second boundary. The control tool
-could select the signed-in tab and inspect safe page state. Its safe evaluation
-layer did not permit arbitrary page scripts or session-data access. Direct use
-of the existing message bridge did not capture a response. The available
-browser capabilities did not provide a suitable read-only network log.
-Therefore, the task used a temporary, opt-in page-world capture helper. The task
-removed the helper after it retained the safe fixtures.
-
-Do not use a top-level API URL, a direct isolated-world `fetch`, or arbitrary
-browser evaluation as proof that an endpoint does not exist. These methods can
-fail before Unity evaluates the endpoint. Reproduce the request in the same page
-world as the Portal, through the narrow bridge or an equivalent temporary
-allowlisted helper.
+Live API investigation uses browser CDP from a signed-in Portal tab. It does not
+require an extension change. Follow [`DATA-SOURCES.md`](DATA-SOURCES.md).
 
 ## Coupling that is easy to miss
 

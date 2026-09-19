@@ -181,11 +181,9 @@ behavior is unsafe or incomplete. It requires a product or engineering decision.
 
 - **Status:** Accepted.
 - **Current behavior:** `api-client.js` runs in the Publisher Portal page world. It accepts only explicit message origins, methods, paths, query forms, and request bodies. It adds the active Portal request context and returns parsed results to `content.js`.
-- **Basis:** A direct isolated-world request returned HTTP 400 in the earlier
-  development task. The exact rejected request was not retained. In the later
-  Chrome fixture task, safe browser evaluation could inspect the signed-in page.
-  It could not execute the existing session-bearing request. A temporary
-  page-world helper completed the capture after a manual extension reload.
+- **Basis:** The extension content script has an isolated JavaScript context.
+  The page-world bridge uses the active Portal session without exposing a
+  generic request proxy.
 - **Consequence:** A new source requires a narrow allowlist change and request validation. A generic proxy, arbitrary URL forwarding, or raw-header forwarding is not acceptable.
 - **Review trigger:** The Portal provides a documented extension-safe API or a platform change prevents the page-world bridge from operating.
 

@@ -1,15 +1,14 @@
 # API fixtures
 
-This directory contains safe evidence copies of Unity Publisher Portal API
-responses. Each fixture started as a real response from one publisher account.
-The fixtures show structures that occurred on that account. They do not define
-an official Unity API contract.
+This directory contains evidence from Unity Publisher Portal API responses.
+Each fixture started as a real response from one publisher account. The fixtures
+show structures that occurred on that account. They do not define an official
+Unity API contract.
 
-These files are API evidence. They are not screenshot data. To sanitize a
-fixture means to make a safe copy of a real response. The capture process removes
-secrets. It replaces private identities and values. It keeps only the structure
-and relationships that the evidence needs. The provenance file lists every
-change and every evidence limit.
+These files are API evidence. They are not screenshot data. A fixture can be raw
+or sanitized. To sanitize a fixture means to replace selected private values.
+The provenance file states the capture type. It lists every change and evidence
+limit.
 
 The extension does not sanitize live publisher data. It does not apply these
 changes during sync, storage, charts, or export.
@@ -19,8 +18,8 @@ Marketing screenshots use the separate, fully fictional dataset in
 use these API fixtures or real publisher data.
 
 Agents must also read this directory's [`AGENTS.md`](AGENTS.md) and the
-repository's [data-source workflow](../DATA-SOURCE-WORKFLOW.md) before capturing
-or changing fixture material.
+repository's [data-source guide](../DATA-SOURCES.md) before capturing or
+changing fixture material.
 
 [manifest.json](manifest.json) is the authoritative fixture list. [request-shapes.json](request-shapes.json) contains request methods, paths, query parameters, and bodies. It does not contain authentication data.
 
@@ -122,11 +121,12 @@ Unity represents that state.
 ## Capture procedure
 
 1. Open the signed-in Publisher Portal and confirm the account and feature state.
-2. Use the browser Network panel to identify the exact method, path, query, body, and action. Do not save a general HAR file.
-3. Parse and sanitize the response in the Portal page when possible. Remove secrets and replace private values before you log, copy, or send any response object to an agent.
-4. If browser control cannot execute the existing bridge, add a temporary query-flagged block to `api-client.js`. Allow only the required read-only requests. Ask the maintainer to reload the unpacked extension.
-5. Do not emit cookies, CSRF tokens, session headers, email addresses, raw response text, or unrelated network data.
-6. Replace publisher IDs, package IDs, product IDs, names, profile data, ledger descriptions, URLs, and exact financial values.
+2. Use browser CDP to run the request in the Portal page context.
+3. Compare the request with a known control from `request-shapes.json`.
+4. Record the method, path, query, body, status, and response shape.
+5. Do not retain cookies, CSRF tokens, authorization values, session headers,
+   or unrelated network data.
+6. Choose whether the retained fixture must be raw or sanitized.
 7. Use stable replacement values across related fixtures. Replace related totals together.
 8. Change dates only when the exact dates are private. First, identify the
    calendar properties that the evidence needs. These properties can include
@@ -136,18 +136,10 @@ Unity represents that state.
 9. Preserve JSON types, key spelling, nesting, null values, signs, zero states, and required value relationships.
 10. Preserve safe semantic values only when they are necessary. Examples are a currency code, lifecycle status, and zero.
 11. Record each removed row, shortened array, shifted date, replaced identity, and transformed value in the provenance file.
-12. Write repository files only from the safe evidence copy. If you must use raw data, keep it outside the repository and agent messages. Delete it after the safety check.
-13. Remove the temporary capture block and clear its query flag. Ask the maintainer to reload the unpacked extension again.
-14. Check the final diff for the flag, capture log marker, temporary code, raw files, and private values.
+12. Review each retained response for authentication material before you commit it.
+13. Check the final diff for authentication values.
 
 If you change a monetary value, change all related totals. The fixture must remain internally consistent.
-
-The 2026-08-18 capture followed this page-world method. It emitted only safe
-`{request, response}` objects. The temporary helper replaced identities with
-stable fictional tokens. It changed related dates and numbers together. It also
-limited some arrays. These changes affected only the evidence files. They never
-became extension behavior. The helper was removed before the fixture commit.
-The raw responses and original private values were not retained.
 
 ## Provenance file
 
@@ -190,16 +182,14 @@ Compare gross revenue, net revenue, paid quantity, free claims, refunds, and dow
 
 ## Safety check
 
-Before you commit a fixture, search all fixture files for this private data:
+Before you commit a fixture, search all fixture files for these values:
 
-- publisher names
-- package names
-- real IDs
-- email addresses
-- URLs that contain identifiers
-- unchanged financial totals
+- cookies
+- CSRF tokens
+- authorization values
+- session headers
 
-Ask another maintainer to review the sanitized fixture when possible.
+Ask another maintainer to review a raw fixture when possible.
 
 Use the suffix `*.synthetic.json` for synthetic examples. Do not use a synthetic example as evidence of Unity response behavior.
 

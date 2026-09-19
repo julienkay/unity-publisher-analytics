@@ -10,9 +10,8 @@ documents are required for a given type of change.
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) maps runtime contexts, request and storage
   boundaries, sync ownership, and the files that usually change together.
-- [DATA-SOURCE-WORKFLOW.md](DATA-SOURCE-WORKFLOW.md) defines the investigation,
-  evidence, fixture, implementation, and validation path for undocumented Unity
-  data sources.
+- [DATA-SOURCES.md](DATA-SOURCES.md) explains how to test the signed-in Unity
+  API with browser CDP. It also defines the integration and evidence checklist.
 - [DEVELOPMENT.md](DEVELOPMENT.md) covers local setup, validation, chart builds,
   and Chrome and Firefox packaging.
 - [SCRIPTS.md](SCRIPTS.md) documents every repository script, its prerequisites,
@@ -44,12 +43,12 @@ documents are required for a given type of change.
 The maintainer documents use these terms:
 
 - A **captured fixture** is a JSON example that comes from a real Portal
-  response.
+  response. A captured fixture can be raw or sanitized.
 - To **sanitize** a captured fixture means to make a safe evidence copy. Remove
   secrets. Replace private identities and values. Keep only the structure and
   relationships that the evidence needs. Record every change.
-- A **raw response** is the unchanged Portal response. Never put a raw response
-  in the repository or in an agent message.
+- A **raw response** is the unchanged Portal response. Agents can inspect,
+  compare, and retain raw responses during authorized development.
 - A **synthetic fixture** is invented test data. It can test code, but it cannot
   confirm Unity behavior.
 - A **provenance file** records where a fixture came from, what changed, and what

@@ -8,15 +8,18 @@ This file is the entry point for agent work. Keep detailed knowledge in
 - Read `VISION.md` and `internal-docs/README.md` before changing product behavior.
 - Read the current source. Then read the routed documents. Documentation records
   evidence and intent. Verify all claims against the code.
-- Treat undocumented Unity behavior conservatively. Record missing evidence as
-  unknown instead of filling gaps with plausible assumptions.
+- Probe undocumented Unity behavior in authorized sessions. Record experimental
+  results and evidence limits. Record missing evidence as unknown.
+- Use browser CDP for live Unity API tests. Do not modify the extension only to
+  test a request.
 
 ## Route by task
 
 | Task | Required context |
 |---|---|
 | Runtime boundaries, storage, sync, or unfamiliar source code | `internal-docs/ARCHITECTURE.md` |
-| New or changed Unity endpoint, response shape, metric, or ingestion path | `internal-docs/ARCHITECTURE.md`, `internal-docs/DATA-SOURCE-WORKFLOW.md`, `internal-docs/DATA-EVIDENCE.md`, `internal-docs/DECISIONS.md`, `internal-docs/VALIDATION.md`, and the API fixture guidance |
+| Live Unity API request or browser investigation | `internal-docs/DATA-SOURCES.md` |
+| New or changed Unity endpoint, response shape, metric, or ingestion path | `internal-docs/ARCHITECTURE.md`, `internal-docs/DATA-SOURCES.md`, `internal-docs/DATA-EVIDENCE.md`, `internal-docs/DECISIONS.md`, `internal-docs/VALIDATION.md`, and the API fixture guidance |
 | API fixture capture or editing | `internal-docs/api-fixtures/AGENTS.md` and `internal-docs/api-fixtures/README.md` |
 | Interface or publisher-facing copy | `internal-docs/DESIGN.md` |
 | Charts or visualization behavior | `internal-docs/DESIGN.md` and `internal-docs/RENDERING.md` |

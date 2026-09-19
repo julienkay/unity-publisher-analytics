@@ -496,7 +496,7 @@
           const [salesRaw, downloadsRaw] = await Promise.all([apiJson(API.sales(month)), apiJson(API.downloads(month))]);
           if (!ownsWorkspace(publisherId, generation)) return;
           await putMany([...normalizeSales(salesRaw, month, publisherId), ...normalizeDownloads(downloadsRaw, month, publisherId)], publisherId);
-          job.monthIndex += 1; job.completed += 2; await saveJob(job, publisherId); render(); await sleep(80);
+          job.monthIndex += 1; job.completed += 2; await saveJob(job, publisherId); render();
         }
         if (!job.active || !ownsWorkspace(publisherId, generation)) return;
         job.phase = "daily"; await saveJob(job, publisherId);

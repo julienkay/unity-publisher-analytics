@@ -1,8 +1,7 @@
 # Validation, shortcuts, and known issues
 
-This document uses repository history, the original Codex task, and safe API
-response fixtures from one account. The original task did not keep a formal test
-log. The document therefore marks missing evidence as Unknown.
+This document records completed checks, evidence limits, and known defects.
+Live API and fixture evidence comes from one publisher account unless stated.
 
 ## Validation scope
 
@@ -28,6 +27,8 @@ timing, response sizes, retries, or rate limits.
 | Area | Status | Evidence and limits |
 |---|---|---|
 | Current endpoint paths and request shapes | **Fixture-backed on one account** | Safe response fixtures are retained for `/user` and all eight analytics endpoints. The exact forms of two earlier HTTP 400 requests were not retained. |
+| Browser CDP requests in a signed-in Portal tab | **Validated** | Chrome DevTools Protocol calls returned HTTP 200 for monthly sales and downloads in Brave and the integrated browser. |
+| Multi-month monthly-report query | **Not supported by tested forms** | `start_date` and `end_date` did not return the requested period. Repeated `date` fields returned the first month only. |
 | Package publication date | **Fixture-backed and implemented** | Published packages return `first_published_at`. `fetchPackages()` reads it, and the earliest-date calculation includes it. |
 | Publisher identity and local isolation | **Source-tested, second account unverified** | Source checks cover namespace propagation and identity-request boundaries. Sync loops do not poll identity. A new full sync checks identity before it clears data. No retained live switch test exists. |
 | Publisher-scoped package groups | **Implemented, manual UI validation pending** | Groups use `package_id`, survive analytics clearing, and render separate aggregate lines. Multi-scope selection, overlap notices, and group-management pages still need an unpacked-extension smoke test. |
@@ -77,16 +78,16 @@ publisher-selective feature:
 | Eligible but empty | **Unknown** | Capture a successful request and the valid empty response container from an eligible account. |
 | Active participation | **Unknown** | Capture a non-empty response and identify stable IDs, dates, lifecycle state, pagination, and package relationships. |
 | Expired or historical participation | **Unknown** | Test an expired item or historical filter and record whether data remains available. |
-| Authentication failure | **Unknown for this source** | Compare with a known endpoint in the same tab. Retain a safe copy of the status or redirect response. Remove or replace all private values. |
+| Authentication failure | **Unknown for this source** | Compare with a known endpoint in the same tab. Retain the status or redirect response. Remove authentication values. |
 | Permission failure | **Unknown** | Retain a distinct permission result while the user remains signed in and another Portal request works. |
 | Endpoint or schema change | **Unknown** | Verify the page and session, then retain the changed status or response shape. The normalizer must fail visibly. |
 | Legitimate empty response | **Unknown** | Confirm success status, the expected container, and, when possible, a matching non-empty request from another period or account. |
 
 Do not use the maintainer account to infer the route or eligible response. A
 contributor whose account exposes the feature must follow
-[DATA-SOURCE-WORKFLOW.md](DATA-SOURCE-WORKFLOW.md) and retain a safe captured fixture.
+[DATA-SOURCES.md](DATA-SOURCES.md) and retain a captured fixture.
 
-## Task observations without fixtures
+## Unretained observations
 
 The following details remain weaker than the fixture-backed inventory:
 
@@ -96,30 +97,11 @@ The following details remain weaker than the fixture-backed inventory:
 - **Observed once:** a live category assignment used a nested `category` object
   during the original development task. The retained metadata fixture contains
   only scalar string values.
-- **Observed once:** an isolated-world proxy request and an early daily request
-  returned HTTP 400. The exact rejected forms and response bodies were not
-  retained.
-- **Confirmed as a tool boundary:** the Chrome fixture task could inspect the
-  signed-in tab but its safe evaluation layer did not produce API responses.
-  This does not establish Unity request behavior.
 - **Unknown:** Daily date keys can be omitted. Inactive objects in other periods
   can contain only zeros. Empty monthly reports and ledgers are also unknown.
   Later metadata pages and each capability-limited state remain unknown.
 
-## Deliberately deferred
-
-The original development task deferred:
-
-- Alternate data sources and CSV fallbacks.
-- A hosted backend or telemetry.
-- Automatic migration from the previously loaded unpacked-extension origin.
-- Automated `chrome://extensions` reloads.
-
-The product direction also deliberately avoids implying individual customer journeys from aggregate data.
-
-## Prototype shortcuts without recorded approval
-
-These appear to have been expedient implementation choices rather than consciously accepted product contracts:
+## Unsupported implementation policies
 
 - The 2019 daily-history floor.
 - The two-day daily freshness lag.

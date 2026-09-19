@@ -1,25 +1,14 @@
 # Unity data evidence and semantics
 
-Status: evidence audit updated 2026-09-18.
+Status: evidence updated 2026-09-19.
 
 This document records evidence about the undocumented Unity Publisher Portal
 APIs that Publisher Analytics+ uses. It distinguishes prototype behavior from a
 verified data contract.
 
-The evidence available for this audit was:
-
-1. The repository and its commit history from the initial implementation onward.
-2. The original Codex task history, including the publisher's pasted CSV exports and troubleshooting messages.
-3. Successful use of the extension on the original signed-in publisher account.
-4. A fresh signed-in capture of the active-publisher response and all eight analytics endpoints. The browser removed secrets and replaced private values before the responses were retained under [api-fixtures](api-fixtures/README.md).
-
-The original development task retained no API responses. On 2026-08-18, a temporary
-opt-in local helper repeated the requests on the original account. The helper
-parsed each response in the Portal page. It removed secrets and replaced private
-values before output. It did not log or save authentication material or raw
-responses. The retained fixtures therefore provide direct evidence for keys,
-JSON types, and nesting on one account. Each provenance file records array
-limits, changed values, and evidence limits.
+Evidence comes from retained fixtures, Portal exports, live browser CDP tests,
+the current source, and the loaded Portal application. Each fixture provenance
+file records its source, changes, and limits.
 
 ## Executive assessment
 
@@ -56,45 +45,29 @@ CSRF token. It also sends `Content-Type: application/json` and
 | Revenue ledger | `GET /publisher-v2-api/publisher-revenues` | Array of ledger entries | **Fixture-backed non-empty sample on one account** |
 | Daily performance | `POST /publisher-v2-api/dashboard/daily` with ISO-midnight `start_date`, `end_date`, and `package_ids` containing zero or one string ID | Object keyed by date | **Fixture-backed catalog and paid-package month on one account** |
 
-The original development task also records two rejected variants:
+## Monthly report query behavior
 
-- A request routed through `/publisher-v2-api/proxy` returned HTTP 400. The exact rejected target and parameters were not retained.
-- `/publisher-v2-api/dashboard/daily` returned HTTP 400 before the working request form was reached. The response body and precise change that resolved it were not retained.
+Browser CDP tests on 2026-09-19 used a signed-in publisher account.
 
-These failures establish that routing and payload shape matter, but they are not sufficient to document Unity's full validation rules.
+| Request | Result |
+|---|---|
+| `monthly-sales?date=2024-07-01` | HTTP 200. The response contained July 2024 rows. |
+| `monthly-downloads?date=2024-07-01` | HTTP 200. The response contained July 2024 rows. |
+| Sales with `start_date=2024-07-01&end_date=2024-09-01` | HTTP 200 with an empty array. |
+| Downloads with the same range fields | HTTP 200 with current-month data. The range fields were ignored. |
+| Two `date` fields for July and August | Both endpoints returned July only. The first `date` value won. |
 
-## Request provenance and session-only observations
+These tests show no multi-month request form. The demonstrated request shape is
+one `date` field and one calendar month per request.
 
-The current request inventory has two evidence layers:
+## Evidence limits
 
-- **Confirmed:** The request-shape file, captured fixtures, provenance files, and
-  current allowlist agree. They support the methods, paths, query forms, and
-  bodies in the endpoint inventory. The retained daily request also
-  confirms string package IDs, ISO UTC midnight values without milliseconds,
-  and one half-open month response on one account.
-- **Unknown:** the investigation did not isolate which request headers are
-  required. The current page-world client sends the CSRF token,
-  `Content-Type: application/json`, `X-Source: publisher-portal`, and included
-  credentials as one working set. Do not remove or generalize a header based on
-  its name alone.
+The tests did not isolate required request headers. The working client sends
+the CSRF token, `Content-Type: application/json`, `X-Source: publisher-portal`,
+and included credentials.
 
-The earlier development task contains one **Observed once** script-bundle
-reference to `/publisher-v2-api/dashboard/package`. No exact caller, method,
-request body, response, UI purpose, or live request was retained. The route was
-never integrated. It is not part of the current endpoint inventory and must be
-rediscovered before use.
-
-The Chrome fixture task also records failed browser-control attempts to send an
-`UPA_API_REQUEST` message from its safe evaluation layer. The attempts did not
-produce an HTTP status or response body. They show a browser-control execution
-boundary, not a Unity endpoint failure. A capability check found no suitable
-read-only network interface. It also found no suitable debug interface in that
-tool version. Thus, the task used the temporary page-world capture method in
-[DATA-SOURCE-WORKFLOW.md](DATA-SOURCE-WORKFLOW.md#lessons-from-the-retained-chrome-investigation).
-
-No endpoint for Asset Store bundles was observed in either retained fixture
-evidence or the Chrome fixture task. Its path, method, eligibility model,
-response shape, and empty-state behavior are **Unknown**.
+The Portal bundle contains `/publisher-v2-api/dashboard/package`. Its method,
+body, response, and purpose are unknown. No bundle endpoint was observed.
 
 ## Publisher identity
 
@@ -358,28 +331,15 @@ is not validated. The other cases remain prototype gaps.
 
 ## Category-mapping evidence
 
-The category implementation evolved through several live troubleshooting steps:
+The retained metadata fixture uses a scalar string under `category`. The value
+can be an ID, slug, or name because the fixture replaces private values.
 
-1. Read a category or category ID from the once-published package response.
-2. Fetch `/management/categories` and map IDs to display names.
-3. Fetch paginated `/management/packages` metadata. Find `package_id` and
-   `category_id`.
-4. Broaden matching across package ID, genesis product ID, product ID, generic ID, and normalized package name.
-5. Add temporary diagnostics for response keys, metadata keys, row counts, assignment counts, and category-definition counts.
-6. Parse the live category assignment as an object under `category`, not only a scalar ID.
-7. Remove diagnostics after the user reloads the extension and confirms the
-   categories. Then make category grouping the default.
+One earlier live response used a nested `category` object. No fixture retains
+that shape. This variant is **Observed once**.
 
-The original development task did not retain the diagnostic output or raw
-category object. The 2026-08-18 package-metadata fixture adds a second observed
-shape. Each retained row had a scalar string under `category`. Redaction prevents
-identification as an ID, slug, or display name. Only the earlier code change and
-task result support the nested-object variant.
-
-Known risks include ambiguous name matching and duplicate names. Other risks
-include multiple metadata versions, different ID namespaces, and category
-changes. Pagination changes and packages without a category are also risks. No
-test used a second account to find response variants.
+The implementation matches several identifier fields. It uses an exact
+normalized package name as a fallback. Duplicate names, identifier namespaces,
+metadata versions, pagination, and category changes remain risks.
 
 ## Required evidence work
 

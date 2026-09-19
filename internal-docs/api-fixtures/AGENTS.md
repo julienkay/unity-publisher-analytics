@@ -1,25 +1,19 @@
 # API fixture guidance
 
 These instructions apply to work under `internal-docs/api-fixtures/`. Read the
-repository `AGENTS.md`, this directory's `README.md`, `manifest.json`, and
-`request-shapes.json` before editing fixtures.
+repository `AGENTS.md`, `../DATA-SOURCES.md`, this directory's `README.md`,
+`manifest.json`, and `request-shapes.json` before editing fixtures.
 
 ## Privacy boundary
 
 - Never commit or quote cookies, CSRF values, or session headers. Do not commit
-  authorization headers, email addresses, real identities, or unrelated network
-  traffic.
-- A raw response is an unchanged Portal response. Keep raw responses outside the
-  repository. Delete them after the privacy check.
-- To sanitize a response means to make a safe evidence copy. Remove secrets and
-  replace private values in the authorized page before output when possible. Do
-  not send a raw response to an agent.
+  authorization headers or unrelated network traffic.
+- A raw response is an unchanged Portal response. Agents can inspect, compare,
+  discuss, and retain raw responses during authorized development.
+- Review a raw response before you commit it. Remove authentication material.
+- Sanitize a fixture when exact private values do not help the evidence.
 - Do not retain a general HAR file. Capture only the required request shape and
   parsed JSON response.
-- Keep a temporary page-world capture helper behind an explicit opt-in flag.
-  Give the helper a narrow read-only request list. Remove the helper and its
-  output marker before you finish. The maintainer must reload the extension
-  after you add the helper. The maintainer must reload it again after removal.
 
 ## Evidence boundary
 
@@ -29,8 +23,8 @@ repository `AGENTS.md`, this directory's `README.md`, `manifest.json`, and
   boundaries.
 - Use stable fictional replacements across related fixtures and update related
   totals together.
-- Record every truncation, removed row, shifted date, replaced identifier, and
-  transformed value in provenance.
+- Record whether the fixture is raw or sanitized. Record every truncation,
+  removed row, shifted date, replaced identifier, and transformed value.
 - Use `*.synthetic.json` for invented examples. Synthetic data tests code. It
   does not confirm Unity behavior.
 - Mark unavailable account variants and boundary behavior as unknown rather than
