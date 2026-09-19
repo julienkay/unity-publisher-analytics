@@ -119,7 +119,11 @@ async function validateClearRecovery() {
   assert.ok(clearFunction.includes("syncJob = null"), "Analytics clearing must remove the visible sync checkpoint after storage succeeds.");
   assert.ok(clearFunction.indexOf("workspaceGeneration += 1") < clearFunction.indexOf("await clearPublisherData"), "Analytics clearing must invalidate in-flight work before the database delete starts.");
   assert.ok(clearFunction.indexOf("await clearPublisherData") < clearFunction.indexOf("records = []"), "Analytics clearing must keep visible records until the database delete succeeds.");
-  assert.ok(content.includes('const section = hasData ? preferredSection : "dashboard"'), "An empty workspace must show the full-sync onboarding action.");
+  assert.ok(content.includes('const section = hasData || preferredSection === "settings" ? preferredSection : "dashboard"'), "An empty workspace must preserve Settings while routing unavailable analytics sections to Home.");
+  assert.ok(content.includes('section === "settings" ? `<div class="upa-primary-nav upa-empty-primary-nav"') && content.includes('<span>Home</span>'), "An empty workspace must show Home next to Getting Started only while Settings is open.");
+  assert.ok(content.includes('const settingsSyncAction = records.length || syncAlreadyStarted ? ""') && content.includes('data-action="settings-sync">Sync full history</button>'), "Settings must offer full-history sync only when the workspace has no analytics records and no active or resumable sync.");
+  assert.ok(content.includes('if (action === "settings-sync")') && content.includes('prefs.section = "dashboard"'), "Settings sync must navigate Home before sync progress begins.");
+  assert.ok(!content.includes('settings-back-dashboard'), "Settings must use workspace navigation instead of an inline back action.");
   assert.ok(!clearFunction.includes("storage.local"), "Analytics clearing must not change publisher preferences or package groups.");
 
   const successfulJob = { active: true };
