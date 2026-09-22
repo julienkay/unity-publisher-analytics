@@ -1,4 +1,5 @@
 *.zip
+/publisher-analytics-*.json
 node_modules/
 .DS_Store
 Thumbs.db

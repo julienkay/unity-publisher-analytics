@@ -13,6 +13,16 @@ without selected-range records. The same selected range supplies the metrics
 beside the charts. The page does not combine package records with catalog-wide
 daily records.
 
+Daily Patterns has two heatmap layouts. The year calendar uses the ECharts
+calendar coordinate system. The asset heatmap uses category axes. It shows one
+row for each asset and one column for each day. The horizontal data zoom starts
+with the complete selected range. The color scale uses the square root of each
+value. Tooltips show the exact value. The asset heatmap uses the shared violet
+scale. It does not draw cell borders. This style keeps dense daily slices
+visually continuous.
+The date axis shows months for short windows. It shows quarters for medium
+windows and years for long windows. The labels update when the zoom changes.
+
 ## Decision
 
 Use three deliberately separate layers:

@@ -5,6 +5,7 @@
     "test": "npm run test:fixtures && npm run test:sync && npm run test:isolation && npm run test:sales",
     "build:charts": "esbuild scripts/echarts-entry.js --bundle --minify --format=iife --global-name=echarts --outfile=vendor/echarts.min.js --legal-comments=linked",
     "capture:marketing": "node scripts/capture-marketing.mjs",
+    "capture:daily-patterns-prototype": "node scripts/capture-daily-patterns-prototype.mjs",
     "create:promos": "node scripts/create-promo-tiles.mjs",
     "inspect:sale": "node scripts/inspect-asset-store-sale.mjs",
     "test:fixtures": "node scripts/validate-api-fixtures.js",

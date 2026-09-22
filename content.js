@@ -26,7 +26,7 @@
     daily: "/publisher-v2-api/dashboard/daily"
   };
   let records = [];
-  let prefs = { section: "dashboard", view: "revenue", packageId: "", range: "all", interval: "auto", start: "", end: "", theme: "system", performanceLayout: "grid", performanceScopes: [{ type: "all", id: "all" }], performanceHiddenScopes: [], calendarMetric: "sales", lifetimeMetric: "revenue", lifetimeStyle: "area", lifetimeAlign: "calendar", lifetimeStackDefaultApplied: true, lifetimePackages: [], lifetimeHiddenPackages: [], sankeyPackages: [], sankeyGroupBy: "category", sankeyCategoryDefaultApplied: true };
+  let prefs = { section: "dashboard", view: "revenue", packageId: "", range: "all", interval: "auto", start: "", end: "", theme: "system", performanceLayout: "grid", performanceScopes: [{ type: "all", id: "all" }], performanceHiddenScopes: [], calendarMetric: "sales", calendarStyle: "calendar", lifetimeMetric: "revenue", lifetimeStyle: "area", lifetimeAlign: "calendar", lifetimeStackDefaultApplied: true, lifetimePackages: [], lifetimeHiddenPackages: [], sankeyPackages: [], sankeyGroupBy: "category", sankeyCategoryDefaultApplied: true };
   let packageGroups = [];
   let groupEditor = null;
   let syncJob = null;
@@ -393,7 +393,7 @@
     return {
       section: ["dashboard", "analytics", "package", "groups", "settings"].includes(storedPrefs.section) ? storedPrefs.section : (storedPrefs.view && storedPrefs.view !== "overview" ? "analytics" : "dashboard"),
       view: analyticsViews.includes(storedPrefs.view) ? storedPrefs.view : "revenue", packageId: compact(storedPrefs.packageId), range: ranges.includes(storedPrefs.range) ? storedPrefs.range : "all", interval: storedPrefs.interval || "auto", start: storedPrefs.start || "", end: storedPrefs.end || "", theme: ["system", "light", "dark"].includes(storedPrefs.theme) ? storedPrefs.theme : "system",
-      performanceLayout: storedPrefs.performanceLayout === "wide" ? "wide" : "grid", performanceScopes: sanitizedPerformanceScopes(storedPrefs.performanceScopes), performanceHiddenScopes: Array.isArray(storedPrefs.performanceHiddenScopes) ? [...new Set(storedPrefs.performanceHiddenScopes.map(String).filter(Boolean))] : [], calendarMetric: storedPrefs.calendarMetric || "sales", lifetimeMetric: LIFETIME_METRICS[storedPrefs.lifetimeMetric] ? storedPrefs.lifetimeMetric : "revenue", lifetimeStyle, lifetimeAlign: lifetimeStyle === "area" ? "calendar" : storedLifetimeAlign, lifetimeStackDefaultApplied: true, lifetimePackages: Array.isArray(storedPrefs.lifetimePackages) ? storedPrefs.lifetimePackages : [], lifetimeHiddenPackages: Array.isArray(storedPrefs.lifetimeHiddenPackages) ? storedPrefs.lifetimeHiddenPackages : [], sankeyPackages: Array.isArray(storedPrefs.sankeyPackages) ? storedPrefs.sankeyPackages : [], sankeyGroupBy: storedPrefs.sankeyCategoryDefaultApplied === true ? storedSankeyGroupBy : "category", sankeyCategoryDefaultApplied: true
+      performanceLayout: storedPrefs.performanceLayout === "wide" ? "wide" : "grid", performanceScopes: sanitizedPerformanceScopes(storedPrefs.performanceScopes), performanceHiddenScopes: Array.isArray(storedPrefs.performanceHiddenScopes) ? [...new Set(storedPrefs.performanceHiddenScopes.map(String).filter(Boolean))] : [], calendarMetric: storedPrefs.calendarMetric || "sales", calendarStyle: storedPrefs.calendarStyle === "assets" ? "assets" : "calendar", lifetimeMetric: LIFETIME_METRICS[storedPrefs.lifetimeMetric] ? storedPrefs.lifetimeMetric : "revenue", lifetimeStyle, lifetimeAlign: lifetimeStyle === "area" ? "calendar" : storedLifetimeAlign, lifetimeStackDefaultApplied: true, lifetimePackages: Array.isArray(storedPrefs.lifetimePackages) ? storedPrefs.lifetimePackages : [], lifetimeHiddenPackages: Array.isArray(storedPrefs.lifetimeHiddenPackages) ? storedPrefs.lifetimeHiddenPackages : [], sankeyPackages: Array.isArray(storedPrefs.sankeyPackages) ? storedPrefs.sankeyPackages : [], sankeyGroupBy: storedPrefs.sankeyCategoryDefaultApplied === true ? storedSankeyGroupBy : "category", sankeyCategoryDefaultApplied: true
     };
   }
 
@@ -1162,6 +1162,36 @@
     return { metric, points, years, scaleMax: Math.max(scaleMax, 1), peak, total: points.reduce((sum, point) => sum + point[1], 0) };
   }
 
+  function assetHeatmapViewModel(items, packageOptions, metricKey) {
+    const metric = calendarMetric(metricKey), dates = [...new Set(items.map(item => item.date).filter(Boolean))].sort();
+    const assetsByKey = new Map(packageOptions.map(item => [item.key, { key: item.key, name: item.name, total: 0 }]));
+    const valuesByCell = new Map();
+    for (const item of items) {
+      const key = String(item.packageId || item.package || "unknown"), value = Math.max(0, toNumber(item[metric.key]));
+      if (!assetsByKey.has(key)) assetsByKey.set(key, { key, name: item.package || `Package ${key}`, total: 0 });
+      assetsByKey.get(key).total += value;
+      const cellKey = `${key}\u0000${item.date}`;
+      valuesByCell.set(cellKey, (valuesByCell.get(cellKey) || 0) + value);
+    }
+    const assets = [...assetsByKey.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+    const positiveValues = [...valuesByCell.values()].filter(value => value > 0).sort((a, b) => a - b);
+    const scaleValue = positiveValues.length ? positiveValues[Math.min(positiveValues.length - 1, Math.floor(positiveValues.length * .97))] : 1;
+    const points = [], assetNames = new Map(assets.map(item => [item.key, item.name]));
+    let peak = null;
+    for (const [cellKey, value] of valuesByCell) {
+      const separator = cellKey.indexOf("\u0000"), key = cellKey.slice(0, separator), date = cellKey.slice(separator + 1);
+      points.push([date, key, Math.sqrt(value), value]);
+      if (!peak || value > peak.value) peak = { key, name: assetNames.get(key) || key, date, value };
+    }
+    return {
+      metric, dates, assets, points, peak,
+      total: assets.reduce((sum, asset) => sum + asset.total, 0),
+      scaleMax: Math.max(1, Math.sqrt(scaleValue)),
+      initialStart: dates[0] || "",
+      initialEnd: dates.at(-1) || ""
+    };
+  }
+
   function renderCalendarChart(viewModel) {
     const container = document.getElementById("upa-calendar-chart");
     if (!container) return;
@@ -1211,6 +1241,72 @@
     };
     const chart = createChart("calendar", container, setCalendarOption); if (!chart) return;
     setCalendarOption(chart, container.clientWidth);
+  }
+
+  function renderAssetHeatmapChart(viewModel) {
+    const container = document.getElementById("upa-calendar-chart");
+    if (!container) return;
+    if (!viewModel.points.length || !viewModel.assets.length) { container.innerHTML = '<div class="upa-empty-chart">No asset activity is available for this date range.</div>'; return; }
+    if (!globalThis.UPAECharts?.init) { container.innerHTML = '<div class="upa-empty-chart">The chart renderer could not be loaded.</div>'; return; }
+    const theme = chartTheme(), assetNames = new Map(viewModel.assets.map(asset => [asset.key, asset.name]));
+    const formatValue = value => viewModel.metric.currency
+      ? new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value || 0)
+      : number(value);
+    const heatmapRange = theme.calendarRange, heatmapEmpty = theme.calendarEmpty;
+    const chartHeight = Math.max(430, viewModel.assets.length * 17 + 112);
+    const dateLabelMode = visibleDays => visibleDays <= 620 ? "month" : visibleDays <= 1460 ? "quarter" : "year";
+    const dateLabelFormatter = mode => value => {
+      if (!value.endsWith("-01")) return "";
+      const month = Number(value.slice(5, 7));
+      if (mode === "year") return month === 1 ? value.slice(0, 4) : "";
+      if (mode === "quarter") return (month - 1) % 3 === 0 ? `Q${Math.floor((month - 1) / 3) + 1} '${value.slice(2, 4)}` : "";
+      return `${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][month - 1]} ${value.slice(2, 4)}`;
+    };
+    let currentDateLabelMode = dateLabelMode(viewModel.dates.length);
+    container.style.height = `${chartHeight}px`;
+    const chart = createChart("calendar", container); if (!chart) return;
+    chart.resize({ height: chartHeight });
+    chart.setOption({
+      animation: false,
+      aria: { enabled: true, description: `${viewModel.metric.label} by day for ${viewModel.assets.length} assets.` },
+      grid: { left: 194, right: 18, top: 28, bottom: 76 },
+      tooltip: {
+        trigger: "item", confine: true, backgroundColor: "#151927", borderWidth: 0, padding: [10, 12], textStyle: { color: "#fff", fontSize: 11 },
+        formatter: parameter => `<strong>${escapeHtml(assetNames.get(parameter.data[1]) || parameter.data[1])}</strong><br/><span style="color:#aaa3d8">${escapeHtml(parameter.data[0])}</span><br/>${viewModel.metric.label}&nbsp;&nbsp;${formatValue(parameter.data[3])}`
+      },
+      xAxis: {
+        type: "category", data: viewModel.dates, boundaryGap: true,
+        axisLine: { lineStyle: { color: theme.axisLine } }, axisTick: { show: false }, splitLine: { show: false },
+        axisLabel: { interval: 0, color: theme.axis, fontSize: 9, formatter: dateLabelFormatter(currentDateLabelMode) }
+      },
+      yAxis: {
+        type: "category", inverse: true, data: viewModel.assets.map(asset => asset.key),
+        axisLine: { lineStyle: { color: theme.axisLine } }, axisTick: { show: false },
+        axisLabel: { interval: 0, color: theme.axis, fontSize: 10, lineHeight: 14, width: 166, overflow: "truncate", formatter: value => assetNames.get(value) || value },
+        splitArea: { show: true, areaStyle: { color: [heatmapEmpty, heatmapEmpty] } }, splitLine: { show: false }
+      },
+      dataZoom: [
+        { type: "inside", xAxisIndex: 0, filterMode: "filter", startValue: viewModel.initialStart, endValue: viewModel.initialEnd, zoomOnMouseWheel: true, moveOnMouseMove: true, moveOnMouseWheel: true, preventDefaultMouseMove: true },
+        { type: "slider", xAxisIndex: 0, filterMode: "filter", startValue: viewModel.initialStart, endValue: viewModel.initialEnd, height: 18, bottom: 14, borderColor: "transparent", backgroundColor: theme.zoom, fillerColor: "rgba(108,92,231,.18)", dataBackground: { lineStyle: { color: theme.zoomLine }, areaStyle: { color: theme.zoomArea } }, selectedDataBackground: { lineStyle: { color: "#6c5ce7" }, areaStyle: { color: "#5a4f8f" } }, handleStyle: { color: theme.handle, borderColor: "#6c5ce7" }, moveHandleStyle: { color: "#6c5ce7" }, textStyle: { color: theme.axis, fontSize: 9 } }
+      ],
+      visualMap: {
+        show: false, min: 0, max: viewModel.scaleMax, dimension: 2, calculable: false, orient: "horizontal", right: 18, top: 0,
+        itemWidth: 7, itemHeight: 116, text: ["Higher", "Lower"], textGap: 8,
+        textStyle: { color: theme.axis, fontSize: 9, fontWeight: 650 }, inRange: { color: heatmapRange }
+      },
+      series: [{
+        name: viewModel.metric.label, type: "heatmap", data: viewModel.points, progressive: 5000, progressiveThreshold: 3000,
+        itemStyle: { borderWidth: 0 }, emphasis: { itemStyle: { borderColor: "#6f1d17", borderWidth: 1, shadowBlur: 5, shadowColor: "rgba(126,38,25,.28)" } }
+      }]
+    });
+    chart.on("datazoom", () => {
+      const zoom = chart.getOption().dataZoom?.[0], start = Number(zoom?.start), end = Number(zoom?.end);
+      if (!Number.isFinite(start) || !Number.isFinite(end)) return;
+      const nextMode = dateLabelMode(Math.max(1, Math.round(viewModel.dates.length * Math.abs(end - start) / 100)));
+      if (nextMode === currentDateLabelMode) return;
+      currentDateLabelMode = nextMode;
+      chart.setOption({ xAxis: { axisLabel: { formatter: dateLabelFormatter(currentDateLabelMode) } } });
+    });
   }
 
   function sankeyPackageOptions(items, categoriesByPackage) {
@@ -1464,12 +1560,16 @@
     const performanceData = performanceCharts[0];
     const performanceScopeName = selectedPerformanceScopes.length === 1 ? selectedPerformanceScopes[0].name : `${number(selectedPerformanceScopes.length)} scopes selected`;
     const performanceScopeSummary = selectedPerformanceScopes.length <= 3 ? selectedPerformanceScopes.map(scope => scope.name).join(", ") : `${number(selectedPerformanceScopes.length)} selected scopes`;
-    const overviewChartData = overviewViewModel(dailyAll, dateBounds), calendarData = calendarViewModel(dailyAll, prefs.calendarMetric), lifetimeData = lifetimeViewModel(lifetimeItems, lifetimeMetric.id, prefs.lifetimePackages, prefs.lifetimeHiddenPackages, prefs.lifetimeStyle, prefs.lifetimeAlign), sankeyData = sankeyViewModel(salesItems, prefs.sankeyPackages, prefs.sankeyGroupBy, packageCategories);
+    const assetHeatmapActive = prefs.section === "analytics" && prefs.view === "calendar" && prefs.calendarStyle === "assets";
+    const overviewChartData = overviewViewModel(dailyAll, dateBounds), calendarData = calendarViewModel(dailyAll, prefs.calendarMetric), assetHeatmapData = assetHeatmapActive ? assetHeatmapViewModel(dailyPackages, performanceOptions, prefs.calendarMetric) : { metric: calendarData.metric, dates: [], assets: [], points: [], peak: null, total: 0 }, lifetimeData = lifetimeViewModel(lifetimeItems, lifetimeMetric.id, prefs.lifetimePackages, prefs.lifetimeHiddenPackages, prefs.lifetimeStyle, prefs.lifetimeAlign), sankeyData = sankeyViewModel(salesItems, prefs.sankeyPackages, prefs.sankeyGroupBy, packageCategories);
+    const dailyPatternsTotal = assetHeatmapActive ? assetHeatmapData.total : calendarData.total;
     const sankeyHeight = Math.max(410, sankeyData.activePackages.length * 48 + 96);
     chartShareMetadata.set("overview", { title: "Business activity over time", subtitle: `${intervalName(overviewChartData.interval)} revenue, pageviews, and downloads · ${dateBounds.start} to ${dateBounds.end}` });
     for (const chart of performanceCharts) chartShareMetadata.set(`performance-${chart.metric.id}`, { title: chart.metric.label, subtitle: `${intervalName(interval)} totals · ${dateBounds.start} to ${dateBounds.end}`, scopeLegend: chart.series.map(scope => ({ name: scope.name, color: scope.color })) });
     chartShareMetadata.set("lifetime", { title: `${lifetimeData.metric.label} lifetime growth`, subtitle: `${lifetimeData.style === "area" ? "Stacked cumulative" : "Cumulative"} ${lifetimeData.metric.label.toLowerCase()} · ${lifetimeData.align === "age" ? `aligned by ${lifetimeData.metric.ageDescription}` : "calendar time"} · all available history` });
-    chartShareMetadata.set("calendar", { title: `${calendarData.metric.label} calendar`, subtitle: `${dateBounds.start} to ${dateBounds.end} · daily intensity across ${calendarData.years.length} ${calendarData.years.length === 1 ? "year" : "years"}` });
+    chartShareMetadata.set("calendar", assetHeatmapActive
+      ? { title: `${assetHeatmapData.metric.label} by asset`, subtitle: `${dateBounds.start} to ${dateBounds.end} · ${assetHeatmapData.assets.length} assets across ${assetHeatmapData.dates.length} daily slices` }
+      : { title: `${calendarData.metric.label} calendar`, subtitle: `${dateBounds.start} to ${dateBounds.end} · daily intensity across ${calendarData.years.length} ${calendarData.years.length === 1 ? "year" : "years"}` });
     chartShareMetadata.set("sankey", { title: "Where revenue comes from", subtitle: `${sankeyData.activePackages.length} packages${sankeyData.groupBy === "category" ? ` · ${sankeyData.categories} categories` : ""} · ${dateBounds.start} to ${dateBounds.end}` });
     if (selectedPackage) {
       chartShareMetadata.set("package-revenue", { title: `${selectedPackage.name} · Gross revenue`, subtitle: `${intervalName(interval)} totals · ${dateBounds.start} to ${dateBounds.end}` });
@@ -1573,7 +1673,7 @@
             <section class="upa-dashboard-grid"><section class="upa-view-panel upa-view-revenue upa-performance-view" id="upa-view-revenue"><article class="upa-card upa-performance-controls"><div class="upa-performance-control-layout"><div><small>CATALOG PERFORMANCE</small><h2>Compare the signals that drive your business</h2><p>Choose All assets, a saved group, or an individual asset. Every included asset gets its own line across all four charts.</p></div><div class="upa-performance-tools">${performanceLayoutControls}${performanceScopeControls}</div></div>${performanceLegend}</article><div class="upa-performance-chart-grid" data-layout="${prefs.performanceLayout}">${performanceChartsMarkup}</div></section>
             <article class="upa-card upa-packages-card upa-view-panel upa-view-packages" id="upa-view-packages"><div class="upa-section-title"><div><small>AUDIENCE &amp; CONVERSION</small><h2>Package performance</h2><p>Top packages ranked by gross revenue.</p></div><span>${packages.length} packages</span></div><div class="upa-package-list">${packages.slice(0, 10).map((item, index) => `<button class="upa-package-row" type="button" data-package-id="${escapeHtml(item.id)}" aria-label="View details for ${escapeHtml(item.name)}"><b>${String(index + 1).padStart(2, "0")}</b><div><strong>${escapeHtml(item.name)}</strong><span>${number(item.pageViews)} views · ${item.conversion.toFixed(2)}% conversion · ${number(item.downloads)} downloads</span></div><em>${money(item.sales)}</em><i aria-hidden="true">→</i></button>`).join("")}</div></article></section>
             <section class="upa-card upa-insight-card upa-view-panel upa-view-lifetime" id="upa-view-lifetime"><div class="upa-section-title"><div><small>LIFETIME GROWTH</small><h2>How packages accumulate ${escapeHtml(lifetimeData.metric.noun)}</h2><p>Cumulative ${escapeHtml(lifetimeData.metric.label.toLowerCase())} across all available history makes momentum and plateaus visible.</p></div><div class="upa-section-tools"><span>${lifetimeData.pointCount} months</span>${chartActions("lifetime", !lifetimeData.series.length)}</div></div><div class="upa-insight-toolbar upa-lifetime-toolbar"><div class="upa-lifetime-controls"><label class="upa-inline-select">View<select id="upa-lifetime-style"><option value="area" ${lifetimeData.style === "area" ? "selected" : ""}>Stacked area</option><option value="lines" ${lifetimeData.style === "lines" ? "selected" : ""}>Cumulative lines</option></select></label><label class="upa-inline-select upa-metric-select">Metric<select id="upa-lifetime-metric" aria-describedby="upa-lifetime-metric-help">${Object.values(LIFETIME_METRICS).map(metric => `<option value="${metric.id}" ${lifetimeData.metric.id === metric.id ? "selected" : ""}>${metric.label}</option>`).join("")}</select><span id="upa-lifetime-metric-help" class="upa-metric-tooltip" role="tooltip">${escapeHtml(lifetimeData.metric.description)}</span></label>${lifetimeData.style === "lines" ? `<label class="upa-inline-select">Align<select id="upa-lifetime-align"><option value="calendar" ${lifetimeData.align === "calendar" ? "selected" : ""}>Calendar time</option><option value="age" ${lifetimeData.align === "age" ? "selected" : ""}>${lifetimeData.metric.ageLabel}</option></select></label>` : ""}<details class="upa-package-filter"><summary><span>Packages</span><strong>${lifetimeData.explicitKeys.length ? `${lifetimeData.explicitKeys.length} selected` : `Top 8 by ${lifetimeData.metric.rankingLabel}`}</strong></summary><div class="upa-package-filter-panel"><div class="upa-package-filter-head"><span>Choose packages to compare</span><button data-action="lifetime-top">Use top 8</button></div><div class="upa-package-checklist">${lifetimeData.options.map(item => `<label><input type="checkbox" data-lifetime-package="${escapeHtml(item.key)}" ${lifetimeData.activePackages.some(active => active.key === item.key) ? "checked" : ""}><span><strong>${escapeHtml(item.name)}</strong><small>${lifetimeValue(lifetimeData.metric, item.total)}</small></span></label>`).join("")}</div></div></details></div></div><div class="upa-lifetime-legend">${lifetimeData.legend.map(item => `<button type="button" data-lifetime-legend-package="${escapeHtml(item.key)}" aria-pressed="${item.visible}" title="${item.visible ? "Hide" : "Show"} ${escapeHtml(item.name)}"><i style="background:${item.color}"></i><strong>${escapeHtml(item.name)}</strong><em>${lifetimeValue(lifetimeData.metric, item.total)}</em></button>`).join("")}</div><div id="upa-lifetime-chart" class="upa-lifetime-chart" role="img" aria-label="Cumulative ${escapeHtml(lifetimeData.metric.label.toLowerCase())} by package"></div></section>
-            <section class="upa-card upa-insight-card upa-view-panel upa-view-calendar" id="upa-view-calendar"><div class="upa-section-title"><div><small>SEASONALITY &amp; OUTLIERS</small><h2>Daily activity calendar</h2><p>Compare daily intensity across years and spot recurring patterns at a glance.</p></div><div class="upa-section-tools"><span>${calendarData.years.length} ${calendarData.years.length === 1 ? "year" : "years"}</span>${chartActions("calendar")}</div></div><div class="upa-insight-toolbar"><label class="upa-inline-select upa-metric-select">Show<select id="upa-calendar-metric" aria-describedby="upa-calendar-metric-help"><option value="sales" ${prefs.calendarMetric === "sales" ? "selected" : ""}>Gross revenue</option><option value="paidQty" ${prefs.calendarMetric === "paidQty" ? "selected" : ""}>Sales</option><option value="salesQty" ${prefs.calendarMetric === "salesQty" ? "selected" : ""}>Sales &amp; Claims</option><option value="pageViews" ${prefs.calendarMetric === "pageViews" ? "selected" : ""}>Pageviews</option><option value="downloads" ${prefs.calendarMetric === "downloads" ? "selected" : ""}>Downloads</option></select><span id="upa-calendar-metric-help" class="upa-metric-tooltip" role="tooltip">${escapeHtml(calendarData.metric.description)}</span></label><div class="upa-insight-facts"><span><small>Total</small><strong>${calendarData.metric.currency ? money(calendarData.total) : number(calendarData.total)}</strong></span><span><small>Peak day</small><strong>${calendarData.peak ? escapeHtml(calendarData.peak[0]) : "—"}</strong></span><span><small>Peak value</small><strong>${calendarData.peak ? (calendarData.metric.currency ? money(calendarData.peak[1]) : number(calendarData.peak[1])) : "—"}</strong></span></div></div><div id="upa-calendar-chart" class="upa-calendar-chart" role="img" aria-label="Calendar heatmap with one row per year"></div></section>
+            <section class="upa-card upa-insight-card upa-view-panel upa-view-calendar" id="upa-view-calendar"><div class="upa-section-title"><div><small>SEASONALITY &amp; OUTLIERS</small><h2>${prefs.calendarStyle === "assets" ? "Daily activity by asset" : "Daily activity calendar"}</h2><p>${prefs.calendarStyle === "assets" ? "Compare every asset across thin daily slices. Drag the timeline to inspect earlier history." : "Compare daily intensity across years and spot recurring patterns at a glance."}</p></div><div class="upa-section-tools"><span>${prefs.calendarStyle === "assets" ? `${assetHeatmapData.assets.length} assets` : `${calendarData.years.length} ${calendarData.years.length === 1 ? "year" : "years"}`}</span>${chartActions("calendar")}</div></div><div class="upa-insight-toolbar upa-daily-toolbar"><div class="upa-daily-controls"><div class="upa-daily-view-control"><span>View</span><div class="upa-daily-view-options" role="group" aria-label="Daily patterns view"><button type="button" data-calendar-style="calendar" aria-pressed="${prefs.calendarStyle !== "assets"}">Year calendar</button><button type="button" data-calendar-style="assets" aria-pressed="${prefs.calendarStyle === "assets"}">Asset heatmap</button></div></div><label class="upa-inline-select upa-metric-select">Show<select id="upa-calendar-metric" aria-describedby="upa-calendar-metric-help"><option value="sales" ${prefs.calendarMetric === "sales" ? "selected" : ""}>Gross revenue</option><option value="paidQty" ${prefs.calendarMetric === "paidQty" ? "selected" : ""}>Sales</option><option value="salesQty" ${prefs.calendarMetric === "salesQty" ? "selected" : ""}>Sales &amp; Claims</option><option value="pageViews" ${prefs.calendarMetric === "pageViews" ? "selected" : ""}>Pageviews</option><option value="downloads" ${prefs.calendarMetric === "downloads" ? "selected" : ""}>Downloads</option></select><span id="upa-calendar-metric-help" class="upa-metric-tooltip" role="tooltip">${escapeHtml(calendarData.metric.description)}</span></label></div><div class="upa-insight-facts"><span><small>Total</small><strong>${calendarData.metric.currency ? money(dailyPatternsTotal) : number(dailyPatternsTotal)}</strong></span>${prefs.calendarStyle === "assets" ? `<span><small>Daily slices</small><strong>${number(assetHeatmapData.dates.length)}</strong></span><span><small>Peak cell</small><strong>${assetHeatmapData.peak ? (assetHeatmapData.metric.currency ? money(assetHeatmapData.peak.value) : number(assetHeatmapData.peak.value)) : "—"}</strong></span>` : `<span><small>Peak day</small><strong>${calendarData.peak ? escapeHtml(calendarData.peak[0]) : "—"}</strong></span><span><small>Peak value</small><strong>${calendarData.peak ? (calendarData.metric.currency ? money(calendarData.peak[1]) : number(calendarData.peak[1])) : "—"}</strong></span>`}</div></div><div id="upa-calendar-chart" class="upa-calendar-chart ${prefs.calendarStyle === "assets" ? "upa-asset-heatmap-chart" : ""}" role="img" aria-label="${prefs.calendarStyle === "assets" ? `Daily ${escapeHtml(assetHeatmapData.metric.label.toLowerCase())} heatmap with one row per asset` : "Calendar heatmap with one row per year"}"></div></section>
             <section class="upa-card upa-insight-card upa-view-panel upa-view-sankey" id="upa-view-sankey"><div class="upa-section-title"><div><small>REVENUE COMPOSITION</small><h2>Where revenue comes from</h2></div><div class="upa-section-tools"><span>${sankeyData.activePackages.length} shown</span>${chartActions("sankey")}</div></div><div class="upa-insight-toolbar upa-sankey-toolbar"><div class="upa-sankey-controls"><label class="upa-inline-select">Group by<select id="upa-sankey-group"><option value="none" ${sankeyData.groupBy === "none" ? "selected" : ""}>None</option><option value="category" ${sankeyData.groupBy === "category" ? "selected" : ""} ${sankeyData.categoryAvailable ? "" : "disabled"}>${sankeyData.categoryAvailable ? "Category" : "Category unavailable"}</option></select></label><details class="upa-package-filter"><summary><span>Packages</span><strong>${sankeyData.explicitKeys.length ? `${sankeyData.explicitKeys.length} selected` : "Top 8 by revenue"}</strong></summary><div class="upa-package-filter-panel"><div class="upa-package-filter-head"><span>Choose packages to compare</span><button data-action="sankey-top">Use top 8</button></div><div class="upa-package-checklist">${sankeyData.options.map(item => `<label><input type="checkbox" data-sankey-package="${escapeHtml(item.key)}" ${sankeyData.activePackages.some(active => active.key === item.key) ? "checked" : ""}><span><strong>${escapeHtml(item.name)}</strong><small>${money(item.gross)}</small></span></label>`).join("")}</div></div></details></div><div class="upa-insight-facts"><span><small>Revenue shown</small><strong>${money(sankeyData.total)}</strong></span>${sankeyData.groupBy === "category" ? `<span><small>Categories</small><strong>${number(sankeyData.categories)}</strong></span>` : ""}<span><small>Packages</small><strong>${number(sankeyData.activePackages.length)}</strong></span></div></div><div id="upa-sankey-chart" class="upa-sankey-chart" style="height:${sankeyHeight}px" role="img" aria-label="Gross revenue split by package${sankeyData.groupBy === "category" ? " and category" : ""}"></div></section>` : `<section class="upa-welcome"><div class="upa-welcome-copy"><small>YOUR COMPLETE PICTURE</small><h2>Go beyond the<br>one-year window.</h2><p>Bring your available sales, downloads, revenue, pageviews, and conversion history into one configurable workspace.</p>${syncJob?.active ? '<div class="upa-welcome-running"><i></i><span>Your history is being prepared. You can leave this page open and follow the progress above.</span></div>' : '<button class="upa-primary upa-large" data-action="sync-all">Sync full history</button>'}</div><div class="upa-welcome-visual" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><span>Lifetime</span></div></section>`}</main>
         </section>
       </div>
@@ -1598,7 +1698,10 @@
       }
       if (section === "analytics" && view === "revenue") for (const chart of performanceCharts) renderPerformanceChart(chart);
       if (section === "analytics" && view === "lifetime") renderLifetimeChart(lifetimeData);
-      if (section === "analytics" && view === "calendar") renderCalendarChart(calendarData);
+      if (section === "analytics" && view === "calendar") {
+        if (prefs.calendarStyle === "assets") renderAssetHeatmapChart(assetHeatmapData);
+        else renderCalendarChart(calendarData);
+      }
       if (section === "analytics" && view === "sankey") renderSankeyChart(sankeyData);
     }
   }
@@ -1797,6 +1900,8 @@
         if (prefs.view === "lifetime") { isRangePopoverOpen = false; isCustomRangeEditorOpen = false; }
         await savePrefs(); render(); return;
       }
+      const calendarStyleButton = event.target.closest("button[data-calendar-style]");
+      if (calendarStyleButton) { prefs.calendarStyle = calendarStyleButton.dataset.calendarStyle === "assets" ? "assets" : "calendar"; await savePrefs(); render(); return; }
       if (event.target.closest(".upa-fab")) { isOpen = true; render(); return; }
       if (action === "toggle-account") { accountMenuOpen = !accountMenuOpen; render(); return; }
       if (action === "open-settings") { prefs.section = "settings"; groupEditor = null; accountMenuOpen = false; await savePrefs(); render(); return; }

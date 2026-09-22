@@ -41,6 +41,7 @@ npm run capture:marketing
 | `npm run test:sync` | Test incremental scheduling and full-sync interruption recovery. | TAP test results |
 | `npm run test:chrome-smoke` | Load the unpacked extension in a temporary browser profile and exercise its background storage APIs. | Console pass/fail result |
 | `npm run capture:marketing` | Render every Chrome Web Store feature screenshot in light mode from fictional data. | `marketing/screenshots/*.png` |
+| `npm run capture:daily-patterns-prototype` | Render the asset heatmap with 30 fictional assets and more than four years of daily history. | `marketing/prototypes/daily-patterns-asset-heatmap.png` |
 | `npm run capture:marketing -- [light\|dark] [png\|webp] [capture-name]` | Render all screenshots, or one named screenshot, in the selected theme and format. | Files in `marketing/screenshots/` |
 | `npm run create:promos` | Compose the small and marquee promotional tiles. | `marketing/promos/*.png` |
 | `npm run inspect:sale` | Read active campaign schedules from the public Asset Store home page. | JSON on standard output. |
@@ -260,6 +261,23 @@ files keep the base capture name. Dark-mode files add `-dark`, for example
 `04-daily-calendar-dark.webp`. Thus, both sets can exist together.
 
 Outputs under `marketing/screenshots/` are generated artifacts and are ignored by Git. The fixture and preview must never contain real publisher data, IDs, package names, or account-specific history.
+
+## Daily Patterns prototype
+
+Sources:
+
+- [`scripts/capture-daily-patterns-prototype.mjs`](../scripts/capture-daily-patterns-prototype.mjs) captures the prototype.
+- [`scripts/daily-patterns-prototype-preview.html`](../scripts/daily-patterns-prototype-preview.html) provides the browser and extension API stubs.
+- [`scripts/daily-patterns-prototype-fixture.js`](../scripts/daily-patterns-prototype-fixture.js) creates the fictional large catalog.
+
+Run this command:
+
+```shell
+npm run capture:daily-patterns-prototype
+```
+
+The command writes `marketing/prototypes/daily-patterns-asset-heatmap.png`.
+The prototype fixture does not change the marketing screenshot fixture.
 
 ## Promotional tiles
 

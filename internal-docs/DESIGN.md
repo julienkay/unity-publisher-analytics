@@ -71,6 +71,10 @@ The type tokens live on `#upa-root` in `styles.css`.
 - Put units in labels or tooltips, format values consistently, and make the active date range explicit near the chart.
 - Avoid visual noise: hide meaningless zero hover states, soften grid lines, and keep legends separated from plotted data.
 - Preserve zoom, pan, export, and share behavior where those interactions are useful.
+- Daily Patterns has two views. Year calendar shows seasonality across years.
+  Asset heatmap shows one asset per row and one day per column. The asset
+  heatmap opens the complete selected range. Its timeline can reduce the
+  visible range.
 
 ## Responsive and accessible behavior
 
