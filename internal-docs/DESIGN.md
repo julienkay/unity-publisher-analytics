@@ -39,6 +39,8 @@ The type tokens live on `#upa-root` in `styles.css`.
 - Keep the page title and global controls in the header. Place the time range at the top right and preserve it across views.
 - Show one analytics view at a time. Dashboard may combine headline metrics with a small set of complementary overview visualizations.
 - On narrow screens, stack content and controls before reducing text size.
+- Performance charts use a two-column grid by default. Publishers can select
+  one full-width column. Narrow screens always show one column.
 
 ## Components
 
@@ -48,6 +50,9 @@ The type tokens live on `#upa-root` in `styles.css`.
   wording and confirmation.
 - Cards begin with an eyebrow, title, one-sentence explanation, and optional tools aligned on the right.
 - Dense package tables use a strong identity column, single-line values, clear row separators, and horizontal scrolling instead of compressed text.
+- A package name in the Dashboard table or a row in Analytics > Packages opens a package detail page. The main header names the package. Do not repeat the name or add a back link above the charts. The Dashboard navigation returns to the dashboard. The Analytics navigation returns to the last selected analytics view. The page keeps the selected time range and interval. It places package trends and a monthly revenue heatmap on the left, with package-only totals on the right. Show the acquisitions chart and free-claims metric only when the selected range has claims. Do not show a combined sales-and-claims total. Put the conversion definition in an info tooltip. Narrow screens stack the metrics above the charts. The heatmap scrolls horizontally rather than compressing month labels.
+- On a package page, mention free claims in the conversion tooltip only when
+  the selected time range includes them.
 - Keep metric comparisons secondary to the current value. State the preceding
   period. Omit the comparison when its baseline is incomplete or zero.
 - Move calculation details into a focused, keyboard-accessible info tooltip when persistent helper text would repeat across a compact metric grid.

@@ -99,7 +99,7 @@ Per-asset example with fictional private values:
 | `package` | Asset or catalog display label captured during sync. |
 | `category` | Asset category captured during sync. The value can be empty. |
 | `sales` | **Gross revenue**, despite the field name. It is derived from daily `gross`. |
-| `salesQty` | `paidQty + freeQty`. |
+| `salesQty` | `paidQty + freeQty`. The interface labels this value **Sales & Claims**. |
 | `paidQty` | Paid quantity derived from daily `sales`. |
 | `freeQty` | Free claims derived from daily `free_obtained`. |
 | `pageViews` | Daily page views. |

@@ -2,7 +2,16 @@
 
 Status: active. A modular ECharts bundle powers all analytics charts. These
 charts include the Dashboard views, revenue timeline, lifetime-growth chart,
-daily calendar, and revenue-composition views.
+daily calendar, revenue-composition views, and package detail trends.
+
+The package detail page draws a gross-revenue line chart from the selected
+package's daily records. When free claims exist in the selected range, a second
+chart shows paid sales and free claims separately. Otherwise, omit the second
+chart. A native table shows monthly gross revenue as a year-by-month heatmap.
+It distinguishes recorded zero revenue from months
+without selected-range records. The same selected range supplies the metrics
+beside the charts. The page does not combine package records with catalog-wide
+daily records.
 
 ## Decision
 

@@ -216,8 +216,8 @@ and no matching retained CSV export.
 The daily endpoint exposes separate candidate fields `sales` and `free_obtained`. The extension interprets them as paid units and free claims, then defines:
 
 ```text
-sales quantity = paid units + free claims
-conversion = min(100%, sales quantity / pageviews × 100)
+sales and claims = paid units + free claims
+conversion = min(100%, (sales and claims) / pageviews × 100)
 ```
 
 This product rule reproduces the Portal's aggregate analytics. The task's
@@ -225,6 +225,11 @@ analytics CSV includes a free asset with `$0.00` sales. It also shows `242`
 sales, `598` pageviews, and `40.47%` conversion. The calculation
 `242 / 598 = 40.47%` includes free claims. This is strong evidence for that one
 export.
+
+**Observed once:** One authorized account had a package that changed from paid
+to free. Its history contained paid units and later free claims. The retained
+evidence does not include the package identity or private totals. This case
+shows why the interface separates **Sales** from **Sales & Claims**.
 
 The meaning of daily `sales` remains unconfirmed. It could mean paid
 transactions or paid units. Repeated acquisitions are also unconfirmed. Unity

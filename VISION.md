@@ -46,7 +46,7 @@ As the product develops, it should also answer questions such as:
 - What is the lifetime revenue, unit volume, refund rate, and download count of a package?
 - How does this week, month, quarter, or year compare with the equivalent previous period?
 - Which packages drive the largest share of revenue, traffic, and downloads?
-- Where does the catalog appear to lose momentum between views, wishlists, purchases or claims, and downloads?
+- Where does the catalog appear to lose momentum between views, wishlists, sales and claims, and downloads?
 - How have catalog growth, releases, and seasonality changed the business over its lifetime?
 
 ## Direction

@@ -251,6 +251,7 @@ Available capture names:
 | `05-revenue-composition` | Category and package revenue flow |
 | `06-packages` | Package ranking |
 | `07-settings` | Data coverage and local storage settings |
+| `08-package-detail` | Package-specific charts and metrics after a dashboard drill-down |
 
 The browser first renders at 3200×2000. Sharp uses Lanczos filtering to reduce
 the image to 1280×800. It writes opaque RGB PNG or WebP files. Use PNG for the

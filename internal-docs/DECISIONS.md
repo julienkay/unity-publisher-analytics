@@ -72,12 +72,15 @@ behavior is unsafe or incomplete. It requires a product or engineering decision.
 
 - **Status:** Accepted, with a verification task.
 - **Current behavior:** `(paid sales + free claims) / pageviews`, capped at 100%.
+  The interface labels paid quantity as **Sales**. It labels the combined value
+  as **Sales & Claims**.
 - **Basis:** The original Portal analytics CSV showed a free asset with 242 sales
   and 598 pageviews. Its conversion was 40.47%. This calculation includes free
   claims exactly.
 - **Risk:** Daily endpoint semantics or Unity's aggregation rules can differ from
   the export. The extension defines the 100% limit.
-- **Review trigger:** Fixture reconciliation shows different portal behavior. If kept, label the numerator as purchases and claims rather than paid conversion.
+- **Review trigger:** Fixture reconciliation shows different Portal behavior.
+  Keep separate labels for paid quantity and the combined value.
 
 ## D-009 — Interpret wishlist as net change
 
