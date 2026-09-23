@@ -10,6 +10,9 @@ This is the shared visual contract for every Publisher Analytics+ surface. New v
 - **Quiet structure.** Prefer spacing, type, and subtle borders over heavy decoration.
 - **Consistent meaning.** A color, label, metric, or interaction should mean the same thing everywhere.
 - **Progressive detail.** Keep common controls visible and place advanced choices in an anchored popover or focused panel.
+- **No duplicate answers.** Show a metric once at the strongest useful level.
+  Repeat it only when the second presentation adds a different comparison or
+  decision. Review headings and headline values for repetition before release.
 
 ## Typography
 
@@ -50,9 +53,16 @@ The type tokens live on `#upa-root` in `styles.css`.
   wording and confirmation.
 - Cards begin with an eyebrow, title, one-sentence explanation, and optional tools aligned on the right.
 - Dense package tables use a strong identity column, single-line values, clear row separators, and horizontal scrolling instead of compressed text.
-- A package name in the Dashboard table or a row in Analytics > Packages opens a package detail page. The main header names the package. Do not repeat the name or add a back link above the charts. The Dashboard navigation returns to the dashboard. The Analytics navigation returns to the last selected analytics view. The page keeps the selected time range and interval. It places package trends and a monthly revenue heatmap on the left, with package-only totals on the right. Show the acquisitions chart and free-claims metric only when the selected range has claims. Do not show a combined sales-and-claims total. Put the conversion definition in an info tooltip. Narrow screens stack the metrics above the charts. The heatmap scrolls horizontally rather than compressing month labels.
+- A package name in the Dashboard table or a row in Analytics > Packages opens a package detail page. The main header names the package. Do not repeat the name or add a back link above the charts. The Dashboard navigation returns to the dashboard. The Analytics navigation returns to the last selected analytics view. The page keeps the selected time range and interval. It places a selected-range revenue-and-growth chart and a full-history monthly revenue heatmap on the left, with package-only metrics on the right. The heatmap is independent of the selected time range. Use a compact tab header above the chart to switch the revenue line between cumulative revenue and revenue by interval. Keep the rolling 12-month growth bars visible in both views. The interval controls both revenue aggregation and growth sampling. A chart tooltip shows revenue and growth together at the selected date. Show gross revenue and the latest rolling 12-month growth as two headline metric cards. Do not repeat these values above the chart. Calculate growth at complete interval boundaries. Require two complete 12-month comparison periods before showing a growth value. Show the acquisitions chart and free-claims metric only when the selected range has claims. Do not show a combined sales-and-claims total. Put the conversion definition in an info tooltip. Narrow screens stack the metrics above the charts. The heatmap scrolls horizontally rather than compressing month labels.
 - On a package page, mention free claims in the conversion tooltip only when
   the selected time range includes them.
+- Qualify Sales as paid units only when free claims are also visible.
+- Put previous and next asset controls in the header with the other page-level
+  controls. Use the stable alphabetical asset order. Wrap from the first asset
+  to the last and from the last asset to the first. Keep the selected time range
+  and interval when the publisher changes assets. Keep the controls in a fixed
+  screen position when asset-name lengths differ. Disable both controls when
+  only one asset exists.
 - Keep metric comparisons secondary to the current value. State the preceding
   period. Omit the comparison when its baseline is incomplete or zero.
 - Move calculation details into a focused, keyboard-accessible info tooltip when persistent helper text would repeat across a compact metric grid.
@@ -93,3 +103,4 @@ Before shipping an interface change, check that it:
 3. Works at desktop and mobile widths without clipped controls or unreadable charts.
 4. Has clear hover, focus, empty, loading, and error behavior where applicable.
 5. Uses publisher language and introduces no publisher-specific assumptions.
+6. Does not repeat a heading, metric, or explanation without adding new value.

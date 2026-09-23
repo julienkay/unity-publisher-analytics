@@ -4,14 +4,26 @@ Status: active. A modular ECharts bundle powers all analytics charts. These
 charts include the Dashboard views, revenue timeline, lifetime-growth chart,
 daily calendar, revenue-composition views, and package detail trends.
 
-The package detail page draws a gross-revenue line chart from the selected
-package's daily records. When free claims exist in the selected range, a second
-chart shows paid sales and free claims separately. Otherwise, omit the second
-chart. A native table shows monthly gross revenue as a year-by-month heatmap.
-It distinguishes recorded zero revenue from months
-without selected-range records. The same selected range supplies the metrics
-beside the charts. The page does not combine package records with catalog-wide
-daily records.
+The package detail page draws a revenue line above rolling 12-month growth bars.
+A compact tab header switches the line between cumulative revenue and revenue
+by the selected interval. The growth bars remain visible in both views. The
+selected interval also sets the growth sampling frequency. Each bar compares
+the trailing 12 months at a complete interval boundary with the preceding 12
+months. The calculation can use older records for its comparison baseline. It
+stays unavailable until both comparison periods are complete. A partial current
+interval does not produce a growth bar. Both tracks follow the selected time
+range and use one shared visible time domain. Older records can supply the
+growth baseline, but they do not extend the visible growth axis. The tooltip
+shows the revenue and growth values together at the shared date. The metric
+panel shows the latest completed growth value at or before the
+end of the selected range. When free claims exist in the selected range, a
+second chart shows paid sales and free claims separately. It uses the selected
+interval. Otherwise, omit the second chart. A native table shows
+the package's complete available monthly gross revenue history as a
+year-by-month heatmap. The selected page range does not filter this table. It
+distinguishes recorded zero revenue from months without available records. The
+selected range supplies the metrics beside the charts. The page does not
+combine package records with catalog-wide daily records.
 
 Daily Patterns has two heatmap layouts. The year calendar uses the ECharts
 calendar coordinate system. The asset heatmap uses category axes. It shows one
@@ -73,7 +85,7 @@ chart code from a CDN.
 
 The modular build includes:
 
-- Line, heatmap, and Sankey series.
+- Line, bar, heatmap, and Sankey series.
 - Tooltip, grid, data zoom, calendar, visual-map, and accessibility components.
 - The SVG renderer.
 

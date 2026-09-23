@@ -1,5 +1,5 @@
 import * as echarts from "echarts/core";
-import { HeatmapChart, LineChart, PieChart, SankeyChart } from "echarts/charts";
+import { BarChart, HeatmapChart, LineChart, PieChart, SankeyChart } from "echarts/charts";
 import {
   AriaComponent,
   CalendarComponent,
@@ -13,6 +13,7 @@ import { SVGRenderer } from "echarts/renderers";
 
 echarts.use([
   LineChart,
+  BarChart,
   PieChart,
   HeatmapChart,
   SankeyChart,

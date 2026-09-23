@@ -26,7 +26,7 @@
     daily: "/publisher-v2-api/dashboard/daily"
   };
   let records = [];
-  let prefs = { section: "dashboard", view: "revenue", packageId: "", range: "all", interval: "auto", start: "", end: "", theme: "system", performanceLayout: "grid", performanceScopes: [{ type: "all", id: "all" }], performanceHiddenScopes: [], calendarMetric: "sales", calendarStyle: "calendar", lifetimeMetric: "revenue", lifetimeStyle: "area", lifetimeAlign: "calendar", lifetimeStackDefaultApplied: true, lifetimePackages: [], lifetimeHiddenPackages: [], sankeyPackages: [], sankeyGroupBy: "category", sankeyCategoryDefaultApplied: true };
+  let prefs = { section: "dashboard", view: "revenue", packageId: "", packageRevenueMode: "cumulative", range: "all", interval: "auto", start: "", end: "", theme: "system", performanceLayout: "grid", performanceScopes: [{ type: "all", id: "all" }], performanceHiddenScopes: [], calendarMetric: "sales", calendarStyle: "calendar", lifetimeMetric: "revenue", lifetimeStyle: "area", lifetimeAlign: "calendar", lifetimeStackDefaultApplied: true, lifetimePackages: [], lifetimeHiddenPackages: [], sankeyPackages: [], sankeyGroupBy: "category", sankeyCategoryDefaultApplied: true };
   let packageGroups = [];
   let groupEditor = null;
   let syncJob = null;
@@ -392,7 +392,7 @@
     const lifetimeStyle = storedPrefs.lifetimeStackDefaultApplied === true ? storedLifetimeStyle : "area";
     return {
       section: ["dashboard", "analytics", "package", "groups", "settings"].includes(storedPrefs.section) ? storedPrefs.section : (storedPrefs.view && storedPrefs.view !== "overview" ? "analytics" : "dashboard"),
-      view: analyticsViews.includes(storedPrefs.view) ? storedPrefs.view : "revenue", packageId: compact(storedPrefs.packageId), range: ranges.includes(storedPrefs.range) ? storedPrefs.range : "all", interval: storedPrefs.interval || "auto", start: storedPrefs.start || "", end: storedPrefs.end || "", theme: ["system", "light", "dark"].includes(storedPrefs.theme) ? storedPrefs.theme : "system",
+      view: analyticsViews.includes(storedPrefs.view) ? storedPrefs.view : "revenue", packageId: compact(storedPrefs.packageId), packageRevenueMode: storedPrefs.packageRevenueMode === "interval" ? "interval" : "cumulative", range: ranges.includes(storedPrefs.range) ? storedPrefs.range : "all", interval: storedPrefs.interval || "auto", start: storedPrefs.start || "", end: storedPrefs.end || "", theme: ["system", "light", "dark"].includes(storedPrefs.theme) ? storedPrefs.theme : "system",
       performanceLayout: storedPrefs.performanceLayout === "wide" ? "wide" : "grid", performanceScopes: sanitizedPerformanceScopes(storedPrefs.performanceScopes), performanceHiddenScopes: Array.isArray(storedPrefs.performanceHiddenScopes) ? [...new Set(storedPrefs.performanceHiddenScopes.map(String).filter(Boolean))] : [], calendarMetric: storedPrefs.calendarMetric || "sales", calendarStyle: storedPrefs.calendarStyle === "assets" ? "assets" : "calendar", lifetimeMetric: LIFETIME_METRICS[storedPrefs.lifetimeMetric] ? storedPrefs.lifetimeMetric : "revenue", lifetimeStyle, lifetimeAlign: lifetimeStyle === "area" ? "calendar" : storedLifetimeAlign, lifetimeStackDefaultApplied: true, lifetimePackages: Array.isArray(storedPrefs.lifetimePackages) ? storedPrefs.lifetimePackages : [], lifetimeHiddenPackages: Array.isArray(storedPrefs.lifetimeHiddenPackages) ? storedPrefs.lifetimeHiddenPackages : [], sankeyPackages: Array.isArray(storedPrefs.sankeyPackages) ? storedPrefs.sankeyPackages : [], sankeyGroupBy: storedPrefs.sankeyCategoryDefaultApplied === true ? storedSankeyGroupBy : "category", sankeyCategoryDefaultApplied: true
     };
   }
@@ -741,6 +741,29 @@
     return date.toISOString().slice(0, 10);
   }
 
+  function bucketEnd(value, interval) {
+    const start = bucketStart(value, interval);
+    if (interval === "day") return start;
+    if (interval === "week") return addDays(start, 6);
+    if (interval === "month") return addDays(`${addMonths(start.slice(0, 7), 1)}-01`, -1);
+    if (interval === "quarter") return addDays(`${addMonths(start.slice(0, 7), 3)}-01`, -1);
+    return `${start.slice(0, 4)}-12-31`;
+  }
+
+  function nextBucket(value, interval) {
+    if (interval === "day") return addDays(value, 1);
+    if (interval === "week") return addDays(value, 7);
+    if (interval === "month") return `${addMonths(value.slice(0, 7), 1)}-01`;
+    if (interval === "quarter") return `${addMonths(value.slice(0, 7), 3)}-01`;
+    return `${Number(value.slice(0, 4)) + 1}-01-01`;
+  }
+
+  function bucketSequence(startDate, endDate, interval) {
+    const result = []; let bucket = bucketStart(startDate, interval), finalBucket = bucketStart(endDate, interval);
+    while (bucket <= finalBucket) { result.push(bucket); bucket = nextBucket(bucket, interval); }
+    return result;
+  }
+
   function revenueViewModel(items, interval) {
     const buckets = new Map();
     for (const item of items) {
@@ -905,14 +928,53 @@
     return { interval, points, series, currency };
   }
 
+  function packageRevenueGrowthViewModel(items, bounds, interval) {
+    const datedItems = items.filter(item => item.date).sort((a, b) => a.date.localeCompare(b.date));
+    if (!datedItems.length) return { revenuePoints: [], growthPoints: [], latestGrowth: null, hasGrowthHistory: false, domainStart: "", domainEnd: "" };
+    const firstDate = datedItems[0].date, latestDate = datedItems.at(-1).date;
+    const domainStart = [bounds.start, firstDate].sort().at(-1), domainEnd = [bounds.end, latestDate].sort()[0];
+    if (domainStart > domainEnd) return { revenuePoints: [], growthPoints: [], latestGrowth: null, hasGrowthHistory: false, domainStart: "", domainEnd: "" };
+    const revenueBetween = (start, end) => datedItems.reduce((sum, item) => item.date >= start && item.date <= end ? sum + toNumber(item.sales) : sum, 0);
+    const growthAt = start => {
+      const date = bucketEnd(start, interval);
+      if (date > latestDate) return { bucket: start, date, trailingRevenue: null, growth: null, growthState: "partial" };
+      const currentStart = addDays(addYears(date, -1), 1), previousEnd = addDays(currentStart, -1), previousStart = addDays(addYears(previousEnd, -1), 1);
+      if (firstDate > previousStart) return { bucket: start, date, trailingRevenue: null, growth: null, growthState: "insufficient" };
+      const trailingRevenue = revenueBetween(currentStart, date), previousRevenue = revenueBetween(previousStart, previousEnd);
+      if (previousRevenue > 0) return { bucket: start, date, trailingRevenue, growth: (trailingRevenue - previousRevenue) / previousRevenue * 100, growthState: "available" };
+      if (trailingRevenue > 0) return { bucket: start, date, trailingRevenue, growth: null, growthState: "new" };
+      return { bucket: start, date, trailingRevenue, growth: 0, growthState: "available" };
+    };
+    const revenueBuckets = new Map();
+    for (const item of datedItems.filter(item => item.date >= bounds.start && item.date <= bounds.end)) {
+      const bucket = bucketStart(item.date, interval), current = revenueBuckets.get(bucket) || { bucket, revenue: 0, latestDate: item.date };
+      current.revenue += toNumber(item.sales); current.latestDate = [current.latestDate, item.date].sort().at(-1); revenueBuckets.set(bucket, current);
+    }
+    let cumulativeRevenue = 0;
+    const revenuePoints = [...revenueBuckets.values()].sort((a, b) => a.bucket.localeCompare(b.bucket)).map(point => {
+      cumulativeRevenue += point.revenue;
+      const end = bucketEnd(point.bucket, interval), completeInRange = point.bucket >= bounds.start && end <= bounds.end && end <= latestDate;
+      return { ...point, date: completeInRange ? end : point.latestDate, cumulativeRevenue };
+    });
+    const revenueByBucket = new Map(revenuePoints.map(point => [point.bucket, point]));
+    const growthPoints = bucketSequence(domainStart, domainEnd, interval).map(start => {
+      const end = bucketEnd(start, interval), completeInRange = start >= bounds.start && end <= bounds.end && end <= latestDate;
+      if (completeInRange) return growthAt(start);
+      return { bucket: start, date: revenueByBucket.get(start)?.date || [end, bounds.end, latestDate].sort()[0], trailingRevenue: null, growth: null, growthState: "partial" };
+    });
+    const growthHistory = bucketSequence(firstDate, [bounds.end, latestDate].sort()[0], interval).map(growthAt).filter(point => point.growthState === "available" || point.growthState === "new");
+    return { revenuePoints, growthPoints, latestGrowth: growthHistory.at(-1) || null, hasGrowthHistory: growthHistory.length > 0, domainStart, domainEnd };
+  }
+
   function packageRevenueHeatmapViewModel(items) {
     const months = new Map();
-    for (const item of items) {
+    const datedItems = items.filter(item => item.date).sort((a, b) => a.date.localeCompare(b.date));
+    for (const item of datedItems) {
       const month = item.date.slice(0, 7);
       months.set(month, (months.get(month) || 0) + toNumber(item.sales));
     }
     const years = [...new Set([...months.keys()].map(month => month.slice(0, 4)))].sort().reverse();
-    return { months, years, maximum: Math.max(0, ...months.values()) };
+    return { months, years, maximum: Math.max(0, ...months.values()), historyStart: datedItems[0]?.date || "", historyEnd: datedItems.at(-1)?.date || "" };
   }
 
   function revenueMixViewModel(items, label) {
@@ -1121,33 +1183,113 @@
     });
   }
 
+  function renderPackageRevenueGrowthChart(viewModel, packageName, bounds, mode, interval) {
+    const container = document.getElementById("upa-package-revenue-chart");
+    if (!container) return;
+    if (!viewModel.revenuePoints.length && !viewModel.growthPoints.length) { container.innerHTML = '<div class="upa-empty-chart">No package revenue history is available for this date range.</div>'; return; }
+    if (!globalThis.UPAECharts?.init) { container.innerHTML = '<div class="upa-empty-chart">The chart renderer could not be loaded.</div>'; return; }
+    const theme = chartTheme(), chart = createChart("package-revenue", container);
+    if (!chart) return;
+    const compactMoney = value => new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 }).format(value || 0);
+    const fullMoney = value => new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value || 0);
+    const dateLabel = timestamp => new Intl.DateTimeFormat(undefined, ["day", "week"].includes(interval)
+      ? { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }
+      : { month: "long", year: "numeric", timeZone: "UTC" }).format(timestamp);
+    const revenueLookup = new Map(viewModel.revenuePoints.map(point => [Date.parse(`${point.date}T00:00:00Z`), point]));
+    const growthLookup = new Map(viewModel.growthPoints.map(point => [Date.parse(`${point.date}T00:00:00Z`), point]));
+    const revenueData = viewModel.revenuePoints.map(point => [Date.parse(`${point.date}T00:00:00Z`), mode === "interval" ? point.revenue : point.cumulativeRevenue]);
+    const growthData = viewModel.growthPoints.map(point => [Date.parse(`${point.date}T00:00:00Z`), point.growth]);
+    const domainMin = Date.parse(`${viewModel.domainStart}T00:00:00Z`), domainMax = Date.parse(`${viewModel.domainEnd}T00:00:00Z`);
+    const hasGrowthData = viewModel.growthPoints.some(point => Number.isFinite(point.growth));
+    const hasNewRevenue = viewModel.growthPoints.some(point => point.growthState === "new");
+    const growthEmptyText = !viewModel.hasGrowthHistory ? "12-month growth appears after 24 complete months" : hasNewRevenue ? "New revenue · no prior 12-month revenue to compare" : "No complete growth period is available in this range";
+    const revenueLabel = mode === "interval" ? `${intervalName(interval)} revenue` : "Cumulative revenue";
+    const growthDescription = point => {
+      if (point.growthState === "partial") return `Waiting for a complete ${intervalName(interval).toLowerCase()} interval`;
+      if (point.growthState === "insufficient") return "Not enough complete history";
+      if (point.growthState === "new") return "New revenue";
+      return `${point.growth > 0 ? "+" : ""}${percent(point.growth)}`;
+    };
+    chart.setOption({
+      animation: !matchMedia("(prefers-reduced-motion: reduce)").matches && viewModel.revenuePoints.length + viewModel.growthPoints.length < 300,
+      aria: { enabled: true, description: `${revenueLabel} and rolling 12-month revenue growth for ${packageName} from ${bounds.start} to ${bounds.end}. Growth bars remain visible when the revenue view changes.` },
+      axisPointer: { link: [{ xAxisIndex: "all" }] },
+      graphic: hasGrowthData ? [] : [{ type: "text", left: "center", top: "76%", silent: true, style: { text: growthEmptyText, fill: theme.axis, font: "600 11px sans-serif", textAlign: "center" } }],
+      grid: [
+        { left: 14, right: 18, top: 22, height: "48%", containLabel: true },
+        { left: 14, right: 18, top: "66%", bottom: 32, containLabel: true }
+      ],
+      tooltip: {
+        trigger: "axis", confine: true, axisPointer: { type: "line", lineStyle: { color: "#a9afbc" } }, backgroundColor: "#151927", borderWidth: 0, padding: [10, 12], textStyle: { color: "#fff", fontSize: 11 },
+        formatter: parameters => {
+          const timestamp = parameters.find(parameter => Array.isArray(parameter.value))?.value?.[0];
+          if (timestamp === undefined) return "";
+          const revenuePoint = revenueLookup.get(timestamp), growthPoint = growthLookup.get(timestamp);
+          const rows = [];
+          if (revenuePoint) rows.push(`<span style="color:#aaa3d8">${revenueLabel}</span>&nbsp;&nbsp;${fullMoney(mode === "interval" ? revenuePoint.revenue : revenuePoint.cumulativeRevenue)}`);
+          if (growthPoint) {
+            const trailing = growthPoint.trailingRevenue === null ? "—" : fullMoney(growthPoint.trailingRevenue);
+            const growthColor = growthPoint.growth === null ? "#aeb6c5" : growthPoint.growth < 0 ? "#ef8798" : "#75d2a2";
+            rows.push(`<span style="color:#aeb6c5">Revenue in latest 12 months</span>&nbsp;&nbsp;${trailing}`);
+            rows.push(`<span style="color:${growthColor}">Growth vs previous 12 months</span>&nbsp;&nbsp;${growthDescription(growthPoint)}`);
+          }
+          return rows.length ? `<strong>${dateLabel(timestamp)}</strong><br/>${rows.join("<br/>")}` : "";
+        }
+      },
+      xAxis: [
+        { type: "time", gridIndex: 0, min: domainMin, max: domainMax, boundaryGap: false, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { show: false }, splitLine: { show: false } },
+        { type: "time", gridIndex: 1, min: domainMin, max: domainMax, boundaryGap: false, axisLine: { lineStyle: { color: theme.axisLine } }, axisTick: { show: false }, axisLabel: { color: theme.axis, fontSize: 10, hideOverlap: true }, splitLine: { show: false } }
+      ],
+      yAxis: [
+        { type: "value", gridIndex: 0, min: 0, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: theme.axis, fontSize: 10, formatter: compactMoney }, splitLine: { lineStyle: { color: theme.grid } } },
+        { type: "value", gridIndex: 1, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { show: hasGrowthData, color: theme.axis, fontSize: 10, formatter: value => `${value > 0 ? "+" : ""}${Math.round(value)}%` }, splitLine: { show: hasGrowthData, lineStyle: { color: theme.grid } } }
+      ],
+      series: [
+        {
+          name: revenueLabel, type: "line", xAxisIndex: 0, yAxisIndex: 0, data: revenueData, smooth: .14, sampling: "lttb", showSymbol: revenueData.length <= 60, symbol: "circle", symbolSize: 4,
+          lineStyle: { color: "#6c5ce7", width: 2.5 }, itemStyle: { color: "#6c5ce7" }, areaStyle: mode === "cumulative" ? { color: "rgba(108,92,231,.16)" } : undefined, emphasis: { focus: "series" }
+        },
+        {
+          name: "12-month growth", type: "bar", xAxisIndex: 1, yAxisIndex: 1, data: growthData, barMaxWidth: 20,
+          itemStyle: { color: parameter => parameter.value?.[1] < 0 ? "#d45c70" : "#3ca56f", borderRadius: parameter => parameter.value?.[1] < 0 ? [0, 0, 3, 3] : [3, 3, 0, 0] }, emphasis: { focus: "series" }
+        }
+      ]
+    });
+  }
+
   function packageRevenueHeatmapMarkup(viewModel, packageName) {
-    if (!viewModel.years.length) return '<div class="upa-revenue-heatmap-empty">No package revenue data is available for this date range.</div>';
+    if (!viewModel.years.length) return '<div class="upa-revenue-heatmap-empty">No package revenue history is available.</div>';
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const exactMoney = value => new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
     const cells = viewModel.years.map(year => {
       const values = monthNames.map((_, index) => viewModel.months.get(`${year}-${String(index + 1).padStart(2, "0")}`));
       const total = values.reduce((sum, value) => sum + (value || 0), 0);
       return `<tr><th scope="row">${year}</th><td class="upa-heatmap-year-total">${money(total)}</td>${values.map((value, index) => {
-        if (value === undefined) return `<td class="upa-heatmap-unavailable" aria-label="${monthNames[index]} ${year}: no data in selected range">—</td>`;
+        if (value === undefined) return `<td class="upa-heatmap-unavailable" aria-label="${monthNames[index]} ${year}: no data available">—</td>`;
         const level = value > 0 && viewModel.maximum > 0 ? Math.max(1, Math.ceil(Math.sqrt(value / viewModel.maximum) * 5)) : 0;
         const label = `${monthNames[index]} ${year}: ${exactMoney(value)}`;
         return `<td data-level="${level}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">${money(value)}</td>`;
       }).join("")}</tr>`;
     }).join("");
-    return `<div class="upa-revenue-heatmap-scroll"><table class="upa-revenue-heatmap" aria-label="Monthly gross revenue for ${escapeHtml(packageName)}"><thead><tr><th scope="col">Year</th><th scope="col">Total</th>${monthNames.map(month => `<th scope="col">${month}</th>`).join("")}</tr></thead><tbody>${cells}</tbody></table></div>`;
+    return `<div class="upa-revenue-heatmap-scroll" data-history-range="${viewModel.historyStart}:${viewModel.historyEnd}"><table class="upa-revenue-heatmap" aria-label="Complete available monthly gross revenue history for ${escapeHtml(packageName)}"><thead><tr><th scope="col">Year</th><th scope="col">Total</th>${monthNames.map(month => `<th scope="col">${month}</th>`).join("")}</tr></thead><tbody>${cells}</tbody></table></div>`;
   }
 
-  function packageDetailPanel(packageInfo, totals, revenueTrend, unitsTrend, heatmap) {
+  function packageDetailPanel(packageInfo, totals, revenueGrowth, unitsTrend, heatmap, bounds, interval) {
     if (!packageInfo) return "";
     const conversion = totals.pageViews ? percent(totals.salesQty / totals.pageViews * 100) : "—";
     const conversionDescription = totals.freeQty > 0 ? "Paid sales and free claims divided by pageviews." : "Sales divided by pageviews.";
+    const latestGrowth = revenueGrowth.latestGrowth;
+    const growthValue = latestGrowth?.growthState === "new" ? "New" : latestGrowth?.growth === null || latestGrowth?.growth === undefined ? "—" : `${latestGrowth.growth > 0 ? "+" : ""}${percent(latestGrowth.growth)}`;
+    const growthClass = latestGrowth?.growthState === "new" || latestGrowth?.growth > 0 ? "upa-positive" : latestGrowth?.growth < 0 ? "upa-negative" : "upa-neutral";
+    const growthPeriod = latestGrowth ? `Through ${new Intl.DateTimeFormat(undefined, ["day", "week"].includes(interval) ? { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" } : { month: "short", year: "numeric", timeZone: "UTC" }).format(Date.parse(`${latestGrowth.date}T00:00:00Z`))}` : "Needs 24 complete months";
+    const intervalRevenueLabel = `${intervalName(interval)} revenue`;
+    const revenueTabs = `<div class="upa-package-chart-tabs" role="tablist" aria-label="Revenue chart view"><button type="button" role="tab" data-package-revenue-mode="cumulative" aria-selected="${prefs.packageRevenueMode !== "interval"}">Cumulative revenue</button><button type="button" role="tab" data-package-revenue-mode="interval" aria-selected="${prefs.packageRevenueMode === "interval"}">${intervalRevenueLabel}</button></div>`;
     return `<section class="upa-view-panel upa-view-package" id="upa-view-package">
       <div class="upa-package-detail-layout"><div class="upa-package-detail-charts">
-        <article class="upa-card upa-package-detail-chart-card"><div class="upa-section-title"><div><small>EARNINGS</small><h2>Gross revenue</h2><p>Revenue from this package before refunds, chargebacks, and Unity's revenue share.</p></div><div class="upa-section-tools">${chartActions("package-revenue", !revenueTrend.points.length)}</div></div><div class="upa-package-chart-total"><span>Total in range</span><strong>${money(totals.sales)}</strong></div><div id="upa-package-revenue-chart" class="upa-package-detail-chart" role="img" aria-label="Gross revenue trend for ${escapeHtml(packageInfo.name)}"></div></article>
-        <article class="upa-card upa-package-detail-heatmap"><div class="upa-section-title"><div><small>MONTHLY PATTERN</small><h2>Revenue heatmap</h2><p>Gross revenue for each month in the selected range. Months at the range edges may be partial.</p></div></div>${packageRevenueHeatmapMarkup(heatmap, packageInfo.name)}</article>
+        <article class="upa-card upa-package-detail-chart-card"><div class="upa-section-title"><div><small>REVENUE</small><h2>Revenue and growth</h2><p>Switch the revenue view. Rolling 12-month growth stays visible below.</p></div><div class="upa-section-tools">${chartActions("package-revenue", !revenueGrowth.revenuePoints.length && !revenueGrowth.growthPoints.some(point => Number.isFinite(point.growth)))}</div></div>${revenueTabs}<div id="upa-package-revenue-chart" class="upa-package-detail-chart upa-package-combined-chart" data-revenue-mode="${prefs.packageRevenueMode === "interval" ? "interval" : "cumulative"}" data-growth-series="visible" data-growth-interval="${interval}" data-growth-points="${revenueGrowth.growthPoints.length}" data-chart-range="${bounds.start}:${bounds.end}" data-time-domain="${revenueGrowth.domainStart}:${revenueGrowth.domainEnd}" role="img" aria-label="${prefs.packageRevenueMode === "interval" ? intervalRevenueLabel : "Cumulative revenue"} and rolling 12-month growth for ${escapeHtml(packageInfo.name)} from ${bounds.start} to ${bounds.end}"></div></article>
+        <article class="upa-card upa-package-detail-heatmap"><div class="upa-section-title"><div><small>MONTHLY PATTERN</small><h2>Revenue heatmap</h2><p>Gross revenue for each month in the package's full available history.</p></div></div>${packageRevenueHeatmapMarkup(heatmap, packageInfo.name)}</article>
         ${totals.freeQty > 0 ? `<article class="upa-card upa-package-detail-chart-card"><div class="upa-section-title"><div><small>ACQUISITIONS</small><h2>Sales and free claims</h2><p>Paid sales and free claims shown separately for this package.</p></div><div class="upa-section-tools">${chartActions("package-units", !unitsTrend.points.length)}</div></div><div class="upa-package-chart-legend"><span><i class="upa-package-sales-dot"></i>Sales · ${number(totals.paidQty)}</span><span><i class="upa-package-claims-dot"></i>Claims · ${number(totals.freeQty)}</span></div><div id="upa-package-units-chart" class="upa-package-detail-chart" role="img" aria-label="Paid sales and free claims trend for ${escapeHtml(packageInfo.name)}"></div></article>` : ""}
-      </div><aside class="upa-card upa-package-detail-metrics" aria-label="Metrics for ${escapeHtml(packageInfo.name)}"><small>AT A GLANCE</small><h2>Package metrics</h2><p>Totals for the selected time range.</p><div class="upa-package-detail-primary"><span>Gross revenue</span><strong>${money(totals.sales)}</strong><small>Before refunds and Unity's revenue share</small></div><dl><div><dt>Sales <small>Paid units</small></dt><dd>${number(totals.paidQty)}</dd></div>${totals.freeQty > 0 ? `<div><dt>Claims <small>Free units</small></dt><dd>${number(totals.freeQty)}</dd></div>` : ""}<div><dt>Pageviews</dt><dd>${number(totals.pageViews)}</dd></div><div><dt><span class="upa-package-metric-label">Conversion ${kpiHelp("upa-package-conversion-help", "About package conversion", conversionDescription)}</span></dt><dd>${conversion}</dd></div><div><dt>Downloads</dt><dd>${number(totals.downloads)}</dd></div></dl></aside></div>
+      </div><aside class="upa-card upa-package-detail-metrics" aria-label="Metrics for ${escapeHtml(packageInfo.name)}"><small>AT A GLANCE</small><h2>Package metrics</h2><p>Performance for the selected time range.</p><div class="upa-package-detail-highlights"><div class="upa-package-detail-primary"><span>Gross revenue</span><strong>${money(totals.sales)}</strong><small>Before refunds and Unity's revenue share</small></div><div class="upa-package-detail-primary upa-package-growth-primary"><span>12-month growth</span><strong class="${growthClass}">${growthValue}</strong><small>${growthPeriod}</small></div></div><dl><div><dt>Sales${totals.freeQty > 0 ? " <small>Paid units</small>" : ""}</dt><dd>${number(totals.paidQty)}</dd></div>${totals.freeQty > 0 ? `<div><dt>Claims <small>Free units</small></dt><dd>${number(totals.freeQty)}</dd></div>` : ""}<div><dt>Pageviews</dt><dd>${number(totals.pageViews)}</dd></div><div><dt><span class="upa-package-metric-label">Conversion ${kpiHelp("upa-package-conversion-help", "About package conversion", conversionDescription)}</span></dt><dd>${conversion}</dd></div><div><dt>Downloads</dt><dd>${number(totals.downloads)}</dd></div></dl></aside></div>
     </section>`;
   }
 
@@ -1540,10 +1682,12 @@
     const previousPackage = canNavigatePackages && selectedPackageIndex >= 0 ? performanceOptions[(selectedPackageIndex - 1 + performanceOptions.length) % performanceOptions.length] : null;
     const nextPackage = canNavigatePackages && selectedPackageIndex >= 0 ? performanceOptions[(selectedPackageIndex + 1) % performanceOptions.length] : null;
     const selectedPackageRows = selectedPackage ? dailyPackages.filter(item => String(item.packageId || item.package || "") === selectedPackage.key) : [];
+    const selectedPackageLifetimeRows = selectedPackage ? allPackageDaily.filter(item => String(item.packageId || item.package || "") === selectedPackage.key) : [];
     const selectedPackageTotals = aggregatePackages(selectedPackageRows)[0] || { sales: 0, paidQty: 0, freeQty: 0, salesQty: 0, pageViews: 0, downloads: 0 };
-    const packageRevenueTrend = packageTrendViewModel(selectedPackageRows, interval, [{ field: "sales", label: "Gross revenue", color: "#6c5ce7" }], true);
-    const packageUnitsTrend = packageTrendViewModel(selectedPackageRows, interval, [{ field: "paidQty", label: "Sales", color: "#3ca56f" }, ...(selectedPackageTotals.freeQty > 0 ? [{ field: "freeQty", label: "Claims", color: "#d99721" }] : [])]);
-    const packageRevenueHeatmap = packageRevenueHeatmapViewModel(selectedPackageRows);
+    const packageInterval = interval;
+    const packageRevenueGrowth = packageRevenueGrowthViewModel(selectedPackageLifetimeRows, dateBounds, packageInterval);
+    const packageUnitsTrend = packageTrendViewModel(selectedPackageRows, packageInterval, [{ field: "paidQty", label: "Sales", color: "#3ca56f" }, ...(selectedPackageTotals.freeQty > 0 ? [{ field: "freeQty", label: "Claims", color: "#d99721" }] : [])]);
+    const packageRevenueHeatmap = packageRevenueHeatmapViewModel(selectedPackageLifetimeRows);
     const availablePerformancePackageIds = new Set(performanceOptions.map(item => item.key));
     const performanceScopeOptions = [
       { type: "all", id: "all", key: "all:all", name: "All assets", membershipIds: [...availablePerformancePackageIds], items: dailyAll },
@@ -1576,8 +1720,8 @@
       : { title: `${calendarData.metric.label} calendar`, subtitle: `${dateBounds.start} to ${dateBounds.end} · daily intensity across ${calendarData.years.length} ${calendarData.years.length === 1 ? "year" : "years"}` });
     chartShareMetadata.set("sankey", { title: "Where revenue comes from", subtitle: `${sankeyData.activePackages.length} packages${sankeyData.groupBy === "category" ? ` · ${sankeyData.categories} categories` : ""} · ${dateBounds.start} to ${dateBounds.end}` });
     if (selectedPackage) {
-      chartShareMetadata.set("package-revenue", { title: `${selectedPackage.name} · Gross revenue`, subtitle: `${intervalName(interval)} totals · ${dateBounds.start} to ${dateBounds.end}` });
-      if (selectedPackageTotals.freeQty > 0) chartShareMetadata.set("package-units", { title: `${selectedPackage.name} · Sales and free claims`, subtitle: `${intervalName(interval)} totals · ${dateBounds.start} to ${dateBounds.end}` });
+      chartShareMetadata.set("package-revenue", { title: `${selectedPackage.name} · ${prefs.packageRevenueMode === "interval" ? `${intervalName(packageInterval)} revenue` : "Cumulative revenue"}`, subtitle: `Revenue with rolling 12-month growth · ${dateBounds.start} to ${dateBounds.end}` });
+      if (selectedPackageTotals.freeQty > 0) chartShareMetadata.set("package-units", { title: `${selectedPackage.name} · Sales and free claims`, subtitle: `${intervalName(packageInterval)} totals · ${dateBounds.start} to ${dateBounds.end}` });
     }
     const views = [
       { id: "revenue", label: "Performance", description: "Compare revenue, demand, attention, and usage for the catalog or individual assets." },
@@ -1599,9 +1743,9 @@
           ? { label: "Package groups", description: "Create and manage reusable asset selections." }
           : { label: "Settings", description: "Manage data coverage and local browser storage." };
     const packageNavigation = section === "package" && selectedPackage
-      ? `<nav class="upa-package-pagination" aria-label="Asset navigation"><button type="button" data-package-id="${escapeHtml(previousPackage?.key || "")}" data-package-direction="previous" aria-label="${previousPackage ? `Previous asset: ${escapeHtml(previousPackage.name)}` : "No previous asset"}" title="${previousPackage ? `Previous: ${escapeHtml(previousPackage.name)}` : "No previous asset"}" ${previousPackage ? "" : "disabled"}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m10 3-5 5 5 5"></path></svg></button><span aria-label="Asset ${selectedPackageIndex + 1} of ${performanceOptions.length}">${selectedPackageIndex + 1} / ${performanceOptions.length}</span><button type="button" data-package-id="${escapeHtml(nextPackage?.key || "")}" data-package-direction="next" aria-label="${nextPackage ? `Next asset: ${escapeHtml(nextPackage.name)}` : "No next asset"}" title="${nextPackage ? `Next: ${escapeHtml(nextPackage.name)}` : "No next asset"}" ${nextPackage ? "" : "disabled"}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5"></path></svg></button></nav>`
+      ? `<div class="upa-header-control upa-package-nav-control"><span>Asset</span><nav class="upa-package-pagination" aria-label="Asset navigation"><button type="button" data-package-id="${escapeHtml(previousPackage?.key || "")}" data-package-direction="previous" aria-label="${previousPackage ? `Previous asset: ${escapeHtml(previousPackage.name)}` : "No previous asset"}" title="${previousPackage ? `Previous: ${escapeHtml(previousPackage.name)}` : "No previous asset"}" ${previousPackage ? "" : "disabled"}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m10 3-5 5 5 5"></path></svg></button><span aria-label="Asset ${selectedPackageIndex + 1} of ${performanceOptions.length}">${selectedPackageIndex + 1} / ${performanceOptions.length}</span><button type="button" data-package-id="${escapeHtml(nextPackage?.key || "")}" data-package-direction="next" aria-label="${nextPackage ? `Next asset: ${escapeHtml(nextPackage.name)}` : "No next asset"}" title="${nextPackage ? `Next: ${escapeHtml(nextPackage.name)}` : "No next asset"}" ${nextPackage ? "" : "disabled"}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5"></path></svg></button></nav></div>`
       : "";
-    const headerTitle = section === "package" ? `<div class="upa-package-title-row"><h1>${sectionMeta.label}</h1>${packageNavigation}</div>` : `<h1>${hasData || ["groups", "settings"].includes(section) ? sectionMeta.label : "Welcome"}</h1>`;
+    const headerTitle = `<h1>${hasData || ["groups", "settings"].includes(section) ? sectionMeta.label : "Welcome"}</h1>`;
     const viewTabs = views.map(item => `<button class="upa-view-tab ${item.id === view ? "upa-active" : ""}" type="button" role="tab" aria-selected="${item.id === view}" aria-controls="upa-view-${item.id}" data-view="${item.id}">${item.label}</button>`).join("");
     const syncIncomplete = Boolean(syncJob && !syncJob.active && ["months", "daily"].includes(syncJob.phase));
     const syncFailed = Boolean(syncJob?.error);
@@ -1675,7 +1819,7 @@
           ${publisherAccount()}
         </aside>
         <section class="upa-workspace">
-          <header class="upa-header ${section === "dashboard" || section === "package" || section === "groups" || section === "settings" ? "upa-header-compact" : ""}"><div class="upa-header-main"><div class="upa-header-copy"><small>Publisher workspace</small>${headerTitle}<div class="upa-header-subline"><p>${hasData || ["groups", "settings"].includes(section) ? sectionMeta.description : "Build a complete, configurable view of your publishing business."}</p>${refreshAction}</div></div><div class="upa-header-actions">${intervalControl}${rangeControl}</div></div>${mobileNavigation}${hasData && section === "analytics" ? `<nav class="upa-view-tabs" role="tablist" aria-label="Analytics views">${viewTabs}</nav>` : ""}</header>
+          <header class="upa-header ${section === "dashboard" || section === "package" || section === "groups" || section === "settings" ? "upa-header-compact" : ""}"><div class="upa-header-main"><div class="upa-header-copy"><small>Publisher workspace</small>${headerTitle}<div class="upa-header-subline"><p>${hasData || ["groups", "settings"].includes(section) ? sectionMeta.description : "Build a complete, configurable view of your publishing business."}</p>${refreshAction}</div></div><div class="upa-header-actions">${packageNavigation}${intervalControl}${rangeControl}</div></div>${mobileNavigation}${hasData && section === "analytics" ? `<nav class="upa-view-tabs" role="tablist" aria-label="Analytics views">${viewTabs}</nav>` : ""}</header>
           ${(syncJob?.active || syncFailed || syncIncomplete) ? `<section class="upa-sync ${syncJob?.active ? "upa-syncing" : ""}" role="status" aria-live="polite">${syncIcon}<div class="upa-sync-copy"><strong>${escapeHtml(syncTitle)}</strong><span>${escapeHtml(syncDetail)}</span>${syncJob?.active ? '<small class="upa-sync-note">Large catalogs can take several minutes. Keep this tab open; if interrupted, progress resumes when you return.</small>' : ""}</div><div class="upa-sync-actions">${syncPreparing ? "" : syncJob?.active ? '<button data-action="stop-sync">Pause</button>' : syncIncomplete ? '<button data-action="continue-sync">Continue</button>' : '<button data-action="sync-all">Try full sync again</button>'}</div>${syncJob?.active ? `<div class="upa-progress ${syncPreparing ? "upa-progress-preparing" : ""}"><i style="width:${progress}%"></i></div>` : ""}</section>` : ""}
           <main class="upa-content" data-section="${section}" data-view="${view}">${publisherIdentityState !== "ready" ? `<section class="upa-welcome"><div class="upa-welcome-copy"><small>PUBLISHER WORKSPACE</small><h2>${publisherIdentityState === "loading" ? "Checking your publisher…" : "We couldn't identify the active publisher."}</h2><p>${publisherIdentityState === "loading" ? "Your local workspace will open in a moment." : "Refresh the Publisher Portal, or try again while signed in."}</p>${publisherIdentityState === "error" ? '<button class="upa-primary upa-large" data-action="retry-publisher">Try again</button>' : ""}</div></section>` : section === "groups" ? groupsPanel(performanceOptions) : section === "settings" ? settingsPanel() : records.length ? `<section class="upa-dashboard-view upa-view-panel upa-view-dashboard" id="upa-view-dashboard">${dashboardSummary}<article class="upa-dashboard-chart"><div class="upa-section-title"><div><small>BUSINESS ACTIVITY</small><h2>Performance over time</h2><p>${intervalName(overviewChartData.interval)} revenue, pageviews, and downloads on aligned timelines.</p></div><div class="upa-section-tools"><span>${overviewChartData.points.length} periods</span>${chartActions("overview")}</div></div><div class="upa-pulse-legend"><span><i class="upa-pulse-revenue"></i>Gross revenue</span><span><i class="upa-pulse-views"></i>Pageviews</span><span><i class="upa-pulse-downloads"></i>Downloads</span></div><div id="upa-overview-chart" class="upa-overview-chart" role="img" aria-label="Aligned gross revenue, pageviews, and downloads timelines"></div></article>${dashboardPackageTable}</section>
             <section class="upa-dashboard-grid"><section class="upa-view-panel upa-view-revenue upa-performance-view" id="upa-view-revenue"><article class="upa-card upa-performance-controls"><div class="upa-performance-control-layout"><div><small>CATALOG PERFORMANCE</small><h2>Compare the signals that drive your business</h2><p>Choose All assets, a saved group, or an individual asset. Every included asset gets its own line across all four charts.</p></div><div class="upa-performance-tools">${performanceLayoutControls}${performanceScopeControls}</div></div>${performanceLegend}</article><div class="upa-performance-chart-grid" data-layout="${prefs.performanceLayout}">${performanceChartsMarkup}</div></section>
@@ -1688,7 +1832,7 @@
       <div class="upa-toast" role="status" aria-live="polite"></div>
     </aside>`;
     if (section === "package" && selectedPackage) {
-      host.querySelector(".upa-content")?.insertAdjacentHTML("afterbegin", packageDetailPanel(selectedPackage, selectedPackageTotals, packageRevenueTrend, packageUnitsTrend, packageRevenueHeatmap));
+      host.querySelector(".upa-content")?.insertAdjacentHTML("afterbegin", packageDetailPanel(selectedPackage, selectedPackageTotals, packageRevenueGrowth, packageUnitsTrend, packageRevenueHeatmap, dateBounds, packageInterval));
     }
     host.querySelectorAll(".upa-dashboard-packages tbody tr").forEach((row, index) => {
       const identity = row.querySelector(".upa-package-identity"), item = dashboardPackages[index];
@@ -1701,7 +1845,7 @@
     if (hasData && isOpen) {
       if (section === "dashboard") { renderRevenueMixChart(revenueMixData); renderOverviewChart(overviewChartData); }
       if (section === "package" && selectedPackage) {
-        renderPackageTrendChart("package-revenue", packageRevenueTrend, selectedPackage.name);
+        renderPackageRevenueGrowthChart(packageRevenueGrowth, selectedPackage.name, dateBounds, prefs.packageRevenueMode, packageInterval);
         if (selectedPackageTotals.freeQty > 0) renderPackageTrendChart("package-units", packageUnitsTrend, selectedPackage.name);
       }
       if (section === "analytics" && view === "revenue") for (const chart of performanceCharts) renderPerformanceChart(chart);
@@ -1802,6 +1946,13 @@
       if (packageButton && publisherIdentityState === "ready") {
         prefs.packageId = packageButton.dataset.packageId;
         prefs.section = "package";
+        await savePrefs(); render(); return;
+      }
+      const packageRevenueModeButton = event.target.closest("button[data-package-revenue-mode]");
+      if (packageRevenueModeButton) {
+        const mode = packageRevenueModeButton.dataset.packageRevenueMode === "interval" ? "interval" : "cumulative";
+        if (mode === prefs.packageRevenueMode) return;
+        prefs.packageRevenueMode = mode;
         await savePrefs(); render(); return;
       }
       const performanceLayoutButton = event.target.closest("button[data-performance-layout]");

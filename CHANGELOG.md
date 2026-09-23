@@ -2,6 +2,14 @@
 
 This file lists the main changes that affect publishers.
 
+## Unreleased
+
+- Added package detail pages with package-specific trends, monthly revenue, and lifetime totals. Move between packages without losing the selected time range or interval.
+- Added an activity heatmap to show daily package activity over time.
+- Made full-history sync more reliable after errors, interruptions, reloads, new packages, and data resets.
+- Made monthly report sync faster.
+- Kept empty publisher workspaces easy to navigate and showed the refresh action only on the dashboard.
+
 ## 1.1.0 — 2026-08-20
 
 - Added support for Firefox.

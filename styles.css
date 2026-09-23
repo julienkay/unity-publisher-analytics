@@ -63,9 +63,17 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 .upa-header { display:flex;min-height:148px;flex-direction:column;align-items:stretch;background:#fff;border-bottom:1px solid var(--upa-line); }
 .upa-header-compact { min-height:112px; }
 .upa-header-main { display:flex;align-items:flex-start;justify-content:space-between;gap:24px;padding:25px clamp(24px,4vw,58px) 17px; }
-.upa-header-copy { min-width:0; }
+.upa-header-copy { flex:1;min-width:0; }
 .upa-header-copy>small { color:var(--upa-accent);font-size:var(--upa-font-label);font-weight:850;letter-spacing:1.4px;text-transform:uppercase; }
 .upa-header h1 { margin:4px 0 3px;font-size:var(--upa-font-page-title);line-height:1;letter-spacing:-1.2px; }
+.upa-header-copy h1 { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.upa-package-pagination { display:grid;height:38px;grid-template-columns:36px 44px 36px;align-items:stretch;overflow:hidden;border:1px solid #dfe2e9;border-radius:10px;background:#fafbfc; }
+.upa-package-pagination button { display:grid;place-items:center;padding:0;border:0;background:transparent;color:#626a7c;cursor:pointer; }
+.upa-package-pagination button:hover:not(:disabled) { background:#f0edff;color:#5546c4; }
+.upa-package-pagination button:focus-visible { outline:2px solid #bdb6ef;outline-offset:1px; }
+.upa-package-pagination button:disabled { color:#bdc2cc;cursor:not-allowed;opacity:.65; }
+.upa-package-pagination svg { width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round; }
+.upa-package-pagination span { display:grid;place-items:center;border-right:1px solid #e4e6eb;border-left:1px solid #e4e6eb;color:var(--upa-muted);font-size:var(--upa-font-caption);font-weight:750;letter-spacing:0;text-align:center;white-space:nowrap; }
 .upa-header p { margin:0;color:var(--upa-muted);font-size:var(--upa-font-lead);line-height:1.45; }
 .upa-header-subline { display:flex;align-items:center;gap:12px;min-height:22px; }
 .upa-header-actions { display:flex;align-items:flex-end;gap:10px;margin-left:auto; }
@@ -334,7 +342,15 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 .upa-package-chart-legend span { display:flex;align-items:center;gap:7px; }
 .upa-package-chart-legend i { width:8px;height:8px;border-radius:50%; }
 .upa-package-sales-dot { background:#3ca56f; }.upa-package-claims-dot { background:#d99721; }
+.upa-package-chart-tabs { display:flex;gap:22px;margin:0 0 4px;border-bottom:1px solid var(--upa-line); }
+.upa-package-chart-tabs button { position:relative;display:flex;align-items:center;gap:6px;padding:8px 2px 10px;border:0;background:transparent;color:var(--upa-muted);font:750 var(--upa-font-support)/1 inherit;cursor:pointer; }
+.upa-package-chart-tabs button:hover { color:var(--upa-ink); }
+.upa-package-chart-tabs button:focus-visible { outline:2px solid #bdb6ef;outline-offset:2px;border-radius:4px; }
+.upa-package-chart-tabs button[aria-selected="true"] { color:var(--upa-ink); }
+.upa-package-chart-tabs button[aria-selected="true"]::after { position:absolute;right:0;bottom:-1px;left:0;height:2px;border-radius:2px 2px 0 0;background:var(--upa-accent);content:""; }
+.upa-package-chart-tabs svg { width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round; }
 .upa-package-detail-chart { width:100%;height:300px; }
+.upa-package-combined-chart { height:340px; }
 .upa-package-detail-heatmap { overflow:hidden; }
 .upa-revenue-heatmap-scroll { width:100%;overflow-x:auto; }
 .upa-revenue-heatmap { width:100%;min-width:700px;border-collapse:separate;border-spacing:2px;table-layout:fixed; }
@@ -355,10 +371,14 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 .upa-revenue-heatmap-empty { display:grid;place-items:center;min-height:100px;color:var(--upa-muted);font-size:var(--upa-font-body);text-align:center; }
 .upa-package-detail-metrics { padding:26px; }
 .upa-package-detail-metrics h2 { margin:5px 0 3px;font-size:var(--upa-font-section-title);letter-spacing:-.4px; }
-.upa-package-detail-primary { display:flex;flex-direction:column;gap:5px;margin-top:24px;padding:19px;border:1px solid #e6e2ff;border-radius:13px;background:#f8f7ff; }
+.upa-package-detail-highlights { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:24px; }
+.upa-package-detail-primary { display:flex;min-width:0;flex-direction:column;gap:5px;padding:16px 14px;border:1px solid #e6e2ff;border-radius:13px;background:#f8f7ff; }
 .upa-package-detail-primary span { color:#6355ca;font-size:var(--upa-font-support);font-weight:750; }
-.upa-package-detail-primary strong { color:var(--upa-ink);font-size:30px;letter-spacing:-1px;line-height:1.1; }
+.upa-package-detail-primary strong { color:var(--upa-ink);font-size:25px;letter-spacing:-1px;line-height:1.1; }
 .upa-package-detail-primary small { color:var(--upa-muted);font-size:var(--upa-font-caption);line-height:1.4; }
+.upa-package-growth-primary strong.upa-positive { color:#27865a; }
+.upa-package-growth-primary strong.upa-negative { color:#c44e62; }
+.upa-package-growth-primary strong.upa-neutral { color:var(--upa-ink); }
 .upa-package-detail-metrics dl { margin:15px 0 0; }
 .upa-package-detail-metrics dl>div { display:flex;align-items:center;justify-content:space-between;gap:16px;padding:15px 0;border-bottom:1px solid var(--upa-line); }
 .upa-package-detail-metrics dl>div:last-child { border-bottom:0; }
@@ -558,6 +578,11 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 .upa-theme-dark .upa-performance-legend button:hover,.upa-theme-dark .upa-lifetime-legend button:hover { color:#eef1f6; }
 .upa-theme-dark .upa-package-table tbody tr:hover { background:#233044; }
 .upa-theme-dark .upa-package-row:hover { background:#263246; }
+.upa-theme-dark .upa-package-pagination { border-color:#3a465a;background:#1b2738; }
+.upa-theme-dark .upa-package-pagination button { color:#aeb7c6; }
+.upa-theme-dark .upa-package-pagination button:hover:not(:disabled) { background:#302d55;color:#d7d1ff; }
+.upa-theme-dark .upa-package-pagination button:disabled { color:#596477; }
+.upa-theme-dark .upa-package-pagination span { border-color:#3a465a; }
 .upa-theme-dark .upa-package-avatar { background:linear-gradient(135deg,#302d55,#28324c);color:#b9b0ff; }
 .upa-theme-dark .upa-package-detail-primary { border-color:#403b68;background:#272744; }
 .upa-theme-dark .upa-package-detail-primary span { color:#b4aafa; }
@@ -591,11 +616,13 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 @media (max-width:1000px) { .upa-header-main{flex-wrap:wrap}.upa-header-copy{width:100%}.upa-header-actions{width:100%;margin-left:0;justify-content:flex-end} }
 @media (max-width:900px) { .upa-kpis{grid-template-columns:1fr 1fr}.upa-performance-chart-grid{grid-template-columns:1fr}.upa-performance-layout-control{display:none}.upa-performance-chart-grid[data-layout="wide"] .upa-performance-chart{height:300px} }
 @media (max-width:1100px) { .upa-package-detail-layout{grid-template-columns:1fr}.upa-package-detail-metrics{grid-row:1}.upa-package-detail-metrics dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:20px} }
-@media (max-width:600px) { .upa-package-detail-metrics dl{grid-template-columns:1fr}.upa-package-detail-metrics{padding:20px}.upa-package-detail-chart-card{padding:18px}.upa-package-detail-chart{height:270px} }
+@media (max-width:600px) { .upa-package-detail-metrics dl{grid-template-columns:1fr}.upa-package-detail-metrics{padding:20px}.upa-package-detail-chart-card{padding:18px}.upa-package-detail-chart{height:270px}.upa-package-combined-chart{height:330px}.upa-package-chart-tabs{gap:14px}.upa-package-chart-tabs button{font-size:10px} }
 @media (max-width:760px) { .upa-shell{grid-template-columns:1fr}.upa-sidebar{display:none}.upa-header{min-height:0}.upa-header-main{flex-wrap:wrap;padding:20px 20px 16px}.upa-header-copy{width:100%}.upa-header-actions{width:100%;margin-left:0}.upa-header-control{flex:1;min-width:0}.upa-header-control select,.upa-range-picker{width:100%;min-width:0}.upa-header-subline{align-items:flex-start;flex-direction:column;gap:5px}.upa-refresh-tooltip{left:0;max-width:calc(100vw - 72px);transform:translateY(-3px)}.upa-refresh-tooltip::before{left:14px}.upa-refresh-action:hover .upa-refresh-tooltip,.upa-refresh-action:focus-visible .upa-refresh-tooltip{transform:translateY(0)}.upa-mobile-nav{display:flex;gap:5px;padding:0 20px 11px}.upa-mobile-nav button{height:31px;padding:0 12px;border:1px solid #e0e3ea;border-radius:8px;background:#fff;color:#737b8e;font:750 10px inherit}.upa-mobile-nav button.upa-active{border-color:#c9c3f1;background:#f5f3ff;color:#5546c4}.upa-view-tabs{gap:22px;padding:0 20px}.upa-sync{margin:14px 20px 0}.upa-content{padding:18px 20px 40px}.upa-section-title{flex-direction:column}.upa-section-tools{width:100%;justify-content:space-between}.upa-kpi-groups{grid-template-columns:1fr;gap:24px}.upa-kpis.upa-kpis-trailing{grid-template-columns:repeat(2,minmax(0,1fr))}.upa-kpis.upa-kpis-trailing::before{top:-12px;right:12px;bottom:auto;left:12px;width:auto;height:1px}.upa-revenue-mix-layout{grid-template-columns:1fr;gap:8px}.upa-revenue-mix-visual{height:230px}.upa-performance-control-layout{align-items:stretch;flex-direction:column}.upa-performance-tools{justify-content:flex-start}.upa-revenue-mix-chart{height:230px}.upa-performance-scope-controls{justify-content:flex-start}.upa-performance-package-filter{width:100%}.upa-performance-package-filter .upa-package-filter-panel{right:auto;left:0}.upa-insight-toolbar{align-items:stretch;flex-direction:column}.upa-daily-controls{align-items:stretch;flex-direction:column}.upa-daily-view-control{align-items:flex-start;flex-direction:column}.upa-insight-facts{justify-content:space-between}.upa-insight-facts>span{align-items:flex-start}.upa-lifetime-controls{align-items:stretch;flex-direction:column}.upa-lifetime-controls .upa-inline-select,.upa-lifetime-controls .upa-package-filter{width:100%}.upa-package-filter summary{width:100%}.upa-package-filter-panel{width:min(390px,calc(100vw - 66px))} }
-@media (max-width:540px) { .upa-header-main{gap:17px}.upa-header-actions{gap:7px}.upa-range-popover{right:-45px}.upa-kpis,.upa-kpis.upa-kpis-trailing{grid-template-columns:1fr}.upa-sync{align-items:flex-start;flex-wrap:wrap}.upa-sync-actions{width:100%}.upa-sync-actions button{width:100%}.upa-chart-summary{align-items:flex-start;flex-direction:column}.upa-chart-summary dl{width:100%;justify-content:space-between}.upa-chart-summary dl>div{align-items:flex-start}.upa-revenue-chart,.upa-lifetime-chart{height:330px}.upa-insight-facts{gap:12px;flex-wrap:wrap}.upa-inline-select{align-items:flex-start;flex-direction:column}.upa-inline-select select{width:100%}.upa-performance-scope-controls,.upa-performance-scope-controls .upa-inline-select{width:100%}.upa-sankey-controls{width:100%;align-items:stretch;flex-direction:column}.upa-group-editor-head,.upa-group-name,.upa-group-package-head,.upa-group-package-list,.upa-group-editor-actions{padding-right:16px;padding-left:16px}.upa-group-unavailable{margin-right:16px;margin-left:16px}.upa-group-package-list label>span{align-items:flex-start;flex-direction:column;gap:3px}.upa-calendar-chart,.upa-sankey-chart{overflow-x:auto}.upa-welcome{padding:30px 24px}.upa-welcome h2{font-size:38px;letter-spacing:-2px}.upa-welcome-visual{display:none}.upa-fab{left:14px;bottom:14px} }
+@media (max-width:540px) { .upa-header-main{gap:17px}.upa-header-actions{gap:7px}.upa-package-title-row{grid-template-columns:minmax(0,1fr) auto}.upa-package-pagination{margin-top:0}.upa-range-popover{right:-45px}.upa-kpis,.upa-kpis.upa-kpis-trailing{grid-template-columns:1fr}.upa-sync{align-items:flex-start;flex-wrap:wrap}.upa-sync-actions{width:100%}.upa-sync-actions button{width:100%}.upa-chart-summary{align-items:flex-start;flex-direction:column}.upa-chart-summary dl{width:100%;justify-content:space-between}.upa-chart-summary dl>div{align-items:flex-start}.upa-revenue-chart,.upa-lifetime-chart{height:330px}.upa-insight-facts{gap:12px;flex-wrap:wrap}.upa-inline-select{align-items:flex-start;flex-direction:column}.upa-inline-select select{width:100%}.upa-performance-scope-controls,.upa-performance-scope-controls .upa-inline-select{width:100%}.upa-sankey-controls{width:100%;align-items:stretch;flex-direction:column}.upa-group-editor-head,.upa-group-name,.upa-group-package-head,.upa-group-package-list,.upa-group-editor-actions{padding-right:16px;padding-left:16px}.upa-group-unavailable{margin-right:16px;margin-left:16px}.upa-group-package-list label>span{align-items:flex-start;flex-direction:column;gap:3px}.upa-calendar-chart,.upa-sankey-chart{overflow-x:auto}.upa-welcome{padding:30px 24px}.upa-welcome h2{font-size:38px;letter-spacing:-2px}.upa-welcome-visual{display:none}.upa-fab{left:14px;bottom:14px} }
 @media (max-width:900px) { .upa-settings-section{grid-template-columns:1fr;gap:14px}.upa-settings-intro p{max-width:520px} }
 @media (max-width:760px) { .upa-coverage-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.upa-settings-sync,.upa-settings-row{align-items:flex-start;flex-direction:column}.upa-settings-sync button,.upa-theme-options{width:100%}.upa-theme-options button{flex:1;min-width:0}.upa-danger-zone{align-items:flex-start;flex-direction:column}.upa-danger-zone button{width:100%} }
 @media (max-width:540px) { .upa-group-row:not(.upa-group-built-in){align-items:stretch;flex-direction:column}.upa-group-row>div:last-child{width:100%}.upa-group-row button{flex:1}.upa-group-built-in{align-items:flex-start}.upa-settings-primary{width:100%} }
 @media (max-width:760px) { .upa-performance-scope-control{align-items:flex-start;width:100%;flex-direction:column}.upa-performance-scope-picker,.upa-performance-scope-trigger{width:100%}.upa-performance-scope-menu{right:auto;left:0} }
+@media (max-width:760px) { .upa-header-actions{flex-wrap:wrap} }
+@media (max-width:540px) { .upa-package-nav-control{flex-basis:100%}.upa-package-pagination{width:100%;grid-template-columns:38px 1fr 38px} }
 @media (prefers-reduced-motion:reduce) { .upa-panel,.upa-fab,.upa-toast,.upa-progress i,.upa-refresh-action,.upa-refresh-tooltip,.upa-kpi-tooltip,.upa-lifetime-legend button,.upa-performance-legend button,.upa-account-trigger,.upa-account-chevron{transition:none}.upa-refresh-action.upa-refreshing svg,.upa-sync-preparing i,.upa-progress-preparing i{animation:none} }
