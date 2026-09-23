@@ -70,6 +70,31 @@ The type tokens live on `#upa-root` in `styles.css`.
 - Tooltips must add information or context. Do not use them to repeat the
   visible label or value.
 
+## Publisher-facing wording
+
+Use simple, direct wording for labels, tooltips, explanations, and status
+messages. Use familiar words and short sentences. State what a number means or
+how it is calculated. Do not explain a concept that the page already makes
+clear.
+
+- Keep tooltip text brief. Do not repeat the column title or displayed value.
+- Mention a date range only when the value's scope is not already clear from
+  the page or the range control.
+- Explain paid sales and free claims only when their distinction changes the
+  meaning of the value. Use **Sales** for the combined total when the table
+  presents them together.
+- Avoid API names and internal terms in the interface. The API often calls
+  user-facing reviews **ratings**; use **Reviews** in the interface.
+- For percentages, name the relationship in plain language. For example,
+  explain that the value is the percent of sales that led to a review without
+  adding API or storage details.
+- Do not add question marks or other symbols to a value just to signal a
+  tooltip. Use normal hover and keyboard focus behavior.
+
+Before adding explanatory text, check whether the nearby label, control, or
+description already supplies that information. Keep only the extra context a
+publisher needs to interpret the value.
+
 ## Charts
 
 - Start with the question the chart answers, then choose the visualization.

@@ -15,6 +15,8 @@
     { id: "6", label: "Last 6 months" }, { id: "12", label: "Last 1 year" }, { id: "36", label: "Last 3 years" }, { id: "60", label: "Last 5 years" },
     { id: "mtd", label: "Month to date" }, { id: "ytd", label: "Year to date" }
   ];
+  const DASHBOARD_PACKAGE_COLUMNS = ["sales", "revenue", "monthlyAverage", "growth", "conversion", "pageViews", "downloads", "reviews", "reviewsPerSales"];
+  const DEFAULT_DASHBOARD_PACKAGE_COLUMNS = DASHBOARD_PACKAGE_COLUMNS.filter(key => key !== "reviews" && key !== "reviewsPerSales");
   const API = {
     user: "/publisher-v2-api/user",
     packages: "/publisher-v2-api/proxy?path=%2Fmanagement%2Fonce-published-packages&type=array",
@@ -26,7 +28,7 @@
     daily: "/publisher-v2-api/dashboard/daily"
   };
   let records = [];
-  let prefs = { section: "dashboard", view: "revenue", packageId: "", packageRevenueMode: "cumulative", range: "all", interval: "auto", start: "", end: "", theme: "system", performanceLayout: "grid", performanceScopes: [{ type: "all", id: "all" }], performanceHiddenScopes: [], calendarMetric: "sales", calendarStyle: "calendar", lifetimeMetric: "revenue", lifetimeStyle: "area", lifetimeAlign: "calendar", lifetimeStackDefaultApplied: true, lifetimePackages: [], lifetimeHiddenPackages: [], sankeyPackages: [], sankeyGroupBy: "category", sankeyCategoryDefaultApplied: true };
+  let prefs = { section: "dashboard", view: "revenue", packageId: "", packageRevenueMode: "cumulative", range: "all", interval: "auto", start: "", end: "", theme: "system", performanceLayout: "grid", performanceScopes: [{ type: "all", id: "all" }], performanceHiddenScopes: [], dashboardPackageColumns: DEFAULT_DASHBOARD_PACKAGE_COLUMNS, dashboardPackageReviewsDefaultOffApplied: true, calendarMetric: "sales", calendarStyle: "calendar", lifetimeMetric: "revenue", lifetimeStyle: "area", lifetimeAlign: "calendar", lifetimeStackDefaultApplied: true, lifetimePackages: [], lifetimeHiddenPackages: [], sankeyPackages: [], sankeyGroupBy: "category", sankeyCategoryDefaultApplied: true };
   let packageGroups = [];
   let groupEditor = null;
   let syncJob = null;
@@ -40,6 +42,8 @@
   let isRangePopoverOpen = false;
   let isCustomRangeEditorOpen = false;
   let isPerformanceScopeMenuOpen = false;
+  let isDashboardPackageSettingsOpen = false;
+  let dashboardPackageRows = [];
   const chartInstances = new Map();
   const chartResizeObservers = new Map();
   const chartShareMetadata = new Map();
@@ -279,7 +283,7 @@
   }
 
   async function fetchPackageCategoryMetadata() {
-    const categoriesByIdentifier = new Map(), categoriesByName = new Map(), limit = 200;
+    const categoriesByIdentifier = new Map(), categoriesByName = new Map(), reviewCountsByPackage = new Map(), limit = 200;
     let offset = 0;
     while (true) {
       const body = { limit: String(limit), order_by: "name", order: "asc" };
@@ -288,6 +292,11 @@
       const rows = valueFrom(response, ["package_versions", "packageVersions"]);
       if (!Array.isArray(rows) || !rows.length) break;
       for (const item of rows) {
+        const packageId = String(valueFrom(item, ["package_id", "packageId"]) || ""), rawRatingCount = valueFrom(item, ["count_ratings"]), ratingCount = Number(rawRatingCount);
+        if (packageId && compact(valueFrom(item, ["status"])).toLowerCase() === "published" && rawRatingCount !== null && rawRatingCount !== undefined && rawRatingCount !== "" && Number.isSafeInteger(ratingCount) && ratingCount >= 0) {
+          const existing = reviewCountsByPackage.get(packageId);
+          reviewCountsByPackage.set(packageId, existing === undefined ? ratingCount : Math.max(existing, ratingCount));
+        }
         const category = categoryReference(item);
         if (!category) continue;
         for (const identifier of [valueFrom(item, ["package_id", "packageId"]), valueFrom(item, ["genesis_product_id", "genesisProductId", "product_id", "productId"]), valueFrom(item, ["id"])]) {
@@ -300,7 +309,7 @@
       const total = toNumber(valueFrom(response, ["total"]));
       if (rows.length < limit || (total && offset >= total)) break;
     }
-    return { categoriesByIdentifier, categoriesByName };
+    return { categoriesByIdentifier, categoriesByName, reviewCountsByPackage };
   }
 
   async function fetchPackages() {
@@ -311,7 +320,7 @@
       const name = valueFrom(item, ["name", "title", "package_name"]) || `Package ${id}`;
       const metadataCategory = metadata.categoriesByIdentifier.get(id) || metadata.categoriesByName.get(compact(name).toLocaleLowerCase());
       const categoryId = String(valueFrom(item, ["category_id", "categoryId"]) || metadataCategory?.id || "");
-      return { id, name, categoryId, category: categories.get(categoryId) || packageCategory(item) || metadataCategory?.name || "", firstPublished: parseDate(valueFrom(item, ["first_published_at", "first_published_time", "firstPublishedTime", "first_published"])) };
+      return { id, name, categoryId, category: categories.get(categoryId) || packageCategory(item) || metadataCategory?.name || "", firstPublished: parseDate(valueFrom(item, ["first_published_at", "first_published_time", "firstPublishedTime", "first_published"])), reviewCount: metadata.reviewCountsByPackage.get(id) ?? null };
     }).filter(item => item.id);
   }
 
@@ -387,13 +396,15 @@
   function sanitizedPreferences(storedPrefs = {}) {
     const analyticsViews = ["revenue", "lifetime", "calendar", "sankey", "packages"], ranges = ["all", "7d", "30d", "3", "6", "12", "36", "60", "mtd", "ytd", "custom"];
     const storedSankeyGroupBy = ["none", "category"].includes(storedPrefs.sankeyGroupBy) ? storedPrefs.sankeyGroupBy : "category";
+    const storedDashboardColumns = Array.isArray(storedPrefs.dashboardPackageColumns) ? storedPrefs.dashboardPackageColumns : null;
+    const dashboardReviewsDefaultOffApplied = storedPrefs.dashboardPackageReviewsDefaultOffApplied === true;
     const storedLifetimeAlign = storedPrefs.lifetimeAlign === "age" ? "age" : "calendar";
     const storedLifetimeStyle = storedPrefs.lifetimeStyle === "area" && storedLifetimeAlign === "calendar" ? "area" : "lines";
     const lifetimeStyle = storedPrefs.lifetimeStackDefaultApplied === true ? storedLifetimeStyle : "area";
     return {
       section: ["dashboard", "analytics", "package", "groups", "settings"].includes(storedPrefs.section) ? storedPrefs.section : (storedPrefs.view && storedPrefs.view !== "overview" ? "analytics" : "dashboard"),
       view: analyticsViews.includes(storedPrefs.view) ? storedPrefs.view : "revenue", packageId: compact(storedPrefs.packageId), packageRevenueMode: storedPrefs.packageRevenueMode === "interval" ? "interval" : "cumulative", range: ranges.includes(storedPrefs.range) ? storedPrefs.range : "all", interval: storedPrefs.interval || "auto", start: storedPrefs.start || "", end: storedPrefs.end || "", theme: ["system", "light", "dark"].includes(storedPrefs.theme) ? storedPrefs.theme : "system",
-      performanceLayout: storedPrefs.performanceLayout === "wide" ? "wide" : "grid", performanceScopes: sanitizedPerformanceScopes(storedPrefs.performanceScopes), performanceHiddenScopes: Array.isArray(storedPrefs.performanceHiddenScopes) ? [...new Set(storedPrefs.performanceHiddenScopes.map(String).filter(Boolean))] : [], calendarMetric: storedPrefs.calendarMetric || "sales", calendarStyle: storedPrefs.calendarStyle === "assets" ? "assets" : "calendar", lifetimeMetric: LIFETIME_METRICS[storedPrefs.lifetimeMetric] ? storedPrefs.lifetimeMetric : "revenue", lifetimeStyle, lifetimeAlign: lifetimeStyle === "area" ? "calendar" : storedLifetimeAlign, lifetimeStackDefaultApplied: true, lifetimePackages: Array.isArray(storedPrefs.lifetimePackages) ? storedPrefs.lifetimePackages : [], lifetimeHiddenPackages: Array.isArray(storedPrefs.lifetimeHiddenPackages) ? storedPrefs.lifetimeHiddenPackages : [], sankeyPackages: Array.isArray(storedPrefs.sankeyPackages) ? storedPrefs.sankeyPackages : [], sankeyGroupBy: storedPrefs.sankeyCategoryDefaultApplied === true ? storedSankeyGroupBy : "category", sankeyCategoryDefaultApplied: true
+      performanceLayout: storedPrefs.performanceLayout === "wide" ? "wide" : "grid", performanceScopes: sanitizedPerformanceScopes(storedPrefs.performanceScopes), performanceHiddenScopes: Array.isArray(storedPrefs.performanceHiddenScopes) ? [...new Set(storedPrefs.performanceHiddenScopes.map(String).filter(Boolean))] : [], dashboardPackageColumns: (storedDashboardColumns ? DASHBOARD_PACKAGE_COLUMNS.filter(key => storedDashboardColumns.includes(key)) : [...DEFAULT_DASHBOARD_PACKAGE_COLUMNS]).filter(key => dashboardReviewsDefaultOffApplied || key !== "reviews"), dashboardPackageReviewsDefaultOffApplied: true, calendarMetric: storedPrefs.calendarMetric || "sales", calendarStyle: storedPrefs.calendarStyle === "assets" ? "assets" : "calendar", lifetimeMetric: LIFETIME_METRICS[storedPrefs.lifetimeMetric] ? storedPrefs.lifetimeMetric : "revenue", lifetimeStyle, lifetimeAlign: lifetimeStyle === "area" ? "calendar" : storedLifetimeAlign, lifetimeStackDefaultApplied: true, lifetimePackages: Array.isArray(storedPrefs.lifetimePackages) ? storedPrefs.lifetimePackages : [], lifetimeHiddenPackages: Array.isArray(storedPrefs.lifetimeHiddenPackages) ? storedPrefs.lifetimeHiddenPackages : [], sankeyPackages: Array.isArray(storedPrefs.sankeyPackages) ? storedPrefs.sankeyPackages : [], sankeyGroupBy: storedPrefs.sankeyCategoryDefaultApplied === true ? storedSankeyGroupBy : "category", sankeyCategoryDefaultApplied: true
     };
   }
 
@@ -447,6 +458,7 @@
     packageGroups = [];
     groupEditor = null;
     isPerformanceScopeMenuOpen = false;
+    isDashboardPackageSettingsOpen = false;
     isRefreshing = false;
     render();
     const preferencesKey = publisherStorageKey(PREFS_KEY_PREFIX, identity.id), groupsKey = publisherStorageKey(GROUPS_KEY_PREFIX, identity.id);
@@ -1628,6 +1640,39 @@
     </section>`;
   }
 
+  function dashboardPackageColumnOptions() {
+    return [
+      { key: "sales", label: "Sales", render: item => number(item.salesQty) },
+      { key: "revenue", label: "Revenue / share", render: item => `<span class="upa-table-value">${money(item.sales)}</span><span class="upa-table-inline-detail">${percent(item.share)}</span>` },
+      { key: "monthlyAverage", label: "Monthly avg. (12m)", render: item => `<span class="upa-table-value">${item.trailing.monthCount ? money(item.trailing.monthlyAverage) : "—"}</span>` },
+      { key: "growth", label: "Growth (12m)", render: item => `<span class="upa-table-value ${revenueGrowthClass(item.trailing)}">${revenueGrowthLabel(item.trailing)}</span>` },
+      { key: "conversion", label: "Conversion", render: item => `<span class="upa-table-value">${item.pageViews ? percent(item.conversion) : "—"}</span>` },
+      { key: "pageViews", label: "Pageviews", render: item => `<span class="upa-table-value">${number(item.pageViews)}</span>` },
+      { key: "downloads", label: "Downloads", render: item => `<span class="upa-table-value">${number(item.downloads)}</span>` },
+      { key: "reviews", label: "Reviews", render: item => item.reviewCount == null ? "—" : `<span class="upa-table-value">${number(item.reviewCount)}</span>` },
+      { key: "reviewsPerSales", label: "Reviews / sales", render: item => `<span class="upa-table-value" title="Percent of lifetime sales that led to a review.">${item.lifetimeSalesQty ? percent(item.reviewCount / item.lifetimeSalesQty * 100) : "—"}</span>` }
+    ];
+  }
+
+  function dashboardPackageTableMarkup(rows) {
+    const columns = dashboardPackageColumnOptions().filter(column => prefs.dashboardPackageColumns.includes(column.key));
+    return `<thead><tr><th scope="col">Package</th>${columns.map(column => `<th class="upa-package-column-${column.key}" scope="col">${column.label}</th>`).join("")}</tr></thead><tbody>${rows.map(item => `<tr><th scope="row"><button class="upa-package-detail-link" type="button" data-package-id="${escapeHtml(item.id)}" aria-label="View details for ${escapeHtml(item.name)}"><div class="upa-package-identity" title="${number(item.paidQty)} paid units${item.freeQty ? ` · ${number(item.freeQty)} claims` : ""}"><span class="upa-package-avatar" aria-hidden="true">${escapeHtml(item.name?.trim().slice(0, 1).toUpperCase() || "P")}</span><strong class="upa-package-name">${escapeHtml(item.name)}</strong></div></button></th>${columns.map(column => `<td class="upa-package-column-${column.key}">${column.render(item)}</td>`).join("")}</tr>`).join("")}</tbody>`;
+  }
+
+  function updateDashboardPackageTable() {
+    const table = document.querySelector("#upa-root .upa-dashboard-packages .upa-package-table");
+    if (table) table.innerHTML = dashboardPackageTableMarkup(dashboardPackageRows);
+  }
+
+  function setDashboardPackageSettingsOpen(open) {
+    isDashboardPackageSettingsOpen = open;
+    const settings = document.querySelector("#upa-root .upa-dashboard-package-settings");
+    const trigger = settings?.querySelector(".upa-dashboard-package-settings-trigger");
+    const menu = settings?.querySelector(".upa-dashboard-package-settings-menu");
+    if (trigger) trigger.setAttribute("aria-expanded", String(open));
+    if (menu) menu.hidden = !open;
+  }
+
   function render() {
     renderQueued = false; const host = document.getElementById("upa-root"); if (!host) return;
     disposeCharts(); chartShareMetadata.clear();
@@ -1656,6 +1701,9 @@
     const conversionChange = previousConversionRate === null ? "" : changeIndicator(conversionRate - previousConversionRate, comparisonLabel, " pp");
     const downloadsChange = changeIndicator(relativeChange(downloads, previousDownloads), comparisonLabel);
     const packageHistory = new Map();
+    const allPackageTotals = aggregatePackages(records.filter(row => row.type === "daily" && row.scope === "package"));
+    const lifetimeSalesByPackage = new Map(allPackageTotals.map(item => [String(item.id), item.salesQty]));
+    const packageReviewCounts = new Map((syncJob?.packages || []).map(item => [String(item.id || ""), item.reviewCount]));
     for (const item of records.filter(row => row.type === "daily" && row.scope === "package")) {
       const id = item.packageId || item.package, history = packageHistory.get(id) || []; history.push(item); packageHistory.set(id, history);
     }
@@ -1663,8 +1711,11 @@
     const dashboardPackages = packages.slice(0, 12).map(item => ({
       ...item,
       share: packageRevenueTotal ? item.sales / packageRevenueTotal * 100 : 0,
+      reviewCount: packageReviewCounts.get(String(item.id)) ?? null,
+      lifetimeSalesQty: lifetimeSalesByPackage.get(String(item.id)) || 0,
       trailing: trailingRevenueMetrics(packageHistory.get(item.id) || [], availableBounds)
     }));
+    dashboardPackageRows = dashboardPackages;
     const packageCategories = new Map();
     for (const item of syncJob?.packages || []) {
       const packageKey = String(item.id || item.name || "");
@@ -1798,11 +1849,15 @@
       return `<article class="upa-card upa-performance-metric-card"><div class="upa-section-title"><div><small>${chart.metric.eyebrow}</small><h2>${escapeHtml(chart.metric.label)}</h2><p>${intervalName(interval)} totals for ${performanceChartScopeDescription}.</p></div><div class="upa-section-tools"><span>${chart.pointCount} periods</span>${chartActions(`performance-${chart.metric.id}`, !chart.series.some(item => item.points.length))}</div></div><div class="upa-chart-summary"><dl><div><dt>Total shown</dt><dd>${metricValue(chart.metric, chart.total)}</dd></div><div><dt>Average</dt><dd>${metricValue(chart.metric, chart.average)}</dd></div><div><dt>Peak</dt><dd>${metricValue(chart.metric, chart.peak?.[1] || 0)}</dd></div></dl></div><div id="upa-performance-${chart.metric.id}-chart" class="upa-performance-chart" role="img" aria-label="Interactive ${escapeHtml(chart.metric.label.toLowerCase())} chart"></div></article>`;
     }).join("");
     const dashboardSummary = `<div class="upa-dashboard-summary"><section class="upa-dashboard-mix-card"><div class="upa-section-title"><div><small>ASSET ALLOCATION</small><h2>Revenue mix</h2></div></div>${revenueMixData.items.length ? `<div class="upa-revenue-mix-layout"><div class="upa-revenue-mix-visual"><div id="upa-revenue-mix-chart" class="upa-revenue-mix-chart" role="img" aria-label="Gross revenue contribution by asset for ${escapeHtml(revenueMixData.label)}"></div><div class="upa-revenue-mix-center"><small id="upa-revenue-mix-label">${escapeHtml(revenueMixData.label)}</small><strong id="upa-revenue-mix-value">${money(revenueMixData.total)}</strong></div></div><div class="upa-revenue-concentration"><small>REVENUE CONCENTRATION</small><dl><div><dt>Largest asset share</dt><dd>${revenueMixData.largest ? percent(revenueMixData.largest.value / revenueMixData.total * 100) : "—"}</dd><span>${revenueMixData.largest ? escapeHtml(revenueMixData.largest.name) : "No revenue yet"}</span></div><div><dt>Top 3 share</dt><dd>${percent(revenueMixData.topThreeShare)}</dd><span>${prefs.range === "all" ? "Of lifetime gross revenue" : "Of gross revenue in this range"}</span></div><div><dt>Revenue-generating assets</dt><dd>${number(revenueMixData.packageCount)}</dd><span>With recorded gross revenue</span></div></dl></div></div>` : '<div class="upa-revenue-mix-empty">No gross revenue is available for this range.</div>'}</section><div class="upa-kpi-groups"><div class="upa-kpis upa-kpis-selected"><article><div><small>Gross revenue</small></div><strong>${money(revenueChartData.total)}</strong><span>${number(paidUnits)} paid units in the selected period</span>${revenueChange}</article><article><div><small>Pageviews</small></div><strong>${number(pageViews)}</strong><span>Sales &amp; Claims: ${number(salesQty)}</span>${pageViewsChange}</article><article><div><small>Conversion rate</small></div><strong>${percent(conversionRate)}</strong><span>Sales &amp; Claims as a share of pageviews</span>${conversionChange}</article><article><div><small>Downloads</small></div><strong>${number(downloads)}</strong><span>Across the selected period</span>${downloadsChange}</article></div><div class="upa-kpis upa-kpis-trailing"><article><div><small>Average monthly revenue</small>${kpiHelp("upa-average-revenue-help", "About average monthly revenue", averageRevenueHelp)}</div><strong>${money(trailingRevenue.monthlyAverage)}</strong>${averageRevenueChange}</article><article><div><small>Revenue growth</small>${kpiHelp("upa-revenue-growth-help", "About revenue growth", "Compares gross revenue from the last 12 complete months with the preceding 12 months. It requires 24 months of history.")}</div><strong>${revenueGrowthValue}</strong></article></div></div></div>`;
-    const dashboardPackageTable = `<article class="upa-dashboard-packages"><div class="upa-section-title"><div><small>PACKAGE BREAKDOWN</small><h2>Package performance</h2><p>Selected-range results ranked by gross revenue, with trailing revenue context.</p></div><div class="upa-section-tools"><span>${number(packages.length)} packages</span><button class="upa-table-link" type="button" data-view="packages">Explore packages</button></div></div>${dashboardPackages.length ? `<div class="upa-package-table-wrap"><table class="upa-package-table"><thead><tr><th scope="col">Package</th><th scope="col">Revenue / share</th><th scope="col">Monthly avg. (12m)</th><th scope="col">Growth (12m)</th><th scope="col">Conversion</th><th scope="col">Pageviews</th><th scope="col">Downloads</th></tr></thead><tbody>${dashboardPackages.map(item => `<tr><th scope="row"><div class="upa-package-identity" title="${number(item.paidQty)} paid units${item.freeQty ? ` · ${number(item.freeQty)} claims` : ""}"><span class="upa-package-avatar" aria-hidden="true">${escapeHtml(item.name?.trim().slice(0, 1).toUpperCase() || "P")}</span><strong class="upa-package-name">${escapeHtml(item.name)}</strong></div></th><td><span class="upa-table-value">${money(item.sales)}</span><span class="upa-table-inline-detail">${percent(item.share)}</span></td><td><span class="upa-table-value">${item.trailing.monthCount ? money(item.trailing.monthlyAverage) : "—"}</span></td><td><span class="upa-table-value ${revenueGrowthClass(item.trailing)}">${revenueGrowthLabel(item.trailing)}</span></td><td><span class="upa-table-value">${item.pageViews ? percent(item.conversion) : "—"}</span></td><td><span class="upa-table-value">${number(item.pageViews)}</span></td><td><span class="upa-table-value">${number(item.downloads)}</span></td></tr>`).join("")}</tbody></table></div><div class="upa-package-table-footer"><span>${packages.length > dashboardPackages.length ? `Showing the top ${dashboardPackages.length} of ${packages.length} packages` : `Showing all ${packages.length} packages in this range`}</span></div>` : '<div class="upa-package-table-empty">No package activity is available for this date range.</div>'}</article>`;
+    const dashboardPackageColumns = dashboardPackageColumnOptions();
+    const dashboardPackageSettings = `<div class="upa-dashboard-package-settings"><button class="upa-dashboard-package-settings-trigger" type="button" data-action="dashboard-package-settings-toggle" aria-label="Choose Package performance table metrics" aria-expanded="${isDashboardPackageSettingsOpen}" aria-controls="upa-dashboard-package-settings-menu"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8.5 2.8h3l.5 1.8a5.9 5.9 0 0 1 1.2.7l1.8-.6 1.5 2.6-1.3 1.3a6.2 6.2 0 0 1 0 1.4l1.3 1.3-1.5 2.6-1.8-.6a5.9 5.9 0 0 1-1.2.7l-.5 1.8h-3L8 14a5.9 5.9 0 0 1-1.2-.7l-1.8.6-1.5-2.6 1.3-1.3a6.2 6.2 0 0 1 0-1.4L3.5 7.3 5 4.7l1.8.6A5.9 5.9 0 0 1 8 4.6z"></path><circle cx="10" cy="9.8" r="2.2"></circle></svg></button><div class="upa-dashboard-package-settings-menu" id="upa-dashboard-package-settings-menu" role="group" aria-label="Choose table metrics"><strong>Show metrics</strong>${dashboardPackageColumns.map(column => `<label><input type="checkbox" data-dashboard-package-column="${column.key}" ${prefs.dashboardPackageColumns.includes(column.key) ? "checked" : ""}><span>${column.label}</span></label>`).join("")}</div></div>`;
+    const dashboardPackageTable = `<article class="upa-dashboard-packages"><div class="upa-section-title"><div><small>PACKAGE BREAKDOWN</small><h2>Package performance</h2><p>Selected-range results ranked by gross revenue, with trailing revenue context.</p></div>${dashboardPackageSettings}</div>${dashboardPackages.length ? `<div class="upa-package-table-wrap"><table class="upa-package-table">${dashboardPackageTableMarkup(dashboardPackages)}</table></div><div class="upa-package-table-footer"><span>${packages.length > dashboardPackages.length ? `Showing the top ${dashboardPackages.length} of ${packages.length} packages` : `Showing all ${packages.length} packages in this range`}</span></div>` : '<div class="upa-package-table-empty">No package activity is available for this date range.</div>'}</article>`;
     host.classList.toggle("upa-open", isOpen);
     host.classList.toggle("upa-theme-dark", darkThemeActive());
     document.documentElement.classList.toggle("upa-dashboard-open", isOpen);
     const logoUrl = extensionApi.runtime.getURL("icons/publisher-analytics-128.png");
+    const previousContent = host.querySelector(".upa-content"), previousScrollTop = previousContent?.scrollTop || 0;
+    const previousSection = previousContent?.dataset.section, previousView = previousContent?.dataset.view;
     const dashboardIcon = '<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="2.5" width="6" height="6" rx="1.5"></rect><rect x="11.5" y="2.5" width="6" height="6" rx="1.5"></rect><rect x="2.5" y="11.5" width="6" height="6" rx="1.5"></rect><rect x="11.5" y="11.5" width="6" height="6" rx="1.5"></rect></svg>';
     const onboardingNavigation = '<div class="upa-onboarding-nav"><small>Getting started</small><strong>Build your publisher history</strong><span>One sync brings your available analytics into this workspace.</span></div>';
     const workspaceNavigation = hasData
@@ -1831,17 +1886,16 @@
       </div>
       <div class="upa-toast" role="status" aria-live="polite"></div>
     </aside>`;
+    setDashboardPackageSettingsOpen(isDashboardPackageSettingsOpen);
+    const nextContent = host.querySelector(".upa-content");
+    if (previousContent && nextContent && previousSection === section && previousView === view) {
+      nextContent.style.scrollBehavior = "auto";
+      nextContent.scrollTop = previousScrollTop;
+      requestAnimationFrame(() => { if (nextContent.isConnected) nextContent.style.removeProperty("scroll-behavior"); });
+    }
     if (section === "package" && selectedPackage) {
       host.querySelector(".upa-content")?.insertAdjacentHTML("afterbegin", packageDetailPanel(selectedPackage, selectedPackageTotals, packageRevenueGrowth, packageUnitsTrend, packageRevenueHeatmap, dateBounds, packageInterval));
     }
-    host.querySelectorAll(".upa-dashboard-packages tbody tr").forEach((row, index) => {
-      const identity = row.querySelector(".upa-package-identity"), item = dashboardPackages[index];
-      if (!identity || !item) return;
-      const button = document.createElement("button");
-      button.type = "button"; button.className = "upa-package-detail-link"; button.dataset.packageId = item.id;
-      button.setAttribute("aria-label", `View details for ${item.name}`);
-      identity.replaceWith(button); button.append(identity);
-    });
     if (hasData && isOpen) {
       if (section === "dashboard") { renderRevenueMixChart(revenueMixData); renderOverviewChart(overviewChartData); }
       if (section === "package" && selectedPackage) {
@@ -1915,10 +1969,15 @@
 
   function bindEvents() {
     document.addEventListener("click", async event => {
-      if (!event.target.closest("#upa-root")) return;
+      if (!event.target.closest("#upa-root")) {
+        if (isDashboardPackageSettingsOpen) setDashboardPackageSettingsOpen(false);
+        return;
+      }
       if (!event.target.closest(".upa-package-filter")) document.querySelectorAll("#upa-root .upa-package-filter[open]").forEach(filter => { filter.open = false; });
       const outsideAccountMenu = accountMenuOpen && !event.target.closest(".upa-publisher-account");
       if (outsideAccountMenu) accountMenuOpen = false;
+      const outsideDashboardPackageSettings = isDashboardPackageSettingsOpen && !event.target.closest(".upa-dashboard-package-settings");
+      if (outsideDashboardPackageSettings) setDashboardPackageSettingsOpen(false);
       if (isRangePopoverOpen && !event.target.closest(".upa-range-picker")) {
         isRangePopoverOpen = false; isCustomRangeEditorOpen = false;
         document.querySelector("#upa-root .upa-range-popover")?.remove();
@@ -1968,6 +2027,10 @@
         return;
       }
       if (action === "performance-scope-toggle") { isPerformanceScopeMenuOpen = !isPerformanceScopeMenuOpen; render(); return; }
+      if (action === "dashboard-package-settings-toggle") {
+        setDashboardPackageSettingsOpen(!isDashboardPackageSettingsOpen);
+        return;
+      }
       const performanceScopeButton = event.target.closest("[data-performance-scope]");
       if (performanceScopeButton) {
         const scope = performanceScopeButton.dataset.performanceScope, id = scope === "all" ? "all" : performanceScopeButton.dataset.performanceScopeId || "", key = `${scope}:${id}`;
@@ -2090,6 +2153,16 @@
       if (event.target.id === "upa-lifetime-style") { prefs.lifetimeStyle = event.target.value === "area" ? "area" : "lines"; if (prefs.lifetimeStyle === "area") prefs.lifetimeAlign = "calendar"; await savePrefs(); render(); }
       if (event.target.id === "upa-lifetime-align") { prefs.lifetimeAlign = event.target.value === "age" ? "age" : "calendar"; if (prefs.lifetimeAlign === "age") prefs.lifetimeStyle = "lines"; await savePrefs(); render(); }
       if (event.target.id === "upa-sankey-group") { prefs.sankeyGroupBy = event.target.value === "category" ? "category" : "none"; await savePrefs(); render(); }
+      if (event.target.matches("[data-dashboard-package-column]")) {
+        const key = event.target.dataset.dashboardPackageColumn;
+        if (DASHBOARD_PACKAGE_COLUMNS.includes(key)) {
+          const columns = new Set(prefs.dashboardPackageColumns);
+          if (event.target.checked) columns.add(key); else columns.delete(key);
+          prefs.dashboardPackageColumns = DASHBOARD_PACKAGE_COLUMNS.filter(column => columns.has(column));
+          updateDashboardPackageTable();
+          await savePrefs();
+        }
+      }
       if (event.target.matches("[data-lifetime-package]")) {
         prefs.lifetimePackages = [...document.querySelectorAll("#upa-root [data-lifetime-package]:checked")].map(input => input.dataset.lifetimePackage);
         if (event.target.checked) prefs.lifetimeHiddenPackages = (prefs.lifetimeHiddenPackages || []).filter(key => key !== event.target.dataset.lifetimePackage);
@@ -2105,6 +2178,7 @@
       if (event.key !== "Escape") return;
       if (groupEditor) { groupEditor = null; render(); return; }
       if (isPerformanceScopeMenuOpen) { isPerformanceScopeMenuOpen = false; render(); requestAnimationFrame(() => document.querySelector("#upa-root .upa-performance-scope-trigger")?.focus()); return; }
+      if (isDashboardPackageSettingsOpen) { setDashboardPackageSettingsOpen(false); document.querySelector("#upa-root .upa-dashboard-package-settings-trigger")?.focus(); return; }
       if (accountMenuOpen) { accountMenuOpen = false; render(); requestAnimationFrame(() => document.querySelector("#upa-root .upa-account-trigger")?.focus()); return; }
       const openPackageFilter = document.querySelector("#upa-root .upa-package-filter[open]");
       if (openPackageFilter) { openPackageFilter.open = false; openPackageFilter.querySelector("summary")?.focus(); return; }

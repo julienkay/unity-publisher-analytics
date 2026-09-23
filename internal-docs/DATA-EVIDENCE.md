@@ -105,6 +105,7 @@ The table below separates names present in the retained 2026-08-18 capture from 
 | Category definition | `assetstore_name`, `id`, `multiple`, `name`, `status` | `category_id`, `categoryId`, `assetstoreName`, `title`, `category_name`, `categoryName` |
 | Package metadata envelope | `package_versions`, `package_key_images`, `counts`, `total` | `packageVersions` |
 | Package metadata identity | `id`, `package_id`, and `name`. Nested `vetting.id` and `vetting.genesis_vetting_id` also occurred. | `packageId`, `genesis_product_id`, `genesisProductId`, `product_id`, `productId`, and exact normalized package name |
+| Package metadata ratings | `average_rating` and `count_ratings` occurred as strings on package-version rows. | The current interface treats `count_ratings` on published rows as the package's current review count. This meaning is inferred from one account. |
 | Category assignment | Each retained row had a scalar string under `category`. Redaction prevents identification as an ID, slug, or name. | An object under `category` fixed category mapping in the original live task. The raw shape was not retained. Scalar `category_id`, `categoryId`, and broad inner aliases remain defensive. |
 | Monthly sales | `chargebacks`, `first`, `gross`, `last`, `name`, `package_id`, `price`, `refunds`, `revenue`, and `sales`. All numeric report values were strings. | `packageId`, `package_name`, `quantity`, and generic category aliases |
 | Monthly downloads | Outer `name`, `package_id`, and `downloads`. Nested values are `free_downloads`, `entitled_downloads`, `free_users`, `entitled_users`, `free_first`, `free_last`, `entitled_first`, and `entitled_last`. Values can be null. | camelCase equivalents and package/category aliases |
@@ -191,6 +192,23 @@ is also unknown. Thus, evidence cannot yet define the correct overlap.
 Monthly sales and downloads refresh only the current month, while the revenue ledger is fetched in full. Earlier monthly corrections are therefore missed unless a full resync is run.
 
 ## Metric semantics
+
+### Reviews and review rate
+
+The retained package-metadata fixture has `count_ratings` on published package
+versions. The current interface uses this value as the package's current review
+count. If more than one published version is returned, the interface keeps the
+largest count to avoid adding repeated package totals.
+
+The API often calls reviews **ratings**. The user interface calls them
+**reviews**.
+
+**Evidence level: fixture-backed field shape; meaning and aggregation are
+inferred from one account.** The optional **Reviews / sales** dashboard metric
+divides the current review count by lifetime paid sales plus free claims, then
+formats the ratio as a percentage. Both values use all available history. The
+metric is hidden by default. The review count is not refreshed until the next
+package sync.
 
 ### Monthly sales and daily gross
 

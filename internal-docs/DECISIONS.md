@@ -219,3 +219,20 @@ behavior is unsafe or incomplete. It requires a product or engineering decision.
   refresh does not run while a full-sync checkpoint is incomplete.
 - **Review trigger:** Add a retry policy with bounded backoff, or replace the
   current checkpoint with a persisted coverage model.
+
+## D-019 — Show current package review counts and review rate
+
+- **Status:** Provisional.
+- **Current behavior:** The dashboard reads `count_ratings` from published
+  package-metadata rows. It uses the largest count when Unity returns more than
+  one published row for a package. Reviews is an optional table column. It is
+  off by default. The optional **Reviews / sales** metric is also off by
+  default. It divides the current review count by lifetime paid sales and free
+  claims and formats the ratio as a percentage.
+- **Basis:** The retained one-account fixture contains `count_ratings` as a
+  string on package-version rows. Unity often calls reviews ratings in the
+  API. The source does not document the field's exact meaning or period.
+- **Risk:** Lifetime sales and the current review count can still cover
+  different periods. The count is not refreshed until the next package sync.
+- **Review trigger:** A Portal comparison or additional fixture changes the
+  field meaning, version selection, or period interpretation.

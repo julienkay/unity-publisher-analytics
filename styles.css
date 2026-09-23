@@ -304,14 +304,26 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 .upa-overview-chart { width:100%;height:355px; }
 .upa-dashboard-view .upa-dashboard-packages { display:block;min-height:0;padding:22px;border:1px solid var(--upa-line);border-radius:17px;overflow:hidden;background:var(--upa-card);box-shadow:0 5px 22px rgba(28,36,55,.045); }
 .upa-dashboard-packages .upa-section-title { margin-bottom:9px; }
+.upa-dashboard-package-settings { position:relative;z-index:8;flex:0 0 auto; }
+.upa-dashboard-package-settings-trigger { display:grid;place-items:center;width:36px;height:36px;border:0;border-radius:8px;background:transparent;color:#7c8495;cursor:pointer; }
+.upa-dashboard-package-settings-trigger:hover { background:#f0eff7;color:#5142bf; }
+.upa-dashboard-package-settings-trigger:focus-visible,.upa-dashboard-package-settings-menu input:focus-visible { outline:2px solid #bdb6ef;outline-offset:2px; }
+.upa-dashboard-package-settings-trigger svg { width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.45;stroke-linecap:round;stroke-linejoin:round; }
+.upa-dashboard-package-settings-menu { position:absolute;top:calc(100% + 6px);right:0;width:220px;padding:10px;border:1px solid #dfe2e9;border-radius:11px;background:#fff;box-shadow:0 12px 32px rgba(27,31,45,.16); }
+.upa-dashboard-package-settings-menu[hidden] { display:none; }
+.upa-dashboard-package-settings-menu>strong { display:block;padding:3px 7px 7px;color:#7d8495;font-size:var(--upa-font-caption);font-weight:800; }
+.upa-dashboard-package-settings-menu label { display:flex;align-items:center;gap:9px;min-height:34px;padding:0 7px;border-radius:7px;color:#41495b;font-size:var(--upa-font-support);font-weight:650;cursor:pointer; }
+.upa-dashboard-package-settings-menu label:hover { background:#f5f3ff; }
+.upa-dashboard-package-settings-menu input { width:14px;height:14px;margin:0;accent-color:#6c5ce7; }
 .upa-table-link { height:30px;padding:0 10px;border:1px solid #dddfea;border-radius:8px;background:#fff;color:#5d4dcc;font-family:inherit;font-size:var(--upa-font-caption);font-weight:750;cursor:pointer;white-space:nowrap; }
 .upa-table-link:hover { border-color:#c9c3f1;background:#f7f5ff;color:#4637b1; }
 .upa-dashboard-packages .upa-package-table-wrap { display:block;width:100%;overflow-x:auto; }
 .upa-package-table { width:100%;min-width:1050px;border-collapse:collapse;table-layout:fixed; }
 .upa-package-table th,.upa-package-table td { padding:15px 12px;border-top:1px solid #e5e7ed;text-align:left;vertical-align:middle; }
+.upa-dashboard-packages .upa-package-table thead th:not(:first-child),.upa-dashboard-packages .upa-package-table tbody td { text-align:right; }
 .upa-package-table thead th { padding-top:10px;padding-bottom:10px;color:#8990a1;font-size:var(--upa-font-label);font-weight:800;letter-spacing:.75px;text-transform:uppercase;white-space:nowrap; }
-.upa-package-table thead th:first-child { width:24%; }
-.upa-package-table thead th:nth-child(2) { width:17%; }
+.upa-package-table thead th:first-child { width:26%; }
+.upa-dashboard-packages .upa-package-table thead .upa-package-column-sales,.upa-dashboard-packages .upa-package-table tbody .upa-package-column-sales { width:8%; }
 .upa-package-table tbody th { font-weight:inherit; }
 .upa-package-table tbody tr { transition:background-color .16s ease; }
 .upa-package-table tbody tr:hover { background:#fafafe; }
@@ -321,6 +333,7 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 .upa-package-table td { min-width:0;color:#2c3446;font-size:var(--upa-font-body);font-weight:700;white-space:nowrap; }
 .upa-table-value { font:inherit; }
 .upa-table-inline-detail { margin-left:6px;color:#8a91a1;font-size:var(--upa-font-caption);font-weight:650; }
+.upa-package-table .upa-table-review-share { display:block;width:max-content;margin:3px 0 0 auto;cursor:default; }
 .upa-package-table .upa-positive { color:#27865a; }.upa-package-table .upa-negative { color:#c44e62; }.upa-package-table .upa-neutral { color:#727a8d; }
 .upa-dashboard-packages .upa-package-table-footer { display:flex;align-items:center;justify-content:flex-end;padding:12px 2px 0;color:#8a91a1;font-size:var(--upa-font-caption); }
 .upa-dashboard-packages .upa-package-table-empty { display:grid;place-items:center;min-height:120px;border-top:1px solid #eceef3;color:var(--upa-muted);font-size:var(--upa-font-body); }
@@ -577,6 +590,12 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 .upa-theme-dark .upa-pulse-legend,.upa-theme-dark .upa-performance-legend button,.upa-theme-dark .upa-lifetime-legend button { color:#aeb7c6; }
 .upa-theme-dark .upa-performance-legend button:hover,.upa-theme-dark .upa-lifetime-legend button:hover { color:#eef1f6; }
 .upa-theme-dark .upa-package-table tbody tr:hover { background:#233044; }
+.upa-theme-dark .upa-dashboard-package-settings-menu { border-color:#38455a;background:#182334;color:#d6deeb; }
+.upa-theme-dark .upa-dashboard-package-settings-trigger { color:#9aa6b9; }
+.upa-theme-dark .upa-dashboard-package-settings-trigger:hover { background:#263247;color:#d6deeb; }
+.upa-theme-dark .upa-dashboard-package-settings-menu>strong { color:#9aa6b9; }
+.upa-theme-dark .upa-dashboard-package-settings-menu label { color:#d6deeb; }
+.upa-theme-dark .upa-dashboard-package-settings-menu label:hover { background:#263247; }
 .upa-theme-dark .upa-package-row:hover { background:#263246; }
 .upa-theme-dark .upa-package-pagination { border-color:#3a465a;background:#1b2738; }
 .upa-theme-dark .upa-package-pagination button { color:#aeb7c6; }
