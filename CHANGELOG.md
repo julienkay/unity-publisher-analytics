@@ -6,6 +6,7 @@ This file lists the main changes that affect publishers.
 
 - Added package detail pages with package-specific trends, monthly revenue, and lifetime totals. Move between packages without losing the selected time range or interval.
 - Added an activity heatmap to show daily package activity over time.
+- Expanded package analytics with configurable revenue and growth charts, plus dashboard package metrics you can customize.
 - Made full-history sync more reliable after errors, interruptions, reloads, new packages, and data resets.
 - Made monthly report sync faster.
 - Kept empty publisher workspaces easy to navigate and showed the refresh action only on the dashboard.
