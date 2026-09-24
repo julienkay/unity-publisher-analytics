@@ -2,7 +2,12 @@
 
 This file lists the main changes that affect publishers.
 
-## Unreleased
+## 1.2.1 — 2026-09-24
+
+- Added Carted, Quick looks, and revenue per pageview metrics.
+- Improved metric descriptions and package table options.
+
+## 1.2.0 — 2026-09-24
 
 - Added package detail pages with package-specific trends, monthly revenue, and lifetime totals. Move between packages without losing the selected time range or interval.
 - Added an activity heatmap to show daily package activity over time.

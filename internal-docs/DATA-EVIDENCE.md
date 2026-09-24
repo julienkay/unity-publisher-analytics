@@ -110,7 +110,7 @@ The table below separates names present in the retained 2026-08-18 capture from 
 | Monthly sales | `chargebacks`, `first`, `gross`, `last`, `name`, `package_id`, `price`, `refunds`, `revenue`, and `sales`. All numeric report values were strings. | `packageId`, `package_name`, `quantity`, and generic category aliases |
 | Monthly downloads | Outer `name`, `package_id`, and `downloads`. Nested values are `free_downloads`, `entitled_downloads`, `free_users`, `entitled_users`, `free_first`, `free_last`, `entitled_first`, and `entitled_last`. Values can be null. | camelCase equivalents and package/category aliases |
 | Revenue ledger | Direct `date`, `description`, `debit`, `credit`, and `balance` | None |
-| Daily performance | Date-keyed object. Observed keys were `carted`, `chargebacks`, `downloads`, `free_obtained`, `gross`, `page_views`, `quick_looks`, `refunds`, `revenue`, `sales`, and `wishlisted`. Metrics were JSON numbers. | `rating` did not occur in the captured month. `paid_sales`, `paidSales`, `freeObtained`, `pageViews`, `ratingAvg`, and `quickLooks` remain unfixture-backed. |
+| Daily performance | Date-keyed object. Observed keys were `carted`, `chargebacks`, `downloads`, `free_obtained`, `gross`, `page_views`, `quick_looks`, `refunds`, `revenue`, `sales`, and `wishlisted`. Metrics were JSON numbers. | `rating` did not occur in the captured month. `paid_sales`, `paidSales`, `freeObtained`, `pageViews`, and `ratingAvg` remain unfixture-backed. The user has confirmed that Unity returns `carted` and `quick_looks`; no broader Unity contract is claimed. |
 
 The broad aliases were pragmatic prototype hardening. Before they become a maintained compatibility layer, each actual variant should have a fixture and an origin note. Unused aliases should then be removed. The package normalizer maps the captured `first_published_at` value to `firstPublished`.
 
@@ -265,6 +265,23 @@ The monthly CSV presents refunds and chargebacks alongside quantity, so they are
 The analytics CSV includes a package with `Wishlisted = -1` for the selected period. That proves the portal's aggregate wishlist metric can be negative and therefore represents a net change, not gross additions alone.
 
 Daily `wishlisted` is assumed to be the additive daily component of that net change. This mapping has not been reconciled against an export.
+
+### Carted and quick looks
+
+Unity's daily data includes numeric `carted` and `quick_looks` values. The
+extension stores both values on each daily record. It sums them across dates
+and packages for charts and package totals. **Carted** counts cart additions.
+**Quick looks** counts quick looks. These names and descriptions follow the
+publisher's supplied field meaning. They do not establish that either event
+leads to a sale.
+
+### Revenue per pageview
+
+Revenue per pageview is a derived metric. The extension divides gross revenue
+by pageviews for the selected package and period. It calculates the ratio from
+summed revenue and summed pageviews. It does not add daily ratios together.
+Periods with no pageviews have no meaningful ratio and display as zero in
+charts or as unavailable in the package table.
 
 ### Downloads and users
 

@@ -254,10 +254,10 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 .upa-kpis article .upa-change-positive { color:#27865a; }
 .upa-kpis article .upa-change-negative { color:#c44e62; }
 .upa-kpis article .upa-change-neutral { color:#858c9d; }
-.upa-kpi-help { position:relative;display:grid;place-items:center;flex:0 0 auto;width:26px;height:26px;margin:-5px -5px -5px 0;padding:0;border:0;border-radius:8px;background:transparent;color:#9aa1af;cursor:help; }
-.upa-kpi-help:hover { background:#f4f5f8;color:#666f82; }
+.upa-kpi-help { position:relative;display:grid;place-items:center;flex:0 0 auto;width:26px;height:26px;margin:-5px -5px -5px 0;padding:0;border:0;border-radius:8px;background:transparent;color:#9aa1af;cursor:default; }
+.upa-kpi-help:hover { background:transparent;color:inherit; }
 .upa-kpi-help:focus-visible { outline:2px solid #bdb6ef;outline-offset:1px; }
-.upa-kpi-help svg { width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.35;stroke-linecap:round;stroke-linejoin:round; }
+.upa-kpi-help svg { display:none; }
 .upa-kpi-tooltip { position:absolute;top:calc(100% + 8px);right:0;z-index:20;width:220px;padding:10px 11px;border:1px solid #2f3546;border-radius:9px;background:#1c2130;color:#f5f6fa;font-size:var(--upa-font-support);font-weight:550;line-height:1.5;text-align:left;box-shadow:0 10px 28px rgba(25,30,44,.22);opacity:0;visibility:hidden;transform:translateY(-3px);pointer-events:none;transition:opacity .15s,transform .15s,visibility .15s; }
 .upa-kpi-tooltip::before { content:"";position:absolute;right:8px;bottom:100%;border:5px solid transparent;border-bottom-color:#2f3546; }
 .upa-kpi-help:hover .upa-kpi-tooltip,.upa-kpi-help:focus-visible .upa-kpi-tooltip { opacity:1;visibility:visible;transform:translateY(0); }
@@ -327,7 +327,7 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 .upa-package-table tbody th { font-weight:inherit; }
 .upa-package-table tbody tr { transition:background-color .16s ease; }
 .upa-package-table tbody tr:hover { background:#fafafe; }
-.upa-package-identity { display:flex;align-items:center;gap:10px;min-width:0;cursor:help; }
+.upa-package-identity { display:flex;align-items:center;gap:10px;min-width:0;cursor:default; }
 .upa-package-avatar { display:grid;place-items:center;flex:0 0 auto;width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#eeeaff,#f7f5ff);color:#5b4bc8;font-size:var(--upa-font-support);font-weight:850; }
 .upa-package-name { min-width:0;overflow:hidden;color:#2c3446;font-size:var(--upa-font-body);font-weight:700;line-height:1.43;text-overflow:ellipsis;white-space:nowrap; }
 .upa-package-table td { min-width:0;color:#2c3446;font-size:var(--upa-font-body);font-weight:700;white-space:nowrap; }
@@ -645,3 +645,9 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 @media (max-width:760px) { .upa-header-actions{flex-wrap:wrap} }
 @media (max-width:540px) { .upa-package-nav-control{flex-basis:100%}.upa-package-pagination{width:100%;grid-template-columns:38px 1fr 38px} }
 @media (prefers-reduced-motion:reduce) { .upa-panel,.upa-fab,.upa-toast,.upa-progress i,.upa-refresh-action,.upa-refresh-tooltip,.upa-kpi-tooltip,.upa-lifetime-legend button,.upa-performance-legend button,.upa-account-trigger,.upa-account-chevron{transition:none}.upa-refresh-action.upa-refreshing svg,.upa-sync-preparing i,.upa-progress-preparing i{animation:none} }
+
+.upa-metric-help { position:relative;display:inline-block;cursor:default; }
+.upa-metric-help .upa-metric-tooltip { bottom:calc(100% + 8px);left:50%;transform:translate(-50%,3px); }
+.upa-metric-help:hover .upa-metric-tooltip,.upa-metric-help:focus-within .upa-metric-tooltip { visibility:visible;opacity:1;transform:translate(-50%,0);transition-delay:.45s; }
+.upa-dashboard-package-settings-menu .upa-metric-help .upa-metric-tooltip { left:auto;right:0;bottom:auto;top:calc(100% + 6px);transform:translateY(3px); }
+.upa-dashboard-package-settings-menu .upa-metric-help:hover .upa-metric-tooltip { transform:translateY(0); }
