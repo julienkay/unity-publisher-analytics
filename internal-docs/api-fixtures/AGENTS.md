@@ -11,7 +11,12 @@ repository `AGENTS.md`, `../DATA-SOURCES.md`, this directory's `README.md`,
 - A raw response is an unchanged Portal response. Agents can inspect, compare,
   discuss, and retain raw responses during authorized development.
 - Review a raw response before you commit it. Remove authentication material.
-- Sanitize a fixture when exact private values do not help the evidence.
+- Public package IDs, names, and icon URLs may remain when they help preserve
+  API behavior and cross-fixture relationships. Do not treat public catalog
+  metadata as private publisher analytics.
+- Sanitize financial values or other private values when their exact values do
+  not help the evidence. Never retain authentication material or unrelated
+  sensitive data.
 - Do not retain a general HAR file. Capture only the required request shape and
   parsed JSON response.
 

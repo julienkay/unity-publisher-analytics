@@ -2,6 +2,10 @@
 
 This file lists the main changes that affect publishers.
 
+## 1.2.2 — Unreleased
+
+- Added package icons to Dashboard and Analytics package views.
+
 ## 1.2.1 — 2026-09-24
 
 - Added Carted, Quick looks, and revenue per pageview metrics.

@@ -53,7 +53,8 @@ function Get-ArchiveDetails {
         if ($targetManifest.version -ne $canonicalManifest.version) {
             throw "$BrowserTarget package version does not match the canonical manifest."
         }
-        if (@($targetManifest.host_permissions).Count -ne 1 -or $targetManifest.host_permissions[0] -ne "https://publisher.unity.com/*") {
+        $expectedHostPermissions = @("https://publisher.unity.com/*", "https://assetstorev1-prd-cdn.unity3d.com/*")
+        if (@($targetManifest.host_permissions).Count -ne $expectedHostPermissions.Count -or (Compare-Object -ReferenceObject $expectedHostPermissions -DifferenceObject @($targetManifest.host_permissions))) {
             throw "$BrowserTarget package has unexpected host permissions."
         }
 

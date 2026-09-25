@@ -1,6 +1,6 @@
 # Unity data evidence and semantics
 
-Status: evidence updated 2026-09-19.
+Status: evidence updated 2026-09-25.
 
 This document records evidence about the undocumented Unity Publisher Portal
 APIs that Publisher Analytics+ uses. It distinguishes prototype behavior from a
@@ -44,6 +44,40 @@ CSRF token. It also sends `Content-Type: application/json` and
 | Monthly downloads | `GET /publisher-v2-api/monthly-downloads?date=YYYY-MM-01` | Array of package rows with a nested `downloads` object | **Fixture-backed non-empty month on one account** |
 | Revenue ledger | `GET /publisher-v2-api/publisher-revenues` | Array of ledger entries | **Fixture-backed non-empty sample on one account** |
 | Daily performance | `POST /publisher-v2-api/dashboard/daily` with ISO-midnight `start_date`, `end_date`, and `package_ids` containing zero or one string ID | Object keyed by date | **Fixture-backed catalog and paid-package month on one account** |
+
+### Asset icons
+
+A live read-only request on 2026-09-25 returned `package_key_images` as an
+object keyed by package-version IDs. Each observed value had an `icon` string
+with a protocol-relative PNG URL on `assetstorev1-prd-cdn.unity3d.com`.
+On 2026-09-25, all five retained icon URLs were fetched without credentials.
+Each returned HTTP 200 with `Content-Type: image/png`. Each image decoded as a
+160 × 160 PNG. The user also downloaded an icon displayed in the extension and
+confirmed the same dimensions and format. The probe details are in the
+package-metadata provenance sidecar.
+`package_versions[].id` matched the image-map key. It did not match
+`package_versions[].package_id` in the observed sample. The image map included
+images for draft and declined versions too.
+
+For five published packages in the active account, the unique `published`
+version row's `id` selected an icon-map entry for all five packages. The
+version ID, package ID, status, and icon URL were checked in the same response
+as `/management/once-published-packages`. Four packages had one published
+version row. One additional package had an earlier draft row, which did not
+affect selection. This confirms a working join for this account and response;
+it does not establish behavior when a package has multiple `published` rows or
+when the map entry is absent.
+
+The extension reads package metadata during package discovery. It selects the
+icon from the published version row and keeps its URL on the publisher-scoped
+sync package list. The background downloads the image from the observed CDN and
+stores its bytes in the publisher-scoped IndexedDB icon store. The interface
+uses the stored image in package views. Missing or failed images show the
+package's first letter. The image does not enter analytics records or exports.
+
+This is the only runtime image-host exception to the local-first network
+boundary. API requests remain on `publisher.unity.com`; icon images download
+from `assetstorev1-prd-cdn.unity3d.com` and remain in local extension storage.
 
 ## Monthly report query behavior
 
@@ -105,6 +139,7 @@ The table below separates names present in the retained 2026-08-18 capture from 
 | Category definition | `assetstore_name`, `id`, `multiple`, `name`, `status` | `category_id`, `categoryId`, `assetstoreName`, `title`, `category_name`, `categoryName` |
 | Package metadata envelope | `package_versions`, `package_key_images`, `counts`, `total` | `packageVersions` |
 | Package metadata identity | `id`, `package_id`, and `name`. Nested `vetting.id` and `vetting.genesis_vetting_id` also occurred. | `packageId`, `genesis_product_id`, `genesisProductId`, `product_id`, `productId`, and exact normalized package name |
+| Package metadata images | `package_key_images` keys matched version `id` values. Values contained an `icon` protocol-relative PNG URL. | Package ID to version image mapping is not a direct key lookup; join through the selected version row. |
 | Package metadata ratings | `average_rating` and `count_ratings` occurred as strings on package-version rows. | The current interface treats `count_ratings` on published rows as the package's current review count. This meaning is inferred from one account. |
 | Category assignment | Each retained row had a scalar string under `category`. Redaction prevents identification as an ID, slug, or name. | An object under `category` fixed category mapping in the original live task. The raw shape was not retained. Scalar `category_id`, `categoryId`, and broad inner aliases remain defensive. |
 | Monthly sales | `chargebacks`, `first`, `gross`, `last`, `name`, `package_id`, `price`, `refunds`, `revenue`, and `sales`. All numeric report values were strings. | `packageId`, `package_name`, `quantity`, and generic category aliases |

@@ -9,7 +9,9 @@ evidence and metric semantics.
 
 The export downloads `publisher-analytics-YYYY-MM-DD.json` with the media type `application/json`. It contains every analytics record stored for the active publisher. The selected view, date range, interval, asset scope, and chart filters do not limit the export.
 
-The file does not contain raw API responses, charts, preferences, package groups, or sync progress. The extension has no JSON import or restore action. The file is a copy of analytics data, not a restorable workspace.
+The file does not contain raw API responses, charts, preferences, package
+groups, package icons, or sync progress. The extension has no JSON import or
+restore action. The file is a copy of analytics data, not a restorable workspace.
 
 The file contains private publisher data. Before you share it, remove or replace
 the publisher name, publisher ID, package identities, ledger descriptions, and

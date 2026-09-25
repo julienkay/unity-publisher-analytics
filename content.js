@@ -48,6 +48,9 @@
   const chartResizeObservers = new Map();
   const chartShareMetadata = new Map();
   const pendingApiRequests = new Map();
+  const packageIconDataUrls = new Map();
+  const packageIconRequests = new Set();
+  const packageIconRetryAt = new Map();
   const systemDarkTheme = matchMedia("(prefers-color-scheme: dark)");
 
   const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
@@ -255,7 +258,79 @@
   const putMany = (rows, publisherId = publisherIdentity.id) => rows.length ? database({ type: "UPA_DB_PUT_MANY", publisherId, records: rows }) : Promise.resolve(0);
   const getMeta = (key, publisherId = publisherIdentity.id) => database({ type: "UPA_DB_GET_META", publisherId, key });
   const setMeta = (key, value, publisherId = publisherIdentity.id) => database({ type: "UPA_DB_SET_META", publisherId, key, value });
-  const clearPublisherData = (publisherId = publisherIdentity.id) => database({ type: "UPA_DB_CLEAR", publisherId });
+  const clearPublisherData = async (publisherId = publisherIdentity.id) => {
+    const result = await database({ type: "UPA_DB_CLEAR", publisherId });
+    if (publisherId === publisherIdentity.id) {
+      packageIconDataUrls.clear();
+      for (const key of packageIconRetryAt.keys()) if (key.startsWith(`${publisherId}\u0000`)) packageIconRetryAt.delete(key);
+    }
+    return result;
+  };
+
+  function cachedIconKey(packageId, url) { return `${publisherIdentity.id}\u0000${packageId}\u0000${url}`; }
+
+  function packageIconUrl(value) {
+    const icon = typeof value === "string" ? value.trim() : "";
+    try {
+      const parsed = new URL(icon.startsWith("//") ? `https:${icon}` : icon, location.href);
+      if (parsed.protocol === "https:" && parsed.hostname === "assetstorev1-prd-cdn.unity3d.com") return { url: parsed.href, cacheable: true };
+      if (location.protocol === "http:" && ["127.0.0.1", "localhost"].includes(location.hostname) && parsed.origin === location.origin && parsed.pathname.startsWith("/scripts/marketing-assets/package-icons/")) {
+        return { url: parsed.href, cacheable: false };
+      }
+    } catch { /* A malformed or untrusted URL uses the letter fallback. */ }
+    return null;
+  }
+
+  function hydrateVisiblePackageIcons() {
+    if (!publisherIdentity.id) return;
+    const pending = new Map();
+    for (const wrapper of document.querySelectorAll("#upa-root .upa-package-icon-pending[data-package-icon-id][data-package-icon-url]")) {
+      const packageId = wrapper.dataset.packageIconId, url = wrapper.dataset.packageIconUrl, key = cachedIconKey(packageId, url);
+      if (packageIconDataUrls.has(key) || packageIconRequests.has(key) || (packageIconRetryAt.get(key) || 0) > Date.now()) continue;
+      pending.set(packageId, { url, key });
+    }
+    if (!pending.size) return;
+    for (const { key } of pending.values()) { packageIconRequests.add(key); packageIconRetryAt.set(key, Date.now() + 60000); }
+    const publisherId = publisherIdentity.id;
+    database({ type: "UPA_DB_CACHE_PACKAGE_ICONS", publisherId, items: [...pending].map(([packageId, item]) => ({ packageId, url: item.url })) })
+      .then(icons => {
+        if (publisherIdentity.id !== publisherId) return;
+        for (const icon of icons || []) {
+          const item = pending.get(icon.packageId);
+          if (!item || item.url !== icon.url || typeof icon.dataUrl !== "string" || !icon.dataUrl.startsWith("data:image/")) continue;
+          packageIconDataUrls.set(item.key, icon.dataUrl);
+          packageIconRetryAt.delete(item.key);
+          for (const wrapper of document.querySelectorAll("#upa-root .upa-package-icon-pending[data-package-icon-id][data-package-icon-url]")) {
+            if (wrapper.dataset.packageIconId !== icon.packageId || wrapper.dataset.packageIconUrl !== icon.url) continue;
+            const image = document.createElement("img");
+            image.alt = ""; image.loading = "lazy"; image.src = icon.dataUrl;
+            wrapper.replaceChildren(image); wrapper.classList.remove("upa-package-icon-pending"); wrapper.classList.add("upa-package-icon-wrap");
+          }
+        }
+      })
+      .catch(() => { /* Missing or unavailable icons keep the letter fallback. */ })
+      .finally(() => { for (const { key } of pending.values()) packageIconRequests.delete(key); });
+  }
+
+  async function cacheDiscoveredPackageIcons(packages, publisherId, generation) {
+    const items = (packages || []).map(item => ({ packageId: String(item.id || "").trim(), url: packageIconUrl(item.icon) }))
+      .filter(item => item.packageId && item.url?.cacheable).map(item => ({ packageId: item.packageId, url: item.url.url }));
+    for (let offset = 0; offset < items.length; offset += 30) {
+      if (!ownsWorkspace(publisherId, generation)) return;
+      const batch = items.slice(offset, offset + 30).filter(item => {
+        const key = cachedIconKey(item.packageId, item.url);
+        if (packageIconDataUrls.has(key) || packageIconRequests.has(key) || (packageIconRetryAt.get(key) || 0) > Date.now()) return false;
+        packageIconRequests.add(key);
+        return true;
+      });
+      if (!batch.length) continue;
+      try {
+        await database({ type: "UPA_DB_CACHE_PACKAGE_ICONS", publisherId, items: batch, returnDataUrls: false });
+        if (!ownsWorkspace(publisherId, generation)) return;
+      } catch { /* Icon caching is optional; each package keeps its letter fallback. */ }
+      finally { for (const item of batch) packageIconRequests.delete(cachedIconKey(item.packageId, item.url)); scheduleRender(); }
+    }
+  }
 
   async function apiJson(path, options = {}) {
     const requestId = crypto.randomUUID(), method = options.method || "GET";
@@ -290,7 +365,7 @@
   }
 
   async function fetchPackageCategoryMetadata() {
-    const categoriesByIdentifier = new Map(), categoriesByName = new Map(), reviewCountsByPackage = new Map(), limit = 200;
+    const categoriesByIdentifier = new Map(), categoriesByName = new Map(), reviewCountsByPackage = new Map(), iconsByPackage = new Map(), limit = 200;
     let offset = 0;
     while (true) {
       const body = { limit: String(limit), order_by: "name", order: "asc" };
@@ -300,6 +375,13 @@
       if (!Array.isArray(rows) || !rows.length) break;
       for (const item of rows) {
         const packageId = String(valueFrom(item, ["package_id", "packageId"]) || ""), rawRatingCount = valueFrom(item, ["count_ratings"]), ratingCount = Number(rawRatingCount);
+        const versionId = String(valueFrom(item, ["id"]) || ""), icon = response.package_key_images?.[versionId]?.icon;
+        if (packageId && compact(valueFrom(item, ["status"])).toLowerCase() === "published" && typeof icon === "string" && icon.trim()) {
+          const existing = iconsByPackage.get(packageId);
+          if (!existing || String(valueFrom(item, ["modified", "status_updated"]) || "") > existing.modified) {
+            iconsByPackage.set(packageId, { icon: icon.trim(), modified: String(valueFrom(item, ["modified", "status_updated"]) || "") });
+          }
+        }
         if (packageId && compact(valueFrom(item, ["status"])).toLowerCase() === "published" && rawRatingCount !== null && rawRatingCount !== undefined && rawRatingCount !== "" && Number.isSafeInteger(ratingCount) && ratingCount >= 0) {
           const existing = reviewCountsByPackage.get(packageId);
           reviewCountsByPackage.set(packageId, existing === undefined ? ratingCount : Math.max(existing, ratingCount));
@@ -316,7 +398,7 @@
       const total = toNumber(valueFrom(response, ["total"]));
       if (rows.length < limit || (total && offset >= total)) break;
     }
-    return { categoriesByIdentifier, categoriesByName, reviewCountsByPackage };
+    return { categoriesByIdentifier, categoriesByName, reviewCountsByPackage, iconsByPackage };
   }
 
   async function fetchPackages() {
@@ -327,7 +409,7 @@
       const name = valueFrom(item, ["name", "title", "package_name"]) || `Package ${id}`;
       const metadataCategory = metadata.categoriesByIdentifier.get(id) || metadata.categoriesByName.get(compact(name).toLocaleLowerCase());
       const categoryId = String(valueFrom(item, ["category_id", "categoryId"]) || metadataCategory?.id || "");
-      return { id, name, categoryId, category: categories.get(categoryId) || packageCategory(item) || metadataCategory?.name || "", firstPublished: parseDate(valueFrom(item, ["first_published_at", "first_published_time", "firstPublishedTime", "first_published"])), reviewCount: metadata.reviewCountsByPackage.get(id) ?? null };
+      return { id, name, categoryId, category: categories.get(categoryId) || packageCategory(item) || metadataCategory?.name || "", firstPublished: parseDate(valueFrom(item, ["first_published_at", "first_published_time", "firstPublishedTime", "first_published"])), reviewCount: metadata.reviewCountsByPackage.get(id) ?? null, icon: metadata.iconsByPackage.get(id)?.icon || "" };
     }).filter(item => item.id);
   }
 
@@ -501,6 +583,7 @@
     syncJob = { publisherId, active: true, phase: "months", startedAt: new Date().toISOString(), packages, start, endExclusive: addDays(endInclusive, 1), months, monthIndex: 0,
       scopes, scopeIndex: 0, cursor: start, completed: 1, total: 1 + months.length * 2 + scopes.length * chunksPerScope, label: "Getting your history ready" };
     await saveJob(syncJob, publisherId); render();
+    void cacheDiscoveredPackageIcons(packages, publisherId, generation);
   }
 
   async function runFullSync(publisherId = publisherIdentity.id, generation = workspaceGeneration) {
@@ -592,6 +675,7 @@
     let notice = "", noticeType = "success";
     try {
       const packages = await fetchPackages(), currentMonth = new Date().toISOString().slice(0, 7);
+      if (ownsWorkspace(publisherId, generation)) void cacheDiscoveredPackageIcons(packages, publisherId, generation);
       const [salesRaw, downloadsRaw, revenueRaw] = await Promise.all([apiJson(API.sales(currentMonth)), apiJson(API.downloads(currentMonth)), apiJson(API.revenue)]);
       if (!ownsWorkspace(publisherId, generation)) return;
       await putMany([...normalizeSales(salesRaw, currentMonth, publisherId), ...normalizeDownloads(downloadsRaw, currentMonth, publisherId), ...normalizeRevenue(revenueRaw, publisherId)], publisherId);
@@ -700,7 +784,8 @@
   function aggregatePackages(items) {
     const packages = new Map();
     for (const item of items.filter(row => row.scope === "package")) {
-      const id = item.packageId || item.package, current = packages.get(id) || { id, name: item.package, sales: 0, salesQty: 0, paidQty: 0, freeQty: 0, pageViews: 0, downloads: 0, wishlisted: 0 };
+      const id = item.packageId || item.package, current = packages.get(id) || { id, name: item.package, icon: item.icon || "", sales: 0, salesQty: 0, paidQty: 0, freeQty: 0, pageViews: 0, downloads: 0, wishlisted: 0 };
+      if (!current.icon && item.icon) current.icon = item.icon;
       current.sales += item.sales; current.salesQty += item.salesQty; current.paidQty += item.paidQty; current.freeQty += item.freeQty;
       current.pageViews += item.pageViews; current.downloads += item.downloads; current.wishlisted += item.wishlisted; current.carted = (current.carted || 0) + item.carted; current.quickLooks = (current.quickLooks || 0) + item.quickLooks;
       packages.set(id, current);
@@ -799,13 +884,14 @@
     const packages = new Map();
     for (const item of discoveredPackages || []) {
       const key = String(item.id || "");
-      if (key) packages.set(key, { key, name: item.name || `Package ${key}`, revenue: 0 });
+      if (key) packages.set(key, { key, name: item.name || `Package ${key}`, icon: item.icon || "", revenue: 0 });
     }
     for (const item of allItems) {
       const key = String(item.packageId || "");
       if (!key) continue;
-      const current = packages.get(key) || { key, name: item.package || `Package ${key}`, revenue: 0 };
+      const current = packages.get(key) || { key, name: item.package || `Package ${key}`, icon: item.icon || "", revenue: 0 };
       if (item.package) current.name = item.package;
+      if (!current.icon && item.icon) current.icon = item.icon;
       packages.set(key, current);
     }
     for (const item of selectedItems) {
@@ -1324,7 +1410,7 @@
         <article class="upa-card upa-package-detail-chart-card"><div class="upa-section-title"><div><small>REVENUE</small><h2>Revenue and growth</h2><p>Switch the revenue view. Rolling 12-month growth stays visible below.</p></div><div class="upa-section-tools">${chartActions("package-revenue", !revenueGrowth.revenuePoints.length && !revenueGrowth.growthPoints.some(point => Number.isFinite(point.growth)))}</div></div>${revenueTabs}<div id="upa-package-revenue-chart" class="upa-package-detail-chart upa-package-combined-chart" data-revenue-mode="${prefs.packageRevenueMode === "interval" ? "interval" : "cumulative"}" data-growth-series="visible" data-growth-interval="${interval}" data-growth-points="${revenueGrowth.growthPoints.length}" data-chart-range="${bounds.start}:${bounds.end}" data-time-domain="${revenueGrowth.domainStart}:${revenueGrowth.domainEnd}" role="img" aria-label="${prefs.packageRevenueMode === "interval" ? intervalRevenueLabel : "Cumulative revenue"} and rolling 12-month growth for ${escapeHtml(packageInfo.name)} from ${bounds.start} to ${bounds.end}"></div></article>
         <article class="upa-card upa-package-detail-heatmap"><div class="upa-section-title"><div><small>MONTHLY PATTERN</small><h2>Revenue heatmap</h2><p>Gross revenue for each month in the package's full available history.</p></div></div>${packageRevenueHeatmapMarkup(heatmap, packageInfo.name)}</article>
         ${totals.freeQty > 0 ? `<article class="upa-card upa-package-detail-chart-card"><div class="upa-section-title"><div><small>ACQUISITIONS</small><h2>Sales and free claims</h2><p>Paid sales and free claims shown separately for this package.</p></div><div class="upa-section-tools">${chartActions("package-units", !unitsTrend.points.length)}</div></div><div class="upa-package-chart-legend"><span><i class="upa-package-sales-dot"></i>Sales · ${number(totals.paidQty)}</span><span><i class="upa-package-claims-dot"></i>Claims · ${number(totals.freeQty)}</span></div><div id="upa-package-units-chart" class="upa-package-detail-chart" role="img" aria-label="Paid sales and free claims trend for ${escapeHtml(packageInfo.name)}"></div></article>` : ""}
-      </div><aside class="upa-card upa-package-detail-metrics" aria-label="Metrics for ${escapeHtml(packageInfo.name)}"><small>AT A GLANCE</small><h2>Package metrics</h2><p>Performance for the selected time range.</p><div class="upa-package-detail-highlights"><div class="upa-package-detail-primary"><span>Gross revenue</span><strong>${money(totals.sales)}</strong><small>Before refunds and Unity's revenue share</small></div><div class="upa-package-detail-primary upa-package-growth-primary"><span>12-month growth</span><strong class="${growthClass}">${growthValue}</strong><small>${growthPeriod}</small></div></div><dl><div><dt>Sales${totals.freeQty > 0 ? " <small>Paid units</small>" : ""}</dt><dd>${number(totals.paidQty)}</dd></div>${totals.freeQty > 0 ? `<div><dt>Claims <small>Free units</small></dt><dd>${number(totals.freeQty)}</dd></div>` : ""}<div><dt>Pageviews</dt><dd>${number(totals.pageViews)}</dd></div><div><dt><span class="upa-package-metric-label">Conversion ${kpiHelp("upa-package-conversion-help", "About package conversion", conversionDescription)}</span></dt><dd>${conversion}</dd></div><div><dt>Downloads</dt><dd>${number(totals.downloads)}</dd></div></dl></aside></div>
+      </div><aside class="upa-card upa-package-detail-metrics" aria-label="Metrics for ${escapeHtml(packageInfo.name)}"><div class="upa-package-detail-title">${packageIconMarkup(packageInfo)}<div><small>AT A GLANCE</small><h2>Package metrics</h2></div></div><p>Performance for the selected time range.</p><div class="upa-package-detail-highlights"><div class="upa-package-detail-primary"><span>Gross revenue</span><strong>${money(totals.sales)}</strong><small>Before refunds and Unity's revenue share</small></div><div class="upa-package-detail-primary upa-package-growth-primary"><span>12-month growth</span><strong class="${growthClass}">${growthValue}</strong><small>${growthPeriod}</small></div></div><dl><div><dt>Sales${totals.freeQty > 0 ? " <small>Paid units</small>" : ""}</dt><dd>${number(totals.paidQty)}</dd></div>${totals.freeQty > 0 ? `<div><dt>Claims <small>Free units</small></dt><dd>${number(totals.freeQty)}</dd></div>` : ""}<div><dt>Pageviews</dt><dd>${number(totals.pageViews)}</dd></div><div><dt><span class="upa-package-metric-label">Conversion ${kpiHelp("upa-package-conversion-help", "About package conversion", conversionDescription)}</span></dt><dd>${conversion}</dd></div><div><dt>Downloads</dt><dd>${number(totals.downloads)}</dd></div></dl></aside></div>
     </section>`;
   }
 
@@ -1672,7 +1758,7 @@
     const syncAlreadyStarted = Boolean(syncJob?.active || ["preparing", "months", "daily"].includes(syncJob?.phase));
     const settingsSyncAction = records.length || syncAlreadyStarted ? "" : '<div class="upa-settings-sync"><div><strong>Publisher history</strong><small>Bring your available history into this browser.</small></div><button class="upa-settings-primary" type="button" data-action="settings-sync">Sync full history</button></div>';
     return `<section class="upa-settings-page"><section class="upa-settings-section"><div class="upa-settings-intro"><h2>Local data</h2><p>See how much publisher history is currently available.</p></div><article class="upa-settings-panel"><div class="upa-settings-panel-head"><strong>Data coverage</strong><small>Stored for ${escapeHtml(publisherIdentity.name)} in this browser.</small></div><div class="upa-coverage-grid"><div><span>Sales</span><strong>${number(salesMonths)}</strong><small>months</small></div><div><span>Downloads</span><strong>${number(downloadMonths)}</strong><small>months</small></div><div><span>Performance</span><strong>${number(performanceDays)}</strong><small>days</small></div><div><span>Revenue</span><strong>${number(revenueEntries)}</strong><small>entries</small></div></div>${settingsSyncAction}</article></section>
-      <section class="upa-settings-section"><div class="upa-settings-intro"><h2>Data management</h2><p>Back up or remove analytics kept for this publisher.</p></div><article class="upa-settings-panel"><div class="upa-settings-panel-head"><strong>Browser storage</strong><small>Your analytics stays in this browser and is never sent to an external service. Each publisher has a separate local workspace.</small></div><button class="upa-data-action" type="button" data-action="export" ${records.length ? "" : "disabled"}><span><strong>Export data</strong><small>Download a JSON backup of this publisher's analytics.</small></span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5v10m-4-4 4 4 4-4"></path><path d="M3.5 14v2.5h13V14"></path></svg></button><div class="upa-danger-zone"><div><strong>Clear local data</strong><span>Deletes this publisher's synced analytics and saved sync progress. Preferences and package groups are kept.</span></div><button type="button" data-action="clear" ${records.length || syncJob ? "" : "disabled"}>Clear data</button></div></article></section>
+      <section class="upa-settings-section"><div class="upa-settings-intro"><h2>Data management</h2><p>Back up or remove analytics kept for this publisher.</p></div><article class="upa-settings-panel"><div class="upa-settings-panel-head"><strong>Browser storage</strong><small>Your analytics stays in this browser and is never sent to an external service. Each publisher has a separate local workspace.</small></div><button class="upa-data-action" type="button" data-action="export" ${records.length ? "" : "disabled"}><span><strong>Export data</strong><small>Download a JSON backup of this publisher's analytics.</small></span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5v10m-4-4 4 4 4-4"></path><path d="M3.5 14v2.5h13V14"></path></svg></button><div class="upa-danger-zone"><div><strong>Clear local data</strong><span>Deletes this publisher's synced analytics, saved sync progress, and cached package icons. Preferences and package groups are kept.</span></div><button type="button" data-action="clear" ${records.length || syncJob ? "" : "disabled"}>Clear data</button></div></article></section>
       <section class="upa-settings-section"><div class="upa-settings-intro"><h2>Appearance</h2><p>Choose how Publisher Analytics+ looks in this browser.</p></div><article class="upa-settings-panel"><div class="upa-settings-row"><div><strong>Color theme</strong><small>System follows your browser or device preference.</small></div><div class="upa-theme-options" role="group" aria-label="Color theme">${themeOptions}</div></div></article></section>
     </section>`;
   }
@@ -1695,7 +1781,20 @@
 
   function dashboardPackageTableMarkup(rows) {
     const columns = dashboardPackageColumnOptions().filter(column => prefs.dashboardPackageColumns.includes(column.key));
-    return `<thead><tr><th scope="col">Package</th>${columns.map(column => `<th class="upa-package-column-${column.key}" scope="col"${column.description ? ` title="${escapeHtml(column.description)}"` : ""}>${escapeHtml(column.label)}</th>`).join("")}</tr></thead><tbody>${rows.map(item => `<tr><th scope="row"><button class="upa-package-detail-link" type="button" data-package-id="${escapeHtml(item.id)}" aria-label="View details for ${escapeHtml(item.name)}"><div class="upa-package-identity" title="${number(item.paidQty)} paid units${item.freeQty ? ` · ${number(item.freeQty)} claims` : ""}"><span class="upa-package-avatar" aria-hidden="true">${escapeHtml(item.name?.trim().slice(0, 1).toUpperCase() || "P")}</span><strong class="upa-package-name">${escapeHtml(item.name)}</strong></div></button></th>${columns.map(column => `<td class="upa-package-column-${column.key}">${column.render(item)}</td>`).join("")}</tr>`).join("")}</tbody>`;
+    return `<thead><tr><th scope="col">Package</th>${columns.map(column => `<th class="upa-package-column-${column.key}" scope="col"${column.description ? ` title="${escapeHtml(column.description)}"` : ""}>${escapeHtml(column.label)}</th>`).join("")}</tr></thead><tbody>${rows.map(item => `<tr><th scope="row"><button class="upa-package-detail-link" type="button" data-package-id="${escapeHtml(item.id)}" aria-label="View details for ${escapeHtml(item.name)}"><div class="upa-package-identity" title="${number(item.paidQty)} paid units${item.freeQty ? ` · ${number(item.freeQty)} claims` : ""}">${packageIconMarkup(item)}<strong class="upa-package-name">${escapeHtml(item.name)}</strong></div></button></th>${columns.map(column => `<td class="upa-package-column-${column.key}">${column.render(item)}</td>`).join("")}</tr>`).join("")}</tbody>`;
+  }
+
+  function packageIconMarkup(item, className = "upa-package-avatar") {
+    const initial = escapeHtml(item.name?.trim().slice(0, 1).toUpperCase() || "P");
+    const fallback = `<span class="${className}" aria-hidden="true">${initial}</span>`;
+    const trusted = packageIconUrl(item.icon);
+    if (!trusted) return fallback;
+    if (!trusted.cacheable) return `<span class="${className} upa-package-icon-wrap" aria-hidden="true" data-initial="${initial}"><img src="${escapeHtml(trusted.url)}" alt="" loading="lazy" referrerpolicy="no-referrer"></span>`;
+    const packageId = String(item.id || item.key || "").trim();
+    if (!packageId) return fallback;
+    const key = cachedIconKey(packageId, trusted.url), dataUrl = packageIconDataUrls.get(key);
+    if (dataUrl) return `<span class="${className} upa-package-icon-wrap" aria-hidden="true" data-initial="${initial}"><img src="${escapeHtml(dataUrl)}" alt="" loading="lazy"></span>`;
+    return `<span class="${className} upa-package-icon-pending" aria-hidden="true" data-initial="${initial}" data-package-icon-id="${escapeHtml(packageId)}" data-package-icon-url="${escapeHtml(trusted.url)}">${initial}</span>`;
   }
 
   function metricTooltipLabel(label, description) {
@@ -1746,7 +1845,8 @@
     const packageHistory = new Map();
     const allPackageTotals = aggregatePackages(records.filter(row => row.type === "daily" && row.scope === "package"));
     const lifetimeSalesByPackage = new Map(allPackageTotals.map(item => [String(item.id), item.salesQty]));
-    const packageReviewCounts = new Map((syncJob?.packages || []).map(item => [String(item.id || ""), item.reviewCount]));
+    const discoveredPackageById = new Map((syncJob?.packages || []).map(item => [String(item.id || ""), item]));
+    for (const item of packages) item.icon = discoveredPackageById.get(String(item.id))?.icon || item.icon || "";
     for (const item of records.filter(row => row.type === "daily" && row.scope === "package")) {
       const id = item.packageId || item.package, history = packageHistory.get(id) || []; history.push(item); packageHistory.set(id, history);
     }
@@ -1754,7 +1854,8 @@
     const dashboardPackages = packages.slice(0, 12).map(item => ({
       ...item,
       share: packageRevenueTotal ? item.sales / packageRevenueTotal * 100 : 0,
-      reviewCount: packageReviewCounts.get(String(item.id)) ?? null,
+      reviewCount: discoveredPackageById.get(String(item.id))?.reviewCount ?? null,
+      icon: discoveredPackageById.get(String(item.id))?.icon || item.icon || "",
       lifetimeSalesQty: lifetimeSalesByPackage.get(String(item.id)) || 0,
       trailing: trailingRevenueMetrics(packageHistory.get(item.id) || [], availableBounds)
     }));
@@ -1921,7 +2022,7 @@
           ${(syncJob?.active || syncFailed || syncIncomplete) ? `<section class="upa-sync ${syncJob?.active ? "upa-syncing" : ""}" role="status" aria-live="polite">${syncIcon}<div class="upa-sync-copy"><strong>${escapeHtml(syncTitle)}</strong><span>${escapeHtml(syncDetail)}</span>${syncJob?.active ? '<small class="upa-sync-note">Large catalogs can take several minutes. Keep this tab open; if interrupted, progress resumes when you return.</small>' : ""}</div><div class="upa-sync-actions">${syncPreparing ? "" : syncJob?.active ? '<button data-action="stop-sync">Pause</button>' : syncIncomplete ? '<button data-action="continue-sync">Continue</button>' : '<button data-action="sync-all">Try full sync again</button>'}</div>${syncJob?.active ? `<div class="upa-progress ${syncPreparing ? "upa-progress-preparing" : ""}"><i style="width:${progress}%"></i></div>` : ""}</section>` : ""}
           <main class="upa-content" data-section="${section}" data-view="${view}">${publisherIdentityState !== "ready" ? `<section class="upa-welcome"><div class="upa-welcome-copy"><small>PUBLISHER WORKSPACE</small><h2>${publisherIdentityState === "loading" ? "Checking your publisher…" : "We couldn't identify the active publisher."}</h2><p>${publisherIdentityState === "loading" ? "Your local workspace will open in a moment." : "Refresh the Publisher Portal, or try again while signed in."}</p>${publisherIdentityState === "error" ? '<button class="upa-primary upa-large" data-action="retry-publisher">Try again</button>' : ""}</div></section>` : section === "groups" ? groupsPanel(performanceOptions) : section === "settings" ? settingsPanel() : records.length ? `<section class="upa-dashboard-view upa-view-panel upa-view-dashboard" id="upa-view-dashboard">${dashboardSummary}<article class="upa-dashboard-chart"><div class="upa-section-title"><div><small>BUSINESS ACTIVITY</small><h2>Performance over time</h2><p>${intervalName(overviewChartData.interval)} revenue, pageviews, and downloads on aligned timelines.</p></div><div class="upa-section-tools"><span>${overviewChartData.points.length} periods</span>${chartActions("overview")}</div></div><div class="upa-pulse-legend"><span><i class="upa-pulse-revenue"></i>Gross revenue</span><span><i class="upa-pulse-views"></i>Pageviews</span><span><i class="upa-pulse-downloads"></i>Downloads</span></div><div id="upa-overview-chart" class="upa-overview-chart" role="img" aria-label="Aligned gross revenue, pageviews, and downloads timelines"></div></article>${dashboardPackageTable}</section>
             <section class="upa-dashboard-grid"><section class="upa-view-panel upa-view-revenue upa-performance-view" id="upa-view-revenue"><article class="upa-card upa-performance-controls"><div class="upa-performance-control-layout"><div><small>CATALOG PERFORMANCE</small><h2>Compare the signals that drive your business</h2><p>Choose All assets, a saved group, or an individual asset. Every included asset gets its own line across all four charts.</p></div><div class="upa-performance-tools">${performanceLayoutControls}${performanceScopeControls}</div></div>${performanceLegend}</article><div class="upa-performance-chart-grid" data-layout="${prefs.performanceLayout}">${performanceChartsMarkup}</div></section>
-            <article class="upa-card upa-packages-card upa-view-panel upa-view-packages" id="upa-view-packages"><div class="upa-section-title"><div><small>AUDIENCE &amp; CONVERSION</small><h2>Package performance</h2><p>Top packages ranked by gross revenue.</p></div><span>${packages.length} packages</span></div><div class="upa-package-list">${packages.slice(0, 10).map((item, index) => `<button class="upa-package-row" type="button" data-package-id="${escapeHtml(item.id)}" aria-label="View details for ${escapeHtml(item.name)}"><b>${String(index + 1).padStart(2, "0")}</b><div><strong>${escapeHtml(item.name)}</strong><span>${number(item.pageViews)} views · ${item.conversion.toFixed(2)}% conversion · ${number(item.downloads)} downloads</span></div><em>${money(item.sales)}</em><i aria-hidden="true">→</i></button>`).join("")}</div></article></section>
+            <article class="upa-card upa-packages-card upa-view-panel upa-view-packages" id="upa-view-packages"><div class="upa-section-title"><div><small>AUDIENCE &amp; CONVERSION</small><h2>Package performance</h2><p>Top packages ranked by gross revenue.</p></div><span>${packages.length} packages</span></div><div class="upa-package-list">${packages.slice(0, 10).map((item, index) => `<button class="upa-package-row" type="button" data-package-id="${escapeHtml(item.id)}" aria-label="View details for ${escapeHtml(item.name)}"><b>${String(index + 1).padStart(2, "0")}</b>${packageIconMarkup(item)}<div><strong>${escapeHtml(item.name)}</strong><span>${number(item.pageViews)} views · ${item.conversion.toFixed(2)}% conversion · ${number(item.downloads)} downloads</span></div><em>${money(item.sales)}</em><i aria-hidden="true">→</i></button>`).join("")}</div></article></section>
             <section class="upa-card upa-insight-card upa-view-panel upa-view-lifetime" id="upa-view-lifetime"><div class="upa-section-title"><div><small>LIFETIME GROWTH</small><h2>How packages accumulate ${escapeHtml(lifetimeData.metric.noun)}</h2><p>Cumulative ${escapeHtml(lifetimeData.metric.label.toLowerCase())} across all available history makes momentum and plateaus visible.</p></div><div class="upa-section-tools"><span>${lifetimeData.pointCount} months</span>${chartActions("lifetime", !lifetimeData.series.length)}</div></div><div class="upa-insight-toolbar upa-lifetime-toolbar"><div class="upa-lifetime-controls"><label class="upa-inline-select">View<select id="upa-lifetime-style"><option value="area" ${lifetimeData.style === "area" ? "selected" : ""}>Stacked area</option><option value="lines" ${lifetimeData.style === "lines" ? "selected" : ""}>Cumulative lines</option></select></label><label class="upa-inline-select upa-metric-select">Metric<select id="upa-lifetime-metric" aria-describedby="upa-lifetime-metric-help">${Object.values(LIFETIME_METRICS).map(metric => `<option value="${metric.id}" ${lifetimeData.metric.id === metric.id ? "selected" : ""}>${metric.label}</option>`).join("")}</select><span id="upa-lifetime-metric-help" class="upa-metric-tooltip" role="tooltip">${escapeHtml(lifetimeData.metric.description)}</span></label>${lifetimeData.style === "lines" ? `<label class="upa-inline-select">Align<select id="upa-lifetime-align"><option value="calendar" ${lifetimeData.align === "calendar" ? "selected" : ""}>Calendar time</option><option value="age" ${lifetimeData.align === "age" ? "selected" : ""}>${lifetimeData.metric.ageLabel}</option></select></label>` : ""}<details class="upa-package-filter"><summary><span>Packages</span><strong>${lifetimeData.explicitKeys.length ? `${lifetimeData.explicitKeys.length} selected` : `Top 8 by ${lifetimeData.metric.rankingLabel}`}</strong></summary><div class="upa-package-filter-panel"><div class="upa-package-filter-head"><span>Choose packages to compare</span><button data-action="lifetime-top">Use top 8</button></div><div class="upa-package-checklist">${lifetimeData.options.map(item => `<label><input type="checkbox" data-lifetime-package="${escapeHtml(item.key)}" ${lifetimeData.activePackages.some(active => active.key === item.key) ? "checked" : ""}><span><strong>${escapeHtml(item.name)}</strong><small>${lifetimeValue(lifetimeData.metric, item.total)}</small></span></label>`).join("")}</div></div></details></div></div><div class="upa-lifetime-legend">${lifetimeData.legend.map(item => `<button type="button" data-lifetime-legend-package="${escapeHtml(item.key)}" aria-pressed="${item.visible}" title="${item.visible ? "Hide" : "Show"} ${escapeHtml(item.name)}"><i style="background:${item.color}"></i><strong>${escapeHtml(item.name)}</strong><em>${lifetimeValue(lifetimeData.metric, item.total)}</em></button>`).join("")}</div><div id="upa-lifetime-chart" class="upa-lifetime-chart" role="img" aria-label="Cumulative ${escapeHtml(lifetimeData.metric.label.toLowerCase())} by package"></div></section>
             <section class="upa-card upa-insight-card upa-view-panel upa-view-calendar" id="upa-view-calendar"><div class="upa-section-title"><div><small>SEASONALITY &amp; OUTLIERS</small><h2>${prefs.calendarStyle === "assets" ? "Daily activity by asset" : "Daily activity calendar"}</h2><p>${prefs.calendarStyle === "assets" ? "Compare every asset across thin daily slices. Drag the timeline to inspect earlier history." : "Compare daily intensity across years and spot recurring patterns at a glance."}</p></div><div class="upa-section-tools"><span>${prefs.calendarStyle === "assets" ? `${assetHeatmapData.assets.length} assets` : `${calendarData.years.length} ${calendarData.years.length === 1 ? "year" : "years"}`}</span>${chartActions("calendar")}</div></div><div class="upa-insight-toolbar upa-daily-toolbar"><div class="upa-daily-controls"><div class="upa-daily-view-control"><span>View</span><div class="upa-daily-view-options" role="group" aria-label="Daily patterns view"><button type="button" data-calendar-style="calendar" aria-pressed="${prefs.calendarStyle !== "assets"}">Year calendar</button><button type="button" data-calendar-style="assets" aria-pressed="${prefs.calendarStyle === "assets"}">Asset heatmap</button></div></div><label class="upa-inline-select upa-metric-select">Show<select id="upa-calendar-metric" aria-describedby="upa-calendar-metric-help"><option value="sales" ${prefs.calendarMetric === "sales" ? "selected" : ""}>Gross revenue</option><option value="paidQty" ${prefs.calendarMetric === "paidQty" ? "selected" : ""}>Sales</option><option value="salesQty" ${prefs.calendarMetric === "salesQty" ? "selected" : ""}>Sales &amp; Claims</option><option value="pageViews" ${prefs.calendarMetric === "pageViews" ? "selected" : ""}>Pageviews</option><option value="downloads" ${prefs.calendarMetric === "downloads" ? "selected" : ""}>Downloads</option>${Object.values(DAILY_METRICS).filter(metric => !metric.ratio).map(metric => `<option value="${metric.id}" ${prefs.calendarMetric === metric.id ? "selected" : ""}>${metric.label}</option>`).join("")}</select><span id="upa-calendar-metric-help" class="upa-metric-tooltip" role="tooltip">${escapeHtml(calendarData.metric.description)}</span></label></div><div class="upa-insight-facts"><span><small>Total</small><strong>${metricValue(calendarData.metric, dailyPatternsTotal)}</strong></span>${prefs.calendarStyle === "assets" ? `<span><small>Daily slices</small><strong>${number(assetHeatmapData.dates.length)}</strong></span><span><small>Peak cell</small><strong>${assetHeatmapData.peak ? (metricValue(assetHeatmapData.metric, assetHeatmapData.peak.value)) : "—"}</strong></span>` : `<span><small>Peak day</small><strong>${calendarData.peak ? escapeHtml(calendarData.peak[0]) : "—"}</strong></span><span><small>Peak value</small><strong>${calendarData.peak ? (metricValue(calendarData.metric, calendarData.peak[1])) : "—"}</strong></span>`}</div></div><div id="upa-calendar-chart" class="upa-calendar-chart ${prefs.calendarStyle === "assets" ? "upa-asset-heatmap-chart" : ""}" role="img" aria-label="${prefs.calendarStyle === "assets" ? `Daily ${escapeHtml(assetHeatmapData.metric.label.toLowerCase())} heatmap with one row per asset` : "Calendar heatmap with one row per year"}"></div></section>
             <section class="upa-card upa-insight-card upa-view-panel upa-view-sankey" id="upa-view-sankey"><div class="upa-section-title"><div><small>REVENUE COMPOSITION</small><h2>Where revenue comes from</h2></div><div class="upa-section-tools"><span>${sankeyData.activePackages.length} shown</span>${chartActions("sankey")}</div></div><div class="upa-insight-toolbar upa-sankey-toolbar"><div class="upa-sankey-controls"><label class="upa-inline-select">Group by<select id="upa-sankey-group"><option value="none" ${sankeyData.groupBy === "none" ? "selected" : ""}>None</option><option value="category" ${sankeyData.groupBy === "category" ? "selected" : ""} ${sankeyData.categoryAvailable ? "" : "disabled"}>${sankeyData.categoryAvailable ? "Category" : "Category unavailable"}</option></select></label><details class="upa-package-filter"><summary><span>Packages</span><strong>${sankeyData.explicitKeys.length ? `${sankeyData.explicitKeys.length} selected` : "Top 8 by revenue"}</strong></summary><div class="upa-package-filter-panel"><div class="upa-package-filter-head"><span>Choose packages to compare</span><button data-action="sankey-top">Use top 8</button></div><div class="upa-package-checklist">${sankeyData.options.map(item => `<label><input type="checkbox" data-sankey-package="${escapeHtml(item.key)}" ${sankeyData.activePackages.some(active => active.key === item.key) ? "checked" : ""}><span><strong>${escapeHtml(item.name)}</strong><small>${money(item.gross)}</small></span></label>`).join("")}</div></div></details></div><div class="upa-insight-facts"><span><small>Revenue shown</small><strong>${money(sankeyData.total)}</strong></span>${sankeyData.groupBy === "category" ? `<span><small>Categories</small><strong>${number(sankeyData.categories)}</strong></span>` : ""}<span><small>Packages</small><strong>${number(sankeyData.activePackages.length)}</strong></span></div></div><div id="upa-sankey-chart" class="upa-sankey-chart" style="height:${sankeyHeight}px" role="img" aria-label="Gross revenue split by package${sankeyData.groupBy === "category" ? " and category" : ""}"></div></section>` : `<section class="upa-welcome"><div class="upa-welcome-copy"><small>YOUR COMPLETE PICTURE</small><h2>Go beyond the<br>one-year window.</h2><p>Bring your available sales, downloads, revenue, pageviews, and conversion history into one configurable workspace.</p>${syncJob?.active ? '<div class="upa-welcome-running"><i></i><span>Your history is being prepared. You can leave this page open and follow the progress above.</span></div>' : '<button class="upa-primary upa-large" data-action="sync-all">Sync full history</button>'}</div><div class="upa-welcome-visual" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><span>Lifetime</span></div></section>`}</main>
@@ -1939,6 +2040,7 @@
     if (section === "package" && selectedPackage) {
       host.querySelector(".upa-content")?.insertAdjacentHTML("afterbegin", packageDetailPanel(selectedPackage, selectedPackageTotals, packageRevenueGrowth, packageUnitsTrend, packageRevenueHeatmap, dateBounds, packageInterval));
     }
+    hydrateVisiblePackageIcons();
     if (hasData && isOpen) {
       if (section === "dashboard") { renderRevenueMixChart(revenueMixData); renderOverviewChart(overviewChartData); }
       if (section === "package" && selectedPackage) {
@@ -2011,6 +2113,14 @@
   }
 
   function bindEvents() {
+    document.addEventListener("error", event => {
+      const image = event.target;
+      if (!(image instanceof HTMLImageElement) || !image.closest(".upa-package-icon-wrap")) return;
+      const wrapper = image.parentElement;
+      image.remove();
+      wrapper.classList.remove("upa-package-icon-wrap");
+      wrapper.textContent = wrapper.dataset.initial || "P";
+    }, true);
     document.addEventListener("click", async event => {
       if (!event.target.closest("#upa-root")) {
         if (isDashboardPackageSettingsOpen) setDashboardPackageSettingsOpen(false);

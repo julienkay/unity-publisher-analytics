@@ -13,7 +13,7 @@ Publisher Analytics+ is a Manifest V3 extension with three runtime contexts:
 |---|---|---|
 | Publisher Portal page world | `api-client.js` | Performs explicitly allowlisted same-origin requests with the signed-in Portal session and returns parsed responses through `window.postMessage`. |
 | Extension content-script world | `content.js`, `styles.css`, `vendor/echarts.min.js` | Owns identity activation, API orchestration, normalization, sync, preferences, package groups, aggregation, rendering, and exports. |
-| Extension background context | `background.js` | Owns publisher-scoped IndexedDB access, sync metadata persistence, and toolbar-driven opening behavior. |
+| Extension background context | `background.js` | Owns publisher-scoped IndexedDB access, package icon downloads and caching, sync metadata persistence, and toolbar-driven opening behavior. |
 
 `manifest.json` is the canonical declaration of these contexts. Packaging uses
 the same runtime files for Chrome and Firefox. The packaging scripts generate
@@ -40,10 +40,12 @@ Authentication material belongs only to the live page request. Do not put
 cookies, CSRF values, authorization values, or session headers in retained
 artifacts. Raw API responses can be retained as development evidence.
 
-To sanitize a fixture means to make a safe evidence copy of a real response. The
-capture process removes secrets and replaces private values in that copy. This
-process is outside the runtime data path. The extension does not apply fixture
-replacements, date changes, or array limits to live or stored publisher data.
+To sanitize a fixture means to make an evidence copy of a real response with
+selected values changed or removed. Never retain authentication material or
+unrelated sensitive data. Public package IDs, names, and icon URLs may remain
+when they preserve API behavior and cross-fixture relationships. This process
+is outside the runtime data path. The extension does not apply fixture changes,
+date changes, or array limits to live or stored publisher data.
 
 ## Data path
 
@@ -69,6 +71,7 @@ batch checks the local generation before it writes data.
 | Data | Owner | Boundary |
 |---|---|---|
 | Normalized analytics records | IndexedDB `records` store in `background.js` | Indexed and queried by `publisherId` |
+| Current package icon bytes | IndexedDB `icons` store in `background.js` | Publisher and package key; URL changes refresh the cached image; clearing analytics removes that publisher's icons |
 | Resumable sync checkpoint | IndexedDB `meta` store in `background.js` | Composite identity derived from publisher ID and metadata key |
 | Preferences | Extension local storage from `content.js` | Publisher-qualified key |
 | Publisher presentation details | Extension local storage from `content.js` | Publisher-qualified key |
@@ -77,6 +80,15 @@ batch checks the local generation before it writes data.
 
 Changing storage ownership requires checking publisher switching, in-flight
 sync, clearing, export, and browser-profile behavior together.
+
+The resumable sync job also stores the discovered package list and each current
+icon URL. The sync reads the icon from `package_key_images` by published version
+ID, then joins it to the discovered package ID. When an icon is shown, the
+background context downloads its bytes from the observed Asset Store CDN and
+stores them in the publisher-scoped `icons` store. The interface reads the
+stored image and uses the package initial if no icon is available. Icon bytes do
+not enter analytics records or JSON exports. Clearing a publisher's analytics
+also clears that publisher's icon cache.
 
 ## Sync ownership
 
@@ -124,7 +136,9 @@ previously unseen account capability. Do not treat adding a constant to the
 
 ## Invariants
 
-- Runtime network access remains limited to `publisher.unity.com`.
+- API requests remain limited to `publisher.unity.com`. Image loads may use
+  `assetstorev1-prd-cdn.unity3d.com` for public package icons. No other runtime
+  network access is allowed.
 - The request bridge remains narrowly allowlisted.
 - Every local analytics read and write remains publisher-scoped and fails
   closed without identity.

@@ -206,6 +206,7 @@ Sources:
 - [`scripts/capture-marketing.mjs`](../scripts/capture-marketing.mjs) starts a local preview server, drives a headless browser, and captures the pages.
 - [`scripts/marketing-preview.html`](../scripts/marketing-preview.html) provides the browser and extension API stubs used by the preview.
 - [`scripts/marketing-fixture.js`](../scripts/marketing-fixture.js) generates deterministic, fictional publisher history for Northstar Studio.
+- [`scripts/marketing-assets/package-icons/`](../scripts/marketing-assets/package-icons/) contains generated WebP icons for the five fictional packages in the preview.
 
 Generate the complete screenshot set:
 

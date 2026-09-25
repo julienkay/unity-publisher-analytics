@@ -32,8 +32,10 @@ request path and parser.
 
 ## Product and data boundaries
 
-- Keep the Manifest V3 extension local-first. Limit runtime network access to
-  `publisher.unity.com`. Bundle each dependency locally. Never use a CDN.
+- Keep the Manifest V3 extension local-first. Limit API requests to
+  `publisher.unity.com`. The only other runtime network access is downloading
+  public package icons from `assetstorev1-prd-cdn.unity3d.com`. Bundle each
+  dependency locally. Never use a CDN for code or libraries.
 - Never hardcode publisher IDs, packages, eligibility, or publisher-specific
   history dates.
 - Preserve publisher isolation across requests, normalized records, sync state,
@@ -48,6 +50,8 @@ request path and parser.
 
 ## Before finishing
 
+- Keep `CHANGELOG.md` publisher-facing. List changes publishers can see or use;
+  keep marketing assets and implementation details in maintainer documents.
 - Run the checks that apply to the changed files and behavior. Use the validation
   matrix in `internal-docs/SCRIPTS.md`.
 - Run `node --check` on each changed `.js` or `.mjs` file.

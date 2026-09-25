@@ -6,7 +6,7 @@
   "accountContext": "Non-empty paid month with two retained package/price rows and zero refunds and chargebacks.",
   "captureMethod": "The live request used another month. A temporary opt-in local helper replaced private values in the Portal page before output. The fixture month and all returned dates were then moved together. The helper did not log or retain authentication material or raw response JSON.",
   "sanitization": [
-    "Replaced package IDs and names with stable values shared by the catalog and downloads fixtures.",
+    "Replaced package IDs and names with stable values shared by the catalog and downloads fixtures. This was done for that capture only; current guidance allows public package metadata to remain.",
     "Shifted the request month and row timestamps two calendar years earlier.",
     "Changed quantities and monetary values while preserving their string types, zero/non-zero distinctions, gross = price × sales, and revenue = 70% of gross for these rows.",
     "Preserved key spelling, array/object containers, and timestamp time-of-day."

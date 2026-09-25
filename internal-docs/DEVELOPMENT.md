@@ -24,7 +24,11 @@ lock file.
 
 ## Runtime architecture
 
-Publisher Analytics+ is a Manifest V3 extension for Chrome and Firefox, limited to `publisher.unity.com`. It uses the signed-in Portal session and the reporting endpoints already used by the Unity Publisher Portal.
+Publisher Analytics+ is a Manifest V3 extension for Chrome and Firefox. API
+requests use `publisher.unity.com` and the signed-in Portal session. The
+extension downloads public package icons from
+`assetstorev1-prd-cdn.unity3d.com` and stores their image bytes in its local
+publisher-scoped database. No other runtime network access is used.
 
 An extension-owned IndexedDB database stores normalized analytics and the sync
 checkpoint. Local extension storage contains preferences, publisher presentation

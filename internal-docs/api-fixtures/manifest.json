@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
-  "lastReviewed": "2026-08-18",
-  "source": "Signed-in Publisher Portal capture on one publisher account",
-  "warning": "These are safe copies of real responses from one account. Private identities, dates, counts, and financial values were replaced. These files are not a supported Unity API contract. Read each provenance file before you make a semantic or cardinality claim.",
+  "lastReviewed": "2026-09-25",
+  "source": "Signed-in Publisher Portal captures on one publisher account",
+  "warning": "Fixtures record observed behavior on one account and are not a supported Unity API contract. Public catalog metadata can be retained. Read each provenance file for omitted fields, changes, and evidence limits.",
   "endpoints": [
     {
       "id": "user",

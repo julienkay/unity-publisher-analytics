@@ -6,9 +6,10 @@ show structures that occurred on that account. They do not define an official
 Unity API contract.
 
 These files are API evidence. They are not screenshot data. A fixture can be raw
-or sanitized. To sanitize a fixture means to replace selected private values.
-The provenance file states the capture type. It lists every change and evidence
-limit.
+or sanitized. To sanitize a fixture means to replace or remove selected values.
+Public package IDs, names, and icon URLs may remain when they help preserve API
+behavior or relationships across fixtures. The provenance file states the
+capture type. It lists every change and evidence limit.
 
 The extension does not sanitize live publisher data. It does not apply these
 changes during sync, storage, charts, or export.
@@ -50,9 +51,9 @@ The fixtures preserve these response properties:
 - positive, negative, and zero states
 - relationships between selected values
 
-The fixtures do not contain the original private account values. Some arrays
-contain fewer rows than the source responses. The provenance file identifies
-each reduction.
+Fixtures may retain public catalog values. Financial and account values can be
+changed, and some arrays can contain fewer rows than the source response. The
+provenance file identifies each change.
 
 ## Observed response structures
 
@@ -90,6 +91,8 @@ The fixture set does not contain evidence for these cases:
 - localized number values
 - a different reporting currency
 - a second publisher account
+- multiple published versions for one package in the icon map
+- a missing package icon entry
 
 The daily fixtures show one complete month interval. They do not replace a paired boundary test.
 
@@ -125,7 +128,7 @@ Unity represents that state.
 3. Compare the request with a known control from `request-shapes.json`.
 4. Record the method, path, query, body, status, and response shape.
 5. Do not retain cookies, CSRF tokens, authorization values, session headers,
-   or unrelated network data.
+   or unrelated network data. Public package IDs, names, and icon URLs can stay.
 6. Choose whether the retained fixture must be raw or sanitized.
 7. Use stable replacement values across related fixtures. Replace related totals together.
 8. Change dates only when the exact dates are private. First, identify the
@@ -134,7 +137,9 @@ Unity represents that state.
    request boundaries. Preserve each required property. Do not use the fixture
    as evidence for a property that the change does not preserve.
 9. Preserve JSON types, key spelling, nesting, null values, signs, zero states, and required value relationships.
-10. Preserve safe semantic values only when they are necessary. Examples are a currency code, lifecycle status, and zero.
+10. Preserve useful public catalog and semantic values. Examples include
+    package IDs and names, icon URLs, currency codes, lifecycle statuses, and
+    zeros.
 11. Record each removed row, shortened array, shifted date, replaced identity, and transformed value in the provenance file.
 12. Review each retained response for authentication material before you commit it.
 13. Check the final diff for authentication values.

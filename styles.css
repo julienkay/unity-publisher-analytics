@@ -329,6 +329,9 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 .upa-package-table tbody tr:hover { background:#fafafe; }
 .upa-package-identity { display:flex;align-items:center;gap:10px;min-width:0;cursor:default; }
 .upa-package-avatar { display:grid;place-items:center;flex:0 0 auto;width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#eeeaff,#f7f5ff);color:#5b4bc8;font-size:var(--upa-font-support);font-weight:850; }
+.upa-package-icon-wrap { overflow:hidden;background:#fff; }
+.upa-package-icon-pending { overflow:hidden; }
+.upa-package-icon-wrap img { display:block;width:100%;height:100%;object-fit:cover; }
 .upa-package-name { min-width:0;overflow:hidden;color:#2c3446;font-size:var(--upa-font-body);font-weight:700;line-height:1.43;text-overflow:ellipsis;white-space:nowrap; }
 .upa-package-table td { min-width:0;color:#2c3446;font-size:var(--upa-font-body);font-weight:700;white-space:nowrap; }
 .upa-table-value { font:inherit; }
@@ -383,6 +386,9 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 .upa-revenue-heatmap [data-level="5"] { background:#4f3cae;color:#fff; }
 .upa-revenue-heatmap-empty { display:grid;place-items:center;min-height:100px;color:var(--upa-muted);font-size:var(--upa-font-body);text-align:center; }
 .upa-package-detail-metrics { padding:26px; }
+.upa-package-detail-title { display:flex;align-items:center;gap:12px;margin-bottom:8px; }
+.upa-package-detail-title h2 { margin:3px 0 0; }
+.upa-package-detail-title .upa-package-avatar { width:44px;height:44px;border-radius:11px; }
 .upa-package-detail-metrics h2 { margin:5px 0 3px;font-size:var(--upa-font-section-title);letter-spacing:-.4px; }
 .upa-package-detail-highlights { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:24px; }
 .upa-package-detail-primary { display:flex;min-width:0;flex-direction:column;gap:5px;padding:16px 14px;border:1px solid #e6e2ff;border-radius:13px;background:#f8f7ff; }
@@ -462,14 +468,15 @@ html.upa-dashboard-open,html.upa-dashboard-open body { overflow:hidden!important
 .upa-revenue-chart { width:100%;height:360px;margin-top:2px; }
 .upa-empty-chart { display:grid;place-items:center;height:300px;padding:25px;color:var(--upa-muted);font-size:12px;text-align:center; }
 .upa-package-list { display:flex;flex-direction:column; }
-.upa-package-row { display:grid;grid-template-columns:28px minmax(0,1fr) auto 15px;gap:11px;align-items:center;width:100%;padding:12px 8px;border:0;border-top:1px solid #eef0f4;background:transparent;color:var(--upa-ink);font:inherit;text-align:left;cursor:pointer; }
+.upa-package-row { display:grid;grid-template-columns:28px 36px minmax(0,1fr) auto 15px;gap:11px;align-items:center;width:100%;padding:12px 8px;border:0;border-top:1px solid #eef0f4;background:transparent;color:var(--upa-ink);font:inherit;text-align:left;cursor:pointer; }
 .upa-package-row:first-child { border-top:0; }
 .upa-package-row:hover { border-radius:8px;background:#f8f7ff; }
 .upa-package-row:focus-visible { outline:2px solid #bdb6ef;outline-offset:-2px;border-radius:8px; }
 .upa-package-row>b { color:#969db0;font-size:var(--upa-font-label); }
 .upa-package-row>div { display:flex;min-width:0;flex-direction:column; }
+.upa-package-row>.upa-package-avatar { width:36px;height:36px;border-radius:9px; }
 .upa-package-row strong { overflow:hidden;font-size:var(--upa-font-body);text-overflow:ellipsis;white-space:nowrap; }
-.upa-package-row span { overflow:hidden;margin-top:3px;color:var(--upa-muted);font-size:var(--upa-font-caption);text-overflow:ellipsis;white-space:nowrap; }
+.upa-package-row>div>span { overflow:hidden;margin-top:3px;color:var(--upa-muted);font-size:var(--upa-font-caption);text-overflow:ellipsis;white-space:nowrap; }
 .upa-package-row em { font-size:var(--upa-font-body);font-style:normal;font-weight:750;white-space:nowrap; }
 .upa-package-row>i { color:#8e83e2;font-size:15px;font-style:normal;transition:transform .15s; }
 .upa-package-row:hover>i,.upa-package-row:focus-visible>i { transform:translateX(2px); }

@@ -29,7 +29,7 @@ const captures = [
 if (requested && !captures.some(([name]) => name === requested)) {
   throw new Error(`Unknown capture name "${requested}". Expected one of: ${captures.map(([name]) => name).join(", ")}`);
 }
-const mime = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png" };
+const mime = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".webp": "image/webp" };
 const server = createServer(async (request, response) => {
   try {
     const relative = decodeURIComponent(new URL(request.url, "http://localhost").pathname).replace(/^\/+/, "") || "scripts/marketing-preview.html";

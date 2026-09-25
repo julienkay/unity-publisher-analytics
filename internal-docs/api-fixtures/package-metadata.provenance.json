@@ -1,6 +1,6 @@
 {
-  "captureDate": "2026-08-18",
-  "portalPage": "https://publisher.unity.com/sales",
+  "captureDate": "2026-09-25",
+  "portalPage": "https://publisher.unity.com/packages",
   "endpoint": "/publisher-v2-api/management/packages",
   "method": "POST",
   "sanitizedRequestBody": {
@@ -8,14 +8,19 @@
     "order_by": "name",
     "order": "asc"
   },
-  "accountContext": "Non-empty first page containing declined, draft, and published versions, including repeated versions for one package.",
-  "captureMethod": "A temporary opt-in local helper parsed the JSON in the Portal page. It replaced private values before output. It did not log or retain authentication material or raw response JSON.",
+  "accountContext": "Signed-in publisher with five published packages. The response also contained draft and declined versions, which were omitted. The visible Published tab showed the same five package names and current version labels.",
+  "captureMethod": "A read-only same-origin request ran in the signed-in Publisher Portal page through browser CDP. The parsed response was reviewed before retaining this representative fixture. Authentication material and private analytics values were not retained.",
   "sanitization": [
-    "Limited package_versions to four representative rows and package_key_images to two representative entries.",
-    "Replaced all package, version, vetting, and image identifiers and all names, icon locations, category values, and version labels.",
-    "Shifted dates two calendar years earlier while preserving ordering, nulls, and time-of-day.",
-    "Changed ratings, counts, prices, and sizes while preserving their JSON string types and zero/non-zero distinctions.",
-    "Preserved the observed response envelope, nested unitypackages/vetting objects, empty packmanpackages arrays, booleans, statuses, and nullability."
+    "Retained the five published package rows and omitted draft and declined rows.",
+    "Retained public package IDs, package-version IDs, names, version labels, and icon URLs so the relationship between package_versions[].id and package_key_images keys remains testable.",
+    "Omitted private or unrelated fields from package-version rows.",
+    "Changed counts and total to reflect the five retained published rows."
   ],
-  "boundarySemantics": "The category property was a scalar string in every retained package-version row. Its redacted contents do not establish whether the string is an ID, slug, or display name."
+  "boundarySemantics": "For the five observed packages, package_key_images is keyed by the published version row id, not package_id. Each published version had one icon entry. This does not establish behavior for multiple published versions or missing icon entries.",
+  "iconFileProbe": {
+    "probeDate": "2026-09-25",
+    "method": "Fetched each retained package_key_images URL without credentials. Checked HTTP status and Content-Type, then decoded the image bytes with Sharp to read the format and dimensions.",
+    "results": "All five retained URLs returned HTTP 200 from assetstorev1-prd-cdn.unity3d.com with Content-Type image/png. Each response decoded as a 160 × 160 PNG.",
+    "versionIds": ["833923", "975309", "1051024", "1081482", "1181334"]
+  }
 }

@@ -1,11 +1,11 @@
 (() => {
   const publisherId = "marketing-demo";
   const packages = [
-    { id: "aurora", name: "Aurora Environment Kit", category: "3D Environments", price: 54, weight: 1.0 },
-    { id: "motion", name: "Motion Pro Controller", category: "Tools", price: 39, weight: 0.76 },
-    { id: "shaders", name: "Luminous Shader Library", category: "VFX", price: 29, weight: 0.57 },
-    { id: "icons", name: "Essential UI Icons", category: "2D", price: 18, weight: 0.42 },
-    { id: "audio", name: "Cinematic Worlds Audio", category: "Audio", price: 24, weight: 0.31 }
+    { id: "aurora", name: "Aurora Environment Kit", category: "3D Environments", price: 54, weight: 1.0, icon: "../scripts/marketing-assets/package-icons/aurora.webp" },
+    { id: "motion", name: "Motion Pro Controller", category: "Tools", price: 39, weight: 0.76, icon: "../scripts/marketing-assets/package-icons/motion.webp" },
+    { id: "shaders", name: "Luminous Shader Library", category: "VFX", price: 29, weight: 0.57, icon: "../scripts/marketing-assets/package-icons/shaders.webp" },
+    { id: "icons", name: "Essential UI Icons", category: "2D", price: 18, weight: 0.42, icon: "../scripts/marketing-assets/package-icons/icons.webp" },
+    { id: "audio", name: "Cinematic Worlds Audio", category: "Audio", price: 24, weight: 0.31, icon: "../scripts/marketing-assets/package-icons/audio.webp" }
   ];
   const records = [];
   const capturedAt = "2026-08-15T09:30:00.000Z";

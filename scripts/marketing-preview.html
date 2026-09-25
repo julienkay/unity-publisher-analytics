@@ -30,7 +30,13 @@
       completed: 37,
       total: 68,
       label: "Syncing performance history · Luminous Shader Library"
-    } : null;
+    } : {
+      publisherId: fixture.publisherId,
+      active: false,
+      phase: "complete",
+      packages: fixture.packages,
+      lastRefreshedAt: fixture.capturedAt
+    };
     storage[`unityPublisherAnalyticsPrefsV2:${encodeURIComponent(fixture.publisherId)}`] = {
       section: query.get("section") || "dashboard",
       view: query.get("view") || "revenue",

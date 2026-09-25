@@ -106,7 +106,7 @@ behavior is unsafe or incomplete. It requires a product or engineering decision.
   before it loads or resumes local data. A new full sync checks identity before
   it clears local analytics. The extension does not poll identity during sync.
   A failed full-sync identity check keeps the active workspace unchanged.
-  Records, checkpoints, display metadata, and preferences are publisher-scoped.
+  Records, checkpoints, icon bytes, display metadata, and preferences are publisher-scoped.
   Data clearing affects only the active publisher's analytics and checkpoint.
   It does not clear preferences or package groups. Data clearing invalidates
   active sync work before it deletes data.
@@ -120,8 +120,9 @@ behavior is unsafe or incomplete. It requires a product or engineering decision.
   generation before it writes data. Future durable data must use the same
   publisher boundary. Package groups must remain outside analytics clearing.
 - **Migration:** None. This is unreleased development software. The extension
-  cannot safely assign old unscoped records. The IndexedDB v2 upgrade discards
-  them. It also ignores legacy global preference keys.
+  cannot safely assign old unscoped records. The IndexedDB v2 upgrade discarded
+  them. The v3 upgrade preserves v2 records and checkpoints while adding the
+  publisher-scoped icon store. It also ignores legacy global preference keys.
 - **Review trigger:** A live second-account test shows that `publisherId` changes unexpectedly, collides, or does not follow the active Asset Store publisher.
 
 ## D-012 — Define “complete history” as successful request loops

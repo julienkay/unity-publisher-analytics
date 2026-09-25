@@ -44,9 +44,11 @@ The maintainer documents use these terms:
 
 - A **captured fixture** is a JSON example that comes from a real Portal
   response. A captured fixture can be raw or sanitized.
-- To **sanitize** a captured fixture means to make a safe evidence copy. Remove
-  secrets. Replace private identities and values. Keep only the structure and
-  relationships that the evidence needs. Record every change.
+- To **sanitize** a captured fixture means to make an evidence copy with selected
+  values changed or removed. Never retain authentication material or unrelated
+  sensitive data. Public package IDs, names, and icon URLs may remain when they
+  help preserve API behavior and cross-fixture relationships. Record every
+  change.
 - A **raw response** is the unchanged Portal response. Agents can inspect,
   compare, and retain raw responses during authorized development.
 - A **synthetic fixture** is invented test data. It can test code, but it cannot
@@ -55,7 +57,9 @@ The maintainer documents use these terms:
   the fixture can and cannot prove.
 
 Sanitization changes only the evidence copy. It does not change the publisher's
-live data, stored data, charts, exports, or marketing screenshots.
+live data, stored data, charts, exports, or marketing screenshots. Treat
+financial records and account authentication material separately from public
+catalog metadata.
 
 ## Evidence standard
 

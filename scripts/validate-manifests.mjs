@@ -6,7 +6,7 @@ const chromeManifest = createTargetManifest(canonical, "chrome");
 const firefoxManifest = createTargetManifest(canonical, "firefox");
 
 assert.equal(canonical.manifest_version, 3, "The canonical manifest must remain Manifest V3.");
-assert.deepEqual(canonical.host_permissions, ["https://publisher.unity.com/*"], "Host access must remain limited to the Publisher Portal.");
+assert.deepEqual(canonical.host_permissions, ["https://publisher.unity.com/*", "https://assetstorev1-prd-cdn.unity3d.com/*"], "Host access must remain limited to the Publisher Portal and package icon CDN.");
 assert.deepEqual(canonical.permissions, ["storage"], "Only local storage permission should be requested.");
 assert.ok(canonical.content_scripts.some(script => script.world === "MAIN" && script.js?.includes("api-client.js")), "The page API client must run in the MAIN world.");
 

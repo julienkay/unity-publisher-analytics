@@ -11,7 +11,7 @@
     "128": "icons/publisher-analytics-128.png"
   },
   "permissions": ["storage"],
-  "host_permissions": ["https://publisher.unity.com/*"],
+  "host_permissions": ["https://publisher.unity.com/*", "https://assetstorev1-prd-cdn.unity3d.com/*"],
   "action": {
     "default_title": "Open Publisher Analytics+",
     "default_icon": {
