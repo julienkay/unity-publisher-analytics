@@ -74,7 +74,17 @@
       if (syncing && message.path === "/publisher-v2-api/dashboard/daily") return;
       const data = message.path === "/publisher-v2-api/user"
         ? { publisherId: fixture.publisherId, publisherName: fixture.publisherName, publisherOrgId: "northstar" }
-        : [];
+        : message.path === "/publisher-v2-api/proxy?path=%2Fmanagement%2Fonce-published-packages&type=array"
+          ? fixture.packages.map(pkg => ({ package_id: pkg.id, name: pkg.name, first_published_at: "2022-03-01T00:00:00Z" }))
+          : message.path === "/publisher-v2-api/proxy?path=%2Fmanagement%2Fcategories&type=array"
+            ? []
+            : message.path === "/publisher-v2-api/management/packages"
+              ? {
+                  package_versions: fixture.packages.map((pkg, index) => ({ id: `marketing-version-${index + 1}`, package_id: pkg.id, name: pkg.name, status: "published", modified: fixture.capturedAt, category: pkg.category, count_ratings: 0 })),
+                  package_key_images: Object.fromEntries(fixture.packages.map((pkg, index) => [`marketing-version-${index + 1}`, { icon: pkg.icon }])),
+                  total: fixture.packages.length
+                }
+              : [];
       window.postMessage({ source: "unity-publisher-analytics-api", type: "UPA_API_RESPONSE", requestId: message.requestId, ok: true, status: 200, data }, location.origin);
     });
     window.__openAnalytics = () => messageListeners.forEach(listener => listener({ type: "UPA_TOGGLE" }));

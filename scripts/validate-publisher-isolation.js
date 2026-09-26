@@ -50,7 +50,7 @@ function validateNamespacePropagation() {
     "publisherStorageKey(PREFS_KEY_PREFIX, identity.id)"
   ]) assert.ok(content.includes(required), `Missing content-script ownership invariant: ${required}`);
   for (const required of [
-    "DB_VERSION = 2",
+    "DB_VERSION = 3",
     'createIndex("publisherId"',
     "record?.publisherId !== publisherId",
     "ANALYTICS_META_KEYS"
