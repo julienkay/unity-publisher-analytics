@@ -282,7 +282,9 @@
     const performanceScopeName = selectedPerformanceScopes.length === 1 ? selectedPerformanceScopes[0].name : `${number(selectedPerformanceScopes.length)} scopes selected`;
     const performanceScopeSummary = selectedPerformanceScopes.length <= 3 ? selectedPerformanceScopes.map(scope => scope.name).join(", ") : `${number(selectedPerformanceScopes.length)} selected scopes`;
     const assetHeatmapActive = prefs.section === "analytics" && analyticsView === "calendar" && prefs.calendarStyle === "assets";
-    const dashboardKey = dashboardViewModelKey();
+    const dashboardKey = !previousDashboardModels || prefs.section === "dashboard"
+      ? dashboardViewModelKey()
+      : previousDashboardModels.key;
     const overviewChartData = !previousDashboardModels || prefs.section === "dashboard"
       ? overviewViewModel(dailyAll, dateBounds)
       : previousDashboardModels.overviewChartData;
@@ -433,7 +435,8 @@
     if (previousViewPanels.size && ["dashboard", "analytics"].includes(section)) {
       for (const [id, panel] of previousViewPanels) {
         const isActive = section === "dashboard" ? id === "upa-view-dashboard" : id === `upa-view-${view}`;
-        if (!isActive) host.querySelector(`#${id}`)?.replaceWith(panel);
+        const isFreshOnEveryRender = id === "upa-view-packages";
+        if (!isActive && !isFreshOnEveryRender) host.querySelector(`#${id}`)?.replaceWith(panel);
       }
     }
     setDashboardPackageSettingsOpen(isDashboardPackageSettingsOpen);

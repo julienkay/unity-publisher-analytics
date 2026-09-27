@@ -63,6 +63,71 @@ metadata source that can change the result. Keep caches scoped to the current
 records array so a publisher switch, data clear, or completed sync cannot show
 stale results.
 
+### View freshness rules
+
+A model is current only when its inputs match the current workspace state.
+A freshness key records the inputs used to build a model. It does not record
+the inputs from the most recent call to `renderWorkspace()`.
+
+These rules apply to Dashboard, Analytics, and package details:
+
+- Keep the selected range in shared preferences. Resolve its start and end
+  dates with `selectedDateBounds()` for every dependent view.
+- Include all model inputs in its freshness check. These can include resolved
+  dates, interval, metric, scopes, groups, package metadata, and display options.
+  Include the range preset when it changes labels or comparison periods.
+- Keep a reused model's original freshness key. Assign a new key only after
+  rebuilding that model. Never attach the current range key to previous data.
+- Associate models with their source records array. Replace that array when
+  data changes. In-place record changes bypass checks based on array identity.
+- Check the destination before every navigation path displays it. Check both
+  `switchAnalyticsView()` and `switchWorkspaceSection()`. A tab check alone
+  does not protect navigation from Dashboard to Analytics or back.
+- Rebuild a stale destination synchronously from the loaded records. Hidden
+  views can retain old models until opened. Do not display those models first.
+- Update charts, totals, tables, legends, labels, tooltips, and chart export
+  metadata from the same inputs. A correct range label does not prove that
+  the chart or table uses that range.
+- Update header controls when changing views. Lifetime growth hides the range
+  control. Returning to a range-dependent view restores it.
+- Distinguish an unbuilt model from a current model with no results. Do not
+  mark an empty placeholder as current data.
+
+Only reuse a range-independent model if its calculation ignores the selected
+range. Lifetime growth and the package revenue heatmap use complete history.
+The daily calendar and asset heatmap use the selected range. Comparisons and
+trailing metrics can use older records without changing the visible range.
+
+Keep this mechanism small. Reuse the existing keys and synchronous render
+fallback. Do not add background calculation, persistent caches, or validation
+of every record to solve view freshness. Do not serialize the dataset to
+compare model inputs.
+
+### Navigation regression checks
+
+For changes to ranges, navigation, or model reuse, test transitions with the
+local fixture. Choose periods with different totals. Check values and dates,
+not only control text or chart visibility.
+
+1. Open Dashboard with All time. Open Analytics and select Last 7 days.
+   Return to Dashboard. Check its charts, totals, and package table.
+2. Change the range on Dashboard. Open each Analytics view. Return to a
+   previously opened view. Check that every range-dependent result changes.
+3. Repeat with a custom range and a range with no records. Return to All time.
+   Check that empty results and previous results do not remain visible.
+4. Switch between the daily calendar and asset heatmap. Change the range in
+   another view. Return to each layout. Check dates, cells, and totals.
+5. Open Lifetime growth, then Performance. Check range and interval controls.
+   Check that lifetime results still use complete history.
+6. Replace the records through refresh, publisher change, or data clearing.
+   Revisit a previously opened view. Check that previous models are not reused.
+
+For a regression fix, add a focused automated check for the failing transition.
+Compare the result with fixture-derived expectations or a fresh render using
+the same final state. A successful initial render does not test navigation.
+Record which transitions were tested. This checklist does not establish that
+the current implementation passes them.
+
 Use three deliberately separate layers:
 
 1. **Native DOM and CSS** for the application shell, controls, KPI cards, tables, empty states, and accessible text summaries.

@@ -231,9 +231,10 @@ failure after sync completion. A read failure must not require a new full sync.
 To also exercise the local mock switch and workspace tabs, prepare the local
 mock extension, then set `UPA_EXTENSION_PATH` to `.local-mock-extension` before
 running the same command. This extra pass switches to 100 synthetic assets with
-two years of history by default, opens the Analytics tab, and returns to the live
-publisher. Set `UPA_MOCK_CATALOG_COUNT` and `UPA_MOCK_CATALOG_YEARS` to choose a
-larger workload.
+two years of history by default. It changes the range on Dashboard, changes it
+again in Analytics, and checks that Dashboard shows the new range and totals.
+It then returns to the live publisher. Set `UPA_MOCK_CATALOG_COUNT` and
+`UPA_MOCK_CATALOG_YEARS` to choose a larger workload.
 
 ## Local mock extension
 
@@ -423,6 +424,7 @@ Run the checks that apply to the changed files and behavior:
 | Publisher identity, storage, sync, preferences, exports, clearing behavior, or package groups | Run `npm run test:isolation`. |
 | Service-worker startup, session storage, or IndexedDB behavior | Run `npm run test:chrome-smoke`. |
 | Record pagination, workspace recovery, or support reports | Run `npm run test:workspace`. |
+| Time ranges, view navigation, or model reuse | Run the [navigation regression checks](RENDERING.md#navigation-regression-checks). Add a focused automated check for each fixed stale-view defect. |
 | Manifest inputs, generation, permissions, or packaging | Run `npm run validate:manifests`. Run the applicable package command when packaged contents can change. |
 | Release preparation | Run `npm run package`. This command performs the complete package validation. |
 | Documentation only | Check links and examples that the change affects. Run `git diff --check`. |

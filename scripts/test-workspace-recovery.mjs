@@ -200,6 +200,13 @@ try {
       finally { db.close(); }
     }, mockId);
     assert.ok(mockRows > mockPackageCount * mockYears * 12 * 3, "The mock switch must load a multi-year synthetic catalog.");
+    async function chooseRange(id, label) {
+      await page.locator(".upa-range-trigger:visible").click();
+      await page.locator(`[data-range-option="${id}"]:visible`).click();
+      await page.getByText(label, { exact: true }).first().waitFor({ timeout: 10000 });
+    }
+    await chooseRange("12", "Last 1 year");
+    const dashboardYearRevenue = await page.locator("#upa-revenue-mix-value").textContent();
     const liveTabUrl = page.url();
     const analyticsStartedAt = Date.now();
     await page.locator('button[data-section="analytics"]:visible').first().click();
@@ -207,6 +214,21 @@ try {
     const analyticsSwitchMs = Date.now() - analyticsStartedAt;
     assert.equal(page.url(), liveTabUrl, "The mock Analytics tab must not navigate to the Portal.");
     assert.equal(await page.locator("#upa-root.upa-open").count(), 1, "The mock workspace must remain open after switching tabs.");
+    const analyticsYearRevenue = await page.locator("#upa-view-revenue .upa-chart-summary dd").first().textContent();
+    await page.locator('button[data-view="packages"]:visible').click();
+    const packagesYearRevenue = await page.locator("#upa-view-packages .upa-package-row em").first().textContent();
+    await page.locator('button[data-view="revenue"]:visible').click();
+    await chooseRange("3", "Last 3 months");
+    const analyticsQuarterRevenue = await page.locator("#upa-view-revenue .upa-chart-summary dd").first().textContent();
+    assert.notEqual(analyticsQuarterRevenue, analyticsYearRevenue, "Analytics revenue must refresh when its range changes.");
+    await page.locator('button[data-view="packages"]:visible').click();
+    const packagesQuarterRevenue = await page.locator("#upa-view-packages .upa-package-row em").first().textContent();
+    assert.notEqual(packagesQuarterRevenue, packagesYearRevenue, "Package results must refresh when their range changes.");
+    await page.locator('button[data-section="dashboard"]:visible').first().click();
+    await page.locator("#upa-view-dashboard").waitFor({ timeout: 10000 });
+    await page.waitForFunction(() => document.querySelector("#upa-revenue-mix-label")?.textContent === "Last 3 months", null, { timeout: 10000 });
+    const dashboardQuarterRevenue = await page.locator("#upa-revenue-mix-value").textContent();
+    assert.notEqual(dashboardQuarterRevenue, dashboardYearRevenue, "Dashboard revenue mix must refresh after changing the range in Analytics.");
     await page.locator('[data-action="toggle-account"]').click();
     await page.locator('[data-action="local-live"]').click();
     await page.locator("#upa-root .upa-recovery-card").waitFor({ timeout: 10000 });

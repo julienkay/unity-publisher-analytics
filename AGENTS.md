@@ -23,6 +23,7 @@ This file is the entry point for agent work. Keep detailed knowledge in
 | API fixture capture or editing | `internal-docs/api-fixtures/AGENTS.md` and `internal-docs/api-fixtures/README.md` |
 | Interface or publisher-facing copy | `internal-docs/DESIGN.md` |
 | Charts or visualization behavior | `internal-docs/DESIGN.md` and `internal-docs/RENDERING.md` |
+| Time ranges, view navigation, or model reuse | `internal-docs/RENDERING.md`, especially "View freshness rules" and "Navigation regression checks" |
 | Exported data or schema | `internal-docs/EXPORTS.md` plus the relevant data-trust documents |
 | Local setup, scripts, packaging, or release validation | `internal-docs/DEVELOPMENT.md` and `internal-docs/SCRIPTS.md` |
 
