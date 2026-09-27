@@ -228,6 +228,18 @@
         if (!switchedInPlace) render();
         return;
       }
+      const pageButton = event.target.closest("button[data-package-page]");
+      if (pageButton) {
+        prefs.packagePage = Math.max(1, Number(pageButton.dataset.packagePage) || 1);
+        render();
+        return;
+      }
+      const dashboardPageButton = event.target.closest("button[data-dashboard-package-page]");
+      if (dashboardPageButton) {
+        prefs.dashboardPackagePage = Math.max(1, Number(dashboardPageButton.dataset.dashboardPackagePage) || 1);
+        updateDashboardPackageTable();
+        return;
+      }
       const viewButton = event.target.closest("button[data-view]");
       if (viewButton) {
         prefs.section = "analytics"; prefs.view = viewButton.dataset.view; groupEditor = null;
@@ -271,6 +283,8 @@
     document.addEventListener("change", async event => {
       if (event.target.id === "upa-interval") { prefs.interval = event.target.value; render(); await savePrefs(); }
       if (event.target.id === "upa-calendar-metric") { prefs.calendarMetric = event.target.value; await savePrefs(); render(); }
+      if (event.target.id === "upa-package-page-size") { prefs.packagePageSize = [10, 25, 50].includes(Number(event.target.value)) ? Number(event.target.value) : 10; prefs.packagePage = 1; await savePrefs(); render(); }
+      if (event.target.id === "upa-dashboard-package-page-size") { prefs.packagePageSize = [10, 25, 50].includes(Number(event.target.value)) ? Number(event.target.value) : 10; prefs.dashboardPackagePage = 1; await savePrefs(); render(); }
       if (event.target.id === "upa-lifetime-metric") { prefs.lifetimeMetric = LIFETIME_METRICS[event.target.value] ? event.target.value : "revenue"; await savePrefs(); render(); }
       if (event.target.id === "upa-lifetime-style") { prefs.lifetimeStyle = event.target.value === "area" ? "area" : "lines"; if (prefs.lifetimeStyle === "area") prefs.lifetimeAlign = "calendar"; await savePrefs(); render(); }
       if (event.target.id === "upa-lifetime-align") { prefs.lifetimeAlign = event.target.value === "age" ? "age" : "calendar"; if (prefs.lifetimeAlign === "age") prefs.lifetimeStyle = "lines"; await savePrefs(); render(); }

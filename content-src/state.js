@@ -24,7 +24,7 @@
     daily: "/publisher-v2-api/dashboard/daily"
   };
   let records = [];
-  let prefs = { section: "dashboard", view: "revenue", packageId: "", packageRevenueMode: "cumulative", range: "all", interval: "auto", start: "", end: "", theme: "system", performanceLayout: "grid", performanceScopes: [{ type: "all", id: "all" }], performanceHiddenScopes: [], dashboardPackageColumns: DEFAULT_DASHBOARD_PACKAGE_COLUMNS, dashboardPackageReviewsDefaultOffApplied: true, calendarMetric: "sales", calendarStyle: "calendar", lifetimeMetric: "revenue", lifetimeStyle: "area", lifetimeAlign: "calendar", lifetimeStackDefaultApplied: true, lifetimePackages: [], lifetimeHiddenPackages: [], sankeyPackages: [], sankeyGroupBy: "category", sankeyCategoryDefaultApplied: true };
+  let prefs = { section: "dashboard", view: "revenue", packageId: "", packageRevenueMode: "cumulative", packagePage: 1, dashboardPackagePage: 1, packagePageSize: 10, range: "all", interval: "auto", start: "", end: "", theme: "system", performanceLayout: "grid", performanceScopes: [{ type: "all", id: "all" }], performanceHiddenScopes: [], dashboardPackageColumns: DEFAULT_DASHBOARD_PACKAGE_COLUMNS, dashboardPackageReviewsDefaultOffApplied: true, calendarMetric: "sales", calendarStyle: "calendar", lifetimeMetric: "revenue", lifetimeStyle: "area", lifetimeAlign: "calendar", lifetimeStackDefaultApplied: true, lifetimePackages: [], lifetimeHiddenPackages: [], sankeyPackages: [], sankeyGroupBy: "category", sankeyCategoryDefaultApplied: true };
   let packageGroups = [];
   let groupEditor = null;
   let syncJob = null;
