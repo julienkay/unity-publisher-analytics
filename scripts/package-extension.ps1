@@ -18,6 +18,7 @@ $packageFiles = @(
     "background.js"
     "content.js"
     "portal-bridge.js"
+    "portal-launcher.css"
     "styles.css"
     "icons/publisher-analytics-16.png"
     "icons/publisher-analytics-32.png"

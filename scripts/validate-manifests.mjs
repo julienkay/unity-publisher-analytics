@@ -14,19 +14,21 @@ assert.deepEqual(chromeManifest.background, { service_worker: "background.js" })
 assert.equal(chromeManifest.browser_specific_settings, undefined, "Chrome must not contain Firefox metadata.");
 
 assert.deepEqual(firefoxManifest.background, { scripts: ["background.js"] });
+assert.ok(firefoxManifest.name.length <= 45, "Firefox extension name must fit the AMO limit.");
+assert.equal(firefoxManifest.name, "Publisher Analytics+ | Asset Store Insights");
 assert.equal(firefoxManifest.browser_specific_settings.gecko.id, FIREFOX_EXTENSION_ID);
 assert.equal(firefoxManifest.browser_specific_settings.gecko.strict_min_version, FIREFOX_MIN_VERSION);
 assert.deepEqual(firefoxManifest.browser_specific_settings.gecko.data_collection_permissions, { required: ["none"] });
 assert.equal(firefoxManifest.browser_specific_settings.gecko_android.strict_min_version, FIREFOX_ANDROID_MIN_VERSION);
 
-const sharedKeys = Object.keys(canonical).filter(key => key !== "background" && key !== "browser_specific_settings");
+const sharedKeys = Object.keys(canonical).filter(key => !["background", "browser_specific_settings", "name"].includes(key));
 for (const key of sharedKeys) {
   assert.deepEqual(chromeManifest[key], canonical[key], `Chrome changed shared manifest field: ${key}`);
   assert.deepEqual(firefoxManifest[key], canonical[key], `Firefox changed shared manifest field: ${key}`);
 }
 assert.deepEqual(
   Object.keys(firefoxManifest).filter(key => !sharedKeys.includes(key)).sort(),
-  ["background", "browser_specific_settings"],
+  ["background", "browser_specific_settings", "name"],
   "Firefox contains an unexpected target-specific manifest field."
 );
 

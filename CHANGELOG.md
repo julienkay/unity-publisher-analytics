@@ -2,7 +2,7 @@
 
 This file lists the main changes that affect publishers.
 
-## 1.2.2 — Unreleased
+## 1.3.0 — 2026-09-27
 
 - Added package icons to Dashboard and Analytics package views.
 - The extension now opens its analytics workspace in a separate tab.

@@ -17,6 +17,7 @@ $expectedEntries = @(
     "background.js"
     "content.js"
     "portal-bridge.js"
+    "portal-launcher.css"
     "styles.css"
     "icons/publisher-analytics-16.png"
     "icons/publisher-analytics-32.png"
@@ -51,6 +52,22 @@ function Get-ArchiveDetails {
         $reader = [System.IO.StreamReader]::new($manifestEntry.Open())
         try { $targetManifest = $reader.ReadToEnd() | ConvertFrom-Json }
         finally { $reader.Dispose() }
+
+        if ($BrowserTarget -eq "firefox" -and $targetManifest.name.Length -gt 45) {
+            throw "Firefox package name exceeds the 45-character limit."
+        }
+        $availableFiles = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        foreach ($entryName in $entryNames) { [void]$availableFiles.Add($entryName) }
+        foreach ($contentScript in $targetManifest.content_scripts) {
+            $scriptFiles = @()
+            if ($contentScript.PSObject.Properties["js"]) { $scriptFiles += @($contentScript.js) }
+            if ($contentScript.PSObject.Properties["css"]) { $scriptFiles += @($contentScript.css) }
+            foreach ($file in $scriptFiles) {
+                if ($file -and -not $availableFiles.Contains($file)) {
+                    throw "$BrowserTarget package is missing manifest content script file: $file"
+                }
+            }
+        }
 
         if ($targetManifest.version -ne $canonicalManifest.version) {
             throw "$BrowserTarget package version does not match the canonical manifest."

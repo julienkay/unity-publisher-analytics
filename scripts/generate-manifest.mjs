@@ -26,6 +26,7 @@ export function createTargetManifest(canonicalManifest, target) {
     return manifest;
   }
 
+  manifest.name = "Publisher Analytics+ | Asset Store Insights";
   manifest.background = { scripts: ["background.js"] };
   manifest.browser_specific_settings = {
     gecko: {
