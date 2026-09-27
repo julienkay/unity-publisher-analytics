@@ -523,14 +523,14 @@
     }
     const ranked = [...packages.values()].filter(item => item.value > 0).sort((a, b) => b.value - a.value);
     const total = ranked.reduce((sum, item) => sum + item.value, 0);
-    const palette = ["#6c5ce7", "#21a7bd", "#d99721", "#d45c70", "#3ca56f", "#4e8bd7", "#aa69c7", "#6751aa"];
+    const palette = ["#7565df", "#21a7bd", "#d99721", "#d45c70", "#3ca56f", "#4e8bd7", "#aa69c7", "#45a99a", "#de8b4e", "#8195e8", "#bc6e91", "#8caa4b"];
     return {
       label,
       total,
       packageCount: ranked.length,
       largest: ranked[0] || null,
       topThreeShare: total ? ranked.slice(0, 3).reduce((sum, item) => sum + item.value, 0) / total * 100 : 0,
-      items: ranked.map((item, index) => ({ ...item, share: total ? item.value / total * 100 : 0, color: palette[index % palette.length] }))
+      items: ranked.map((item, index) => ({ ...item, share: total ? item.value / total * 100 : 0, color: index < palette.length ? palette[index] : `hsl(${Math.round(index * 137.508 % 360)} 58% ${index % 2 ? 60 : 52}%)` }))
     };
   }
 

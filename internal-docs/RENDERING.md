@@ -71,6 +71,12 @@ the inputs from the most recent call to `renderWorkspace()`.
 
 These rules apply to Dashboard, Analytics, and package details:
 
+- The Revenue mix donut ranks assets by gross revenue. Keep a slice when its
+  estimated arc is at least 3.5 pixels at the current chart size. Combine the
+  remaining revenue in **Other assets**. Use a thin separator between slices.
+  Recalculate after the chart changes size. Keep the center value as the
+  selected range total.
+
 - Keep the selected range in shared preferences. Resolve its start and end
   dates with `selectedDateBounds()` for every dependent view.
 - Include all model inputs in its freshness check. These can include resolved

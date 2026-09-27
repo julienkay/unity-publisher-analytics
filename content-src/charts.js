@@ -50,13 +50,14 @@
   function createChart(key, container, onResize) {
     if (!container || !globalThis.UPAECharts?.init) return null;
     const chart = globalThis.UPAECharts.init(container, null, { renderer: "svg" });
-    let lastWidth = Math.round(container.clientWidth);
+    let lastWidth = Math.round(container.clientWidth), lastHeight = Math.round(container.clientHeight);
     const observer = new ResizeObserver(entries => {
       chart.resize();
       const width = Math.round(entries[0]?.contentRect.width || container.clientWidth);
-      if (onResize && width !== lastWidth) {
-        lastWidth = width;
-        onResize(chart, width);
+      const height = Math.round(entries[0]?.contentRect.height || container.clientHeight);
+      if (onResize && (width !== lastWidth || height !== lastHeight)) {
+        lastWidth = width; lastHeight = height;
+        onResize(chart, width, height);
       }
     });
     observer.observe(container); chartInstances.set(key, chart); chartResizeObservers.set(key, observer);
@@ -156,7 +157,8 @@
     if (!container || !viewModel.items.length) return;
     if (!globalThis.UPAECharts?.init) { container.innerHTML = '<div class="upa-empty-chart">The chart renderer could not be loaded.</div>'; return; }
     const theme = chartTheme();
-    const chart = createChart("revenueMix", container); if (!chart) return;
+    const minimumArcPixels = 3.5;
+    const chart = createChart("revenueMix", container, (instance, width, height) => instance.setOption({ series: [{ data: revenueMixSliceData(viewModel, width, height, minimumArcPixels) }] })); if (!chart) return;
     const centerLabel = document.getElementById("upa-revenue-mix-label"), centerValue = document.getElementById("upa-revenue-mix-value");
     const updateCenter = item => {
       if (!centerLabel || !centerValue) return;
@@ -168,10 +170,10 @@
       aria: { enabled: true, description: `${viewModel.label} gross revenue split across ${viewModel.packageCount} revenue-generating assets.` },
       tooltip: { show: false },
       series: [{
-        name: "Revenue mix", type: "pie", radius: ["65%", "86%"], center: ["50%", "50%"], avoidLabelOverlap: true, selectedMode: false,
+        name: "Revenue mix", type: "pie", radius: ["62%", "88%"], center: ["50%", "50%"], avoidLabelOverlap: true, selectedMode: false,
         label: { show: false }, labelLine: { show: false }, emphasis: { scale: true, scaleSize: 5, itemStyle: { shadowBlur: 14, shadowColor: "rgba(31,36,53,.16)" } },
-        itemStyle: { borderColor: theme.pieBorder, borderWidth: 3, borderRadius: 5 },
-        data: viewModel.items.map(item => ({ name: item.name, value: item.value, itemStyle: { color: item.color } }))
+        itemStyle: { borderColor: theme.pieBorder, borderWidth: 1, borderRadius: 2 },
+        data: revenueMixSliceData(viewModel, container.clientWidth, container.clientHeight, minimumArcPixels)
       }]
     });
     chart.on("mouseover", parameter => updateCenter(parameter.data));
@@ -332,6 +334,20 @@
         ${totals.freeQty > 0 ? `<article class="upa-card upa-package-detail-chart-card"><div class="upa-section-title"><div><small>ACQUISITIONS</small><h2>Sales and free claims</h2><p>Paid sales and free claims shown separately for this package.</p></div><div class="upa-section-tools">${chartActions("package-units", !unitsTrend.points.length)}</div></div><div class="upa-package-chart-legend"><span><i class="upa-package-sales-dot"></i>Sales · ${number(totals.paidQty)}</span><span><i class="upa-package-claims-dot"></i>Claims · ${number(totals.freeQty)}</span></div><div id="upa-package-units-chart" class="upa-package-detail-chart" role="img" aria-label="Paid sales and free claims trend for ${escapeHtml(packageInfo.name)}"></div></article>` : ""}
       </div><aside class="upa-card upa-package-detail-metrics" aria-label="Metrics for ${escapeHtml(packageInfo.name)}"><div class="upa-package-detail-title"><div><small>AT A GLANCE</small><h2>Package metrics</h2></div></div><p>Performance for the selected time range.</p><div class="upa-package-detail-highlights"><div class="upa-package-detail-primary"><span>Gross revenue</span><strong>${money(totals.sales)}</strong><small>Before refunds and Unity's revenue share</small></div><div class="upa-package-detail-primary upa-package-growth-primary"><span>12-month growth</span><strong class="${growthClass}">${growthValue}</strong><small>${growthPeriod}</small></div></div><dl><div><dt>Sales${totals.freeQty > 0 ? " <small>Paid units</small>" : ""}</dt><dd>${number(totals.paidQty)}</dd></div>${totals.freeQty > 0 ? `<div><dt>Claims <small>Free units</small></dt><dd>${number(totals.freeQty)}</dd></div>` : ""}<div><dt>Pageviews</dt><dd>${number(totals.pageViews)}</dd></div><div><dt><span class="upa-package-metric-label">Conversion ${kpiHelp("upa-package-conversion-help", "About package conversion", conversionDescription)}</span></dt><dd>${conversion}</dd></div><div><dt>Downloads</dt><dd>${number(totals.downloads)}</dd></div></dl></aside></div>
     </section>`;
+  }
+
+  function revenueMixSliceData(viewModel, width, height, minimumArcPixels) {
+    const radius = Math.min(width, height) * .75;
+    const circumference = Math.PI * 2 * radius;
+    let visibleCount = viewModel.items.length;
+    if (circumference > 0 && viewModel.total > 0) {
+      visibleCount = viewModel.items.findIndex(item => item.value / viewModel.total * circumference < minimumArcPixels);
+      if (visibleCount < 0) visibleCount = viewModel.items.length;
+    }
+    const visible = viewModel.items.slice(0, visibleCount).map(item => ({ name: item.name, value: item.value, itemStyle: { color: item.color } }));
+    const otherValue = viewModel.items.slice(visibleCount).reduce((sum, item) => sum + item.value, 0);
+    if (otherValue > 0) visible.push({ name: "Other assets", value: otherValue, itemStyle: { color: "#798398" } });
+    return visible;
   }
   function renderCalendarChart(viewModel) {
     const container = document.getElementById("upa-calendar-chart");
