@@ -210,6 +210,18 @@ request and then processes the remaining schedule.
 responses. They also cover a request timeout. No retained live failure confirms
 this behavior against Unity.
 
+### Large saved histories
+
+**Confirmed in a synthetic Edge test:** the previous all-record database reply
+can exceed the browser's 64 MiB message limit. Workspace startup reported this
+local failure as a publisher-identification failure. Record loading now uses
+bounded pages. Existing records and ownership keys remain unchanged.
+
+The supplied large-catalog report is consistent with this failure path. The
+reporter's actual exception remains unknown. This test does not establish a
+Unity limit, authentication failure, or rate-limit policy. See
+[VALIDATION.md](VALIDATION.md#large-history-failure-investigation-2026-09-27).
+
 ### Incremental overlap and revisions
 
 Incremental sync begins at the latest stored daily date for each existing scope, so it re-fetches that one date. It does not intentionally revisit a wider recent window.

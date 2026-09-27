@@ -237,3 +237,22 @@ behavior is unsafe or incomplete. It requires a product or engineering decision.
   different periods. The count is not refreshed until the next package sync.
 - **Review trigger:** A Portal comparison or additional fixture changes the
   field meaning, version selection, or period interpretation.
+
+## D-020 — Separate workspace recovery from publisher verification
+
+- **Status:** Accepted.
+- **Current behavior:** Workspace failures retain their operation stage.
+  Recovery controls do not require analytics calculation. Settings and support
+  reports remain available. Record loading uses bounded publisher-scoped pages.
+- **Basis:** A synthetic Edge test reproduced a database reply above the browser
+  message limit. The old startup catch displayed an identity error for that
+  local failure. The reported publisher's exception remains unknown.
+- **Data policy:** Reports contain operation metadata and progress. They exclude
+  account identifiers, response bodies, authentication material, and financial
+  values. Reports download only after a publisher action. They never upload.
+- **Recovery policy:** A retry opens saved records and the existing checkpoint.
+  A failed load after sync completion does not request a new full sync.
+- **Limits:** Records still occupy memory after page loading. Separate page
+  transactions do not provide a snapshot across concurrent tabs.
+- **Review trigger:** A measured catalog workload exceeds memory or rendering
+  limits, or a support report proves insufficient for targeted investigation.

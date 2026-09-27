@@ -26,7 +26,7 @@
         getURL(path) { return new URL(`../${path}`, location.href).href; },
         onMessage: { addListener(listener) { messageListeners.push(listener); } },
         async sendMessage(message) {
-          if (message.type === "UPA_DB_GET_ALL") return { ok: true, result: fixture.records };
+          if (message.type === "UPA_DB_GET_RECORDS_PAGE") return { ok: true, result: { rows: fixture.records, next: null } };
           if (message.type === "UPA_DB_GET_META") return { ok: true, result: null };
           return { ok: true, result: true };
         }

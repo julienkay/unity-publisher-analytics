@@ -61,7 +61,7 @@
         getURL(path) { return new URL(`../${path}`, location.href).href; },
         onMessage: { addListener(listener) { messageListeners.push(listener); } },
         async sendMessage(message) {
-          if (message.type === "UPA_DB_GET_ALL") return { ok: true, result: syncing ? [] : fixture.records };
+          if (message.type === "UPA_DB_GET_RECORDS_PAGE") return { ok: true, result: { rows: syncing ? [] : fixture.records, next: null } };
           if (message.type === "UPA_DB_GET_META") return { ok: true, result: syncJob };
           if (message.type === "UPA_DB_SET_META" || message.type === "UPA_DB_PUT_MANY") return { ok: true, result: true };
           return { ok: true, result: true };

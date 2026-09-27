@@ -37,6 +37,11 @@
   let accountMenuOpen = false;
   let publisherIdentity = { id: "", organizationId: "", portalLabel: "", name: "Publisher", icon: "" };
   let publisherIdentityState = "loading";
+  let workspaceStage = "identity";
+  let workspaceFailure = null;
+  let workspaceLoading = false;
+  let publisherConfirmed = false;
+  const diagnosticEvents = [];
   let workspaceGeneration = 0;
   let renderQueued = false;
   let isRangePopoverOpen = false;
@@ -128,10 +133,13 @@
   async function fetchPublisherIdentity(force = false) {
     const user = await apiJson(API.user);
     const id = compact(user?.publisherId);
-    if (!id) throw new Error("The active Publisher Portal account did not provide a publisher identity.");
+    if (!id) throw Object.assign(new Error("The active Publisher Portal account did not provide a publisher identity."), { code: "missing-publisher" });
+    publisherConfirmed = true;
     const header = publisherFromHeader();
     const key = publisherStorageKey(PUBLISHER_KEY_PREFIX, id);
-    const stored = await extensionApi.storage.local.get(key), cached = stored[key];
+    let cached;
+    try { cached = (await extensionApi.storage.local.get(key))[key]; }
+    catch (error) { recordDiagnostic({ kind: "publisher-display-cache", ...failureDetails(error) }); }
     const fresh = !force && cached?.id === id && Date.now() - Number(cached.updatedAt || 0) < 86400000;
     if (fresh) return { ...cached, portalLabel: displayText(cached.portalLabel), name: displayText(cached.name) };
     const apiIcon = typeof user.avatar === "string" ? user.avatar : "";
@@ -145,7 +153,8 @@
       icon: apiIcon || profile?.icon || "",
       updatedAt: Date.now()
     };
-    await extensionApi.storage.local.set({ [key]: identity });
+    try { await extensionApi.storage.local.set({ [key]: identity }); }
+    catch (error) { recordDiagnostic({ kind: "publisher-display-cache", ...failureDetails(error) }); }
     return identity;
   }
   const DAILY_METRICS = {
@@ -249,12 +258,33 @@
   }
 
   async function database(message) {
-    const response = await extensionApi.runtime.sendMessage(message);
-    if (!response?.ok) throw new Error(response?.error || "The local analytics database is unavailable.");
-    return response.result;
+    const generation = workspaceGeneration;
+    try {
+      const response = await extensionApi.runtime.sendMessage(message);
+      if (!response?.ok) throw new Error(response?.error || "The local analytics database is unavailable.");
+      return response.result;
+    } catch (error) {
+      if (generation === workspaceGeneration) recordDiagnostic({ kind: "storage", operation: message.type, ...failureDetails(error) });
+      throw error;
+    }
   }
 
-  const getAll = (publisherId = publisherIdentity.id) => database({ type: "UPA_DB_GET_ALL", publisherId });
+  async function getAll(publisherId = publisherIdentity.id) {
+    const rows = [], generation = workspaceGeneration;
+    let after;
+    do {
+      const page = await database({ type: "UPA_DB_GET_RECORDS_PAGE", publisherId, after });
+      if (!ownsWorkspace(publisherId, generation)) throw new Error("The publisher workspace changed while records were loading.");
+      if (!Array.isArray(page?.rows) || page.rows.some(row => row.publisherId !== publisherId)
+        || (page.next !== null && (typeof page.next !== "string" || (after !== undefined && page.next <= after)))) {
+        throw new Error("Invalid publisher record page.");
+      }
+      for (const row of page.rows) rows.push(row);
+      after = page.next;
+    } while (after !== null);
+    recordDiagnostic({ kind: "storage", operation: "load-records", count: rows.length });
+    return rows;
+  }
   const putMany = (rows, publisherId = publisherIdentity.id) => rows.length ? database({ type: "UPA_DB_PUT_MANY", publisherId, records: rows }) : Promise.resolve(0);
   const getMeta = (key, publisherId = publisherIdentity.id) => database({ type: "UPA_DB_GET_META", publisherId, key });
   const setMeta = (key, value, publisherId = publisherIdentity.id) => database({ type: "UPA_DB_SET_META", publisherId, key, value });
@@ -344,11 +374,94 @@
     }
   }
 
+  function recordDiagnostic(event) {
+    diagnosticEvents.push({ at: new Date().toISOString(), ...event });
+    if (diagnosticEvents.length > 60) diagnosticEvents.shift();
+  }
+
+  function failureDetails(error) {
+    const message = String(error?.message || "");
+    const code = ["missing-publisher", "timeout", "network", "http", "unexpected-response"].includes(error?.code) ? error.code
+      : /maximum allowed size|message.*too large/i.test(message) ? "message-too-large"
+      : /quota/i.test(message) ? "storage-full"
+      : /extension context invalidated/i.test(message) ? "extension-reloaded"
+      : /stack|recursion/i.test(message) ? "stack-limit" : "unexpected-error";
+    const name = ["Error", "TypeError", "RangeError", "QuotaExceededError", "SecurityError", "AbortError"].includes(error?.name) ? error.name : "Error";
+    const locations = [...new Set(String(error?.stack || "").match(/(?:content|background|api-client)\.js:\d+:\d+/g) || [])].slice(0, 5);
+    return { code, name, locations };
+  }
+
+  function supportReport() {
+    let version = "unknown";
+    try { version = extensionApi.runtime.getManifest().version; } catch { /* Local previews have no manifest. */ }
+    const job = syncJob;
+    return {
+      format: "publisher-analytics-support", version: 1, extensionVersion: version, generatedAt: new Date().toISOString(),
+      browser: navigator.userAgent.match(/(?:Firefox|Edg|Chrome)\/[\d.]+/g)?.join(" ") || "unknown",
+      workspace: { state: publisherIdentityState, stage: workspaceStage, publisherConfirmed, loadedRecords: records.length, failure: workspaceFailure },
+      sync: job ? { phase: job.phase, active: Boolean(job.active), completed: job.completed, total: job.total,
+        packageCount: job.packages?.length || 0, monthIndex: job.monthIndex, scopeIndex: job.scopeIndex,
+        cursor: job.cursor, endExclusive: job.endExclusive, failure: job.failure || null } : null,
+      events: diagnosticEvents.slice()
+    };
+  }
+
+  function supportPanel() {
+    return `<section class="upa-settings-section"><div class="upa-settings-intro"><h2>Troubleshooting</h2><p>Save a report if you need help.</p></div><article class="upa-settings-panel upa-support-panel"><p>The report includes your extension version, sync progress, and recent error types. It excludes account names, asset names, sales figures, and sign-in details. Nothing is sent automatically.</p><button class="upa-settings-primary" type="button" data-action="download-support">Download support report</button><details><summary>Preview report</summary><pre>${escapeHtml(JSON.stringify(supportReport(), null, 2))}</pre></details></article></section>`;
+  }
+
+  function workspaceErrorCopy() {
+    if (workspaceStage === "identity") return { title: "We couldn't confirm your publisher.", detail: "Open the Publisher Portal and check that you are signed in. Then try again." };
+    if (workspaceStage === "render") return { title: "We couldn't display your analytics.", detail: "Your saved history has not been cleared. Download a support report, or try opening the workspace again." };
+    return { title: "We couldn't open your saved workspace.", detail: "Your publisher was confirmed, but saved data could not be loaded. Download a support report before trying again. Your saved history has not been cleared." };
+  }
+
+  function renderRecovery(host) {
+    try { disposeCharts(); }
+    catch (error) {
+      recordDiagnostic({ kind: "chart-cleanup", ...failureDetails(error) });
+      chartResizeObservers.clear(); chartInstances.clear();
+    }
+    host.classList.toggle("upa-open", isOpen);
+    host.classList.toggle("upa-theme-dark", darkThemeActive());
+    document.documentElement.classList.toggle("upa-dashboard-open", isOpen);
+    const settings = prefs.section === "settings", loading = publisherIdentityState === "loading";
+    const logo = extensionApi.runtime.getURL("icons/publisher-analytics-128.png"), copy = workspaceErrorCopy();
+    const status = loading ? `<h2>${workspaceStage === "identity" ? "Checking your publisher…" : "Opening your saved workspace…"}</h2><p>Your local workspace will open in a moment.</p>`
+      : `<h2>${copy.title}</h2><p>${copy.detail}</p><div class="upa-recovery-actions"><button class="upa-primary" data-action="retry-publisher">Try again</button><button data-action="exit-analytics">Open Publisher Portal</button></div>`;
+    host.innerHTML = `<button class="upa-fab" aria-label="Open Publisher Analytics+" title="Publisher Analytics+"><img src="${logo}" alt=""></button><aside class="upa-panel" aria-label="Publisher Analytics+ dashboard"><div class="upa-shell"><aside class="upa-sidebar" aria-label="Analytics workspace"><div class="upa-brand"><span><img src="${logo}" alt=""></span><div><strong>Publisher Analytics+</strong><small>Asset Store Insights</small></div></div><div class="upa-primary-nav"><button data-action="recovery-home">Home</button><button data-action="open-settings">Settings</button><button data-action="exit-analytics">Exit to Publisher Portal</button></div>${publisherAccount()}</aside><section class="upa-workspace"><header class="upa-header upa-header-compact"><div class="upa-header-main"><div class="upa-header-copy"><small>Publisher workspace</small><h1>${settings ? "Settings" : "Your workspace"}</h1></div></div><nav class="upa-mobile-nav" aria-label="Workspace sections"><button data-action="recovery-home">Home</button><button data-action="open-settings">Settings</button><button data-action="exit-analytics">Publisher Portal</button></nav></header><main class="upa-content" data-section="${settings ? "settings" : "dashboard"}"><section class="upa-recovery-card" role="status">${status}</section>${settings ? '<section class="upa-recovery-card"><h2>Appearance</h2><div class="upa-recovery-actions"><button data-theme="system">System</button><button data-theme="light">Light</button><button data-theme="dark">Dark</button></div><p>Data management becomes available when your workspace opens.</p></section>' : ""}${supportPanel()}</main></section></div><div class="upa-toast" role="status"></div></aside>`;
+  }
+
+  async function openPublisherWorkspace(force = false) {
+    if (workspaceLoading) return;
+    workspaceLoading = true;
+    publisherConfirmed = false;
+    workspaceFailure = null;
+    workspaceStage = "identity";
+    publisherIdentityState = "loading";
+    render();
+    try { await activatePublisher(await fetchPublisherIdentity(force), { initial: true }); }
+    catch (error) {
+      publisherIdentityState = "error";
+      workspaceFailure = { stage: workspaceStage, ...failureDetails(error) };
+      recordDiagnostic({ kind: "workspace", ...workspaceFailure });
+      console.warn("Publisher Analytics+ workspace failed:", workspaceStage, error);
+      render();
+    } finally { workspaceLoading = false; }
+  }
+
   async function apiJson(path, options = {}) {
     const requestId = crypto.randomUUID(), method = options.method || "GET";
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => { pendingApiRequests.delete(requestId); reject(new Error(`Publisher API timed out for ${path.split("?")[0]}.`)); }, 45000);
-      pendingApiRequests.set(requestId, { resolve, reject, timeout, path });
+      const endpoint = Object.entries(API).find(([, value]) => typeof value === "string" && value === path)?.[0]
+        || (/monthly-sales/.test(path) ? "sales" : /monthly-downloads/.test(path) ? "downloads" : "unknown");
+      const generation = workspaceGeneration, startedAt = Date.now();
+      const timeout = setTimeout(() => {
+        pendingApiRequests.delete(requestId);
+        if (generation === workspaceGeneration) recordDiagnostic({ kind: "request", endpoint, method, outcome: "timeout", durationMs: Date.now() - startedAt });
+        reject(Object.assign(new Error(`Publisher API timed out for ${path.split("?")[0]}.`), { code: "timeout" }));
+      }, 45000);
+      pendingApiRequests.set(requestId, { resolve, reject, timeout, path, endpoint, method, generation, startedAt });
       window.postMessage({ source: "unity-publisher-analytics", type: "UPA_API_REQUEST", requestId, path, method, body: options.body }, location.origin);
     });
   }
@@ -358,10 +471,14 @@
     if (event.source !== window || event.origin !== location.origin || message?.source !== "unity-publisher-analytics-api" || message?.type !== "UPA_API_RESPONSE") return;
     const pending = pendingApiRequests.get(message.requestId); if (!pending) return;
     pendingApiRequests.delete(message.requestId); clearTimeout(pending.timeout);
+    const shape = Array.isArray(message.data) ? "array" : message.data === null ? "null" : typeof message.data;
+    if (pending.generation === workspaceGeneration) recordDiagnostic({ kind: "request", endpoint: pending.endpoint, method: pending.method,
+      status: Number(message.status) || 0, outcome: message.ok ? "success" : "failure", durationMs: Date.now() - pending.startedAt, shape,
+      ...(pending.endpoint === "user" ? { publisherIdPresent: Boolean(compact(message.data?.publisherId)) } : {}) });
     if (message.ok) pending.resolve(message.data);
     else {
       const detail = typeof message.data === "string" ? compact(message.data).slice(0, 180) : message.data?.message || message.error || "";
-      pending.reject(new Error(`Publisher API returned ${message.status || "a network error"} for ${pending.path.split("?")[0]}${detail ? `: ${detail}` : ""}.`));
+      pending.reject(Object.assign(new Error(`Publisher API returned ${message.status || "a network error"} for ${pending.path.split("?")[0]}${detail ? `: ${detail}` : ""}.`), { code: message.status ? "http" : "network" }));
     }
   });
 
@@ -550,6 +667,7 @@
   }
 
   async function activatePublisher(identity, { initial = false, resume = true } = {}) {
+    if (publisherIdentity.id && publisherIdentity.id !== identity.id) diagnosticEvents.length = 0;
     workspaceGeneration += 1;
     const generation = workspaceGeneration;
     publisherIdentity = identity;
@@ -561,6 +679,7 @@
     isPerformanceScopeMenuOpen = false;
     isDashboardPackageSettingsOpen = false;
     isRefreshing = false;
+    workspaceStage = "preferences";
     render();
     const preferencesKey = publisherStorageKey(PREFS_KEY_PREFIX, identity.id), groupsKey = publisherStorageKey(GROUPS_KEY_PREFIX, identity.id);
     const stored = await extensionApi.storage.local.get([preferencesKey, groupsKey]);
@@ -570,14 +689,20 @@
     prefs.performanceScopes = sanitizedPerformanceScopes(prefs.performanceScopes).filter(scope => scope.type !== "group" || packageGroups.some(group => group.id === scope.id));
     if (!prefs.performanceScopes.length) prefs.performanceScopes = [{ type: "all", id: "all" }];
     await extensionApi.storage.local.set({ [preferencesKey]: prefs });
-    const [publisherRecords, publisherJob] = await Promise.all([getAll(identity.id), getMeta(SYNC_KEY, identity.id)]);
+    workspaceStage = "checkpoint";
+    const publisherJob = await getMeta(SYNC_KEY, identity.id);
+    if (!ownsWorkspace(identity.id, generation)) return;
+    syncJob = publisherJob;
+    workspaceStage = "local-data";
+    const publisherRecords = await getAll(identity.id);
     if (!ownsWorkspace(identity.id, generation)) return;
     records = publisherRecords;
     syncJob = publisherJob;
     publisherIdentityState = "ready";
+    workspaceStage = "render";
     if (initial && syncJob?.active) isOpen = true;
     render();
-    if (!resume) return;
+    if (!resume || publisherIdentityState !== "ready") return;
     if (syncJob?.active) runFullSync(identity.id, generation);
     else if (records.length) incrementalSync(false, identity.id, generation);
   }
@@ -624,7 +749,7 @@
             job.label = `Syncing daily performance · ${scope.name} · ${job.cursor}–${addDays(chunkEnd, -1)}`; render();
             let raw;
             try { raw = await apiJson(API.daily, { method: "POST", body: { start_date: apiTimestamp(job.cursor), end_date: apiTimestamp(chunkEnd), package_ids: scope.id ? [scope.id] : [] } }); }
-            catch (error) { throw new Error(`${error.message} Range ${job.cursor}–${addDays(chunkEnd, -1)}, scope ${scope.name}.`); }
+            catch (error) { error.message += ` Range ${job.cursor}–${addDays(chunkEnd, -1)}, scope ${scope.name}.`; throw error; }
             if (!ownsWorkspace(publisherId, generation)) return;
             await putMany(normalizeDaily(raw, scope, publisherId), publisherId);
             job.cursor = chunkEnd; job.completed += 1; await saveJob(job, publisherId); render(); await sleep(120);
@@ -641,7 +766,20 @@
     } catch (error) {
       if (!ownsWorkspace(publisherId, generation)) return;
       console.error("Publisher Analytics+ sync failed:", error);
-      syncJob = { ...(syncJob || {}), publisherId, active: false, error: error.message, label: "Sync couldn't be completed" }; await saveJob(syncJob, publisherId); render(); toast("We couldn't finish syncing your history. Please try again.", "error");
+      if (syncJob?.phase === "complete") {
+        workspaceStage = "local-data";
+        publisherIdentityState = "error";
+        workspaceFailure = { stage: workspaceStage, ...failureDetails(error) };
+        recordDiagnostic({ kind: "workspace", ...workspaceFailure });
+        render();
+        return;
+      }
+      const failure = { stage: "sync", ...failureDetails(error), events: diagnosticEvents.slice(-12) };
+      recordDiagnostic({ kind: "sync", ...failureDetails(error) });
+      syncJob = { ...(syncJob || {}), publisherId, active: false, error: error.message, failure, label: "Sync couldn't be completed" };
+      try { await saveJob(syncJob, publisherId); }
+      catch (saveError) { recordDiagnostic({ kind: "checkpoint", ...failureDetails(saveError) }); }
+      render(); toast("We couldn't finish syncing your history. Download a support report if this happens again.", "error");
     }
   }
 
@@ -651,8 +789,16 @@
     if (syncJob.publisherId !== publisherId) return;
     syncJob.active = true;
     syncJob.error = "";
+    syncJob.failure = null;
     syncJob.label = "Resuming your history";
-    await saveJob(syncJob, publisherId);
+    try { await saveJob(syncJob, publisherId); }
+    catch (error) {
+      syncJob.active = false;
+      syncJob.error = error.message;
+      recordDiagnostic({ kind: "checkpoint", ...failureDetails(error) });
+      render();
+      return;
+    }
     if (!ownsWorkspace(publisherId, generation)) return;
     render();
     await runFullSync(publisherId, generation);
@@ -662,6 +808,7 @@
     let identity;
     try { identity = await fetchPublisherIdentity(true); }
     catch (error) {
+      recordDiagnostic({ kind: "full-sync-identity", ...failureDetails(error) });
       console.warn("Publisher Analytics+ could not verify the publisher before full sync:", error.message);
       toast("We couldn't confirm your publisher. We did not change your saved analytics. Please try again.", "error");
       return;
@@ -673,12 +820,21 @@
     syncJob = { publisherId, active: true, phase: "preparing", startedAt: new Date().toISOString(), completed: 0, total: 0, label: "Preparing your history" };
     isOpen = true;
     render();
-    await clearPublisherData(publisherId);
-    if (!ownsWorkspace(publisherId, generation)) return;
-    records = [];
-    syncJob = { publisherId, active: true, phase: "preparing", startedAt: new Date().toISOString(), completed: 0, total: 0, label: "Preparing your history" };
-    render();
-    await runFullSync(publisherId, generation);
+    try {
+      await clearPublisherData(publisherId);
+      if (!ownsWorkspace(publisherId, generation)) return;
+      records = [];
+      syncJob = { publisherId, active: true, phase: "preparing", startedAt: new Date().toISOString(), completed: 0, total: 0, label: "Preparing your history" };
+      render();
+      await runFullSync(publisherId, generation);
+    } catch (error) {
+      if (!ownsWorkspace(publisherId, generation)) return;
+      syncJob.active = false;
+      syncJob.error = error.message;
+      syncJob.failure = { stage: "sync-start", ...failureDetails(error) };
+      recordDiagnostic({ kind: "sync-start", ...failureDetails(error) });
+      render();
+    }
   }
 
   async function incrementalSync(announce = false, publisherId = publisherIdentity.id, generation = workspaceGeneration) {
@@ -710,6 +866,7 @@
     } catch (error) {
       if (!ownsWorkspace(publisherId, generation)) return;
       console.warn("Publisher Analytics+ incremental API sync failed:", error.message);
+      recordDiagnostic({ kind: "refresh", ...failureDetails(error) });
       if (announce) { notice = "We couldn't refresh your publisher data. Please try again."; noticeType = "error"; }
     } finally { if (ownsWorkspace(publisherId, generation)) { isRefreshing = false; render(); if (notice) toast(notice, noticeType); } }
   }
@@ -1772,6 +1929,7 @@
     return `<section class="upa-settings-page"><section class="upa-settings-section"><div class="upa-settings-intro"><h2>Local data</h2><p>See how much publisher history is currently available.</p></div><article class="upa-settings-panel"><div class="upa-settings-panel-head"><strong>Data coverage</strong><small>Stored for ${escapeHtml(publisherIdentity.name)} in this browser.</small></div><div class="upa-coverage-grid"><div><span>Sales</span><strong>${number(salesMonths)}</strong><small>months</small></div><div><span>Downloads</span><strong>${number(downloadMonths)}</strong><small>months</small></div><div><span>Performance</span><strong>${number(performanceDays)}</strong><small>days</small></div><div><span>Revenue</span><strong>${number(revenueEntries)}</strong><small>entries</small></div></div>${settingsSyncAction}</article></section>
       <section class="upa-settings-section"><div class="upa-settings-intro"><h2>Data management</h2><p>Back up or remove analytics kept for this publisher.</p></div><article class="upa-settings-panel"><div class="upa-settings-panel-head"><strong>Browser storage</strong><small>Your analytics stays in this browser and is never sent to an external service. Each publisher has a separate local workspace.</small></div><button class="upa-data-action" type="button" data-action="export" ${records.length ? "" : "disabled"}><span><strong>Export data</strong><small>Download a JSON backup of this publisher's analytics.</small></span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5v10m-4-4 4 4 4-4"></path><path d="M3.5 14v2.5h13V14"></path></svg></button><div class="upa-danger-zone"><div><strong>Clear local data</strong><span>Deletes this publisher's synced analytics, saved sync progress, and cached package icons. Preferences and package groups are kept.</span></div><button type="button" data-action="clear" ${records.length || syncJob ? "" : "disabled"}>Clear data</button></div></article></section>
       <section class="upa-settings-section"><div class="upa-settings-intro"><h2>Appearance</h2><p>Choose how Publisher Analytics+ looks in this browser.</p></div><article class="upa-settings-panel"><div class="upa-settings-row"><div><strong>Color theme</strong><small>System follows your browser or device preference.</small></div><div class="upa-theme-options" role="group" aria-label="Color theme">${themeOptions}</div></div></article></section>
+      ${supportPanel()}
     </section>`;
   }
 
@@ -1828,6 +1986,23 @@
   }
 
   function render() {
+    renderQueued = false;
+    const host = document.getElementById("upa-root");
+    if (!host) return;
+    try {
+      if (publisherIdentityState !== "ready") { renderRecovery(host); return; }
+      renderWorkspace();
+    } catch (error) {
+      workspaceStage = "render";
+      publisherIdentityState = "error";
+      workspaceFailure = { stage: "render", ...failureDetails(error) };
+      recordDiagnostic({ kind: "workspace", ...workspaceFailure });
+      console.warn("Publisher Analytics+ could not display the workspace:", error);
+      renderRecovery(host);
+    }
+  }
+
+  function renderWorkspace() {
     renderQueued = false; const host = document.getElementById("upa-root"); if (!host) return;
     disposeCharts(); chartShareMetadata.clear();
     const salesItems = filtered("sales");
@@ -2032,8 +2207,8 @@
         </aside>
         <section class="upa-workspace">
           <header class="upa-header ${section === "dashboard" || section === "package" || section === "groups" || section === "settings" ? "upa-header-compact" : ""}"><div class="upa-header-main"><div class="upa-header-copy"><small>Publisher workspace</small>${headerIdentity}</div><div class="upa-header-actions">${packageNavigation}${intervalControl}${rangeControl}</div></div>${mobileNavigation}${hasData && section === "analytics" ? `<nav class="upa-view-tabs" role="tablist" aria-label="Analytics views">${viewTabs}</nav>` : ""}</header>
-          ${(syncJob?.active || syncFailed || syncIncomplete) ? `<section class="upa-sync ${syncJob?.active ? "upa-syncing" : ""}" role="status" aria-live="polite">${syncIcon}<div class="upa-sync-copy"><strong>${escapeHtml(syncTitle)}</strong><span>${escapeHtml(syncDetail)}</span>${syncJob?.active ? '<small class="upa-sync-note">Large catalogs can take several minutes. Keep this tab open; if interrupted, progress resumes when you return.</small>' : ""}</div><div class="upa-sync-actions">${syncPreparing ? "" : syncJob?.active ? '<button data-action="stop-sync">Pause</button>' : syncIncomplete ? '<button data-action="continue-sync">Continue</button>' : '<button data-action="sync-all">Try full sync again</button>'}</div>${syncJob?.active ? `<div class="upa-progress ${syncPreparing ? "upa-progress-preparing" : ""}"><i style="width:${progress}%"></i></div>` : ""}</section>` : ""}
-          <main class="upa-content" data-section="${section}" data-view="${view}">${publisherIdentityState !== "ready" ? `<section class="upa-welcome"><div class="upa-welcome-copy"><small>PUBLISHER WORKSPACE</small><h2>${publisherIdentityState === "loading" ? "Checking your publisher…" : "We couldn't identify the active publisher."}</h2><p>${publisherIdentityState === "loading" ? "Your local workspace will open in a moment." : "Refresh the Publisher Portal, or try again while signed in."}</p>${publisherIdentityState === "error" ? '<button class="upa-primary upa-large" data-action="retry-publisher">Try again</button>' : ""}</div></section>` : section === "groups" ? groupsPanel(performanceOptions) : section === "settings" ? settingsPanel() : records.length ? `<section class="upa-dashboard-view upa-view-panel upa-view-dashboard" id="upa-view-dashboard">${dashboardSummary}<article class="upa-dashboard-chart"><div class="upa-section-title"><div><small>BUSINESS ACTIVITY</small><h2>Performance over time</h2><p>${intervalName(overviewChartData.interval)} revenue, pageviews, and downloads on aligned timelines.</p></div><div class="upa-section-tools"><span>${overviewChartData.points.length} periods</span>${chartActions("overview")}</div></div><div class="upa-pulse-legend"><span><i class="upa-pulse-revenue"></i>Gross revenue</span><span><i class="upa-pulse-views"></i>Pageviews</span><span><i class="upa-pulse-downloads"></i>Downloads</span></div><div id="upa-overview-chart" class="upa-overview-chart" role="img" aria-label="Aligned gross revenue, pageviews, and downloads timelines"></div></article>${dashboardPackageTable}</section>
+          ${(syncJob?.active || syncFailed || syncIncomplete) ? `<section class="upa-sync ${syncJob?.active ? "upa-syncing" : ""}" role="status" aria-live="polite">${syncIcon}<div class="upa-sync-copy"><strong>${escapeHtml(syncTitle)}</strong><span>${escapeHtml(syncDetail)}</span>${syncJob?.active ? '<small class="upa-sync-note">Large catalogs can take several minutes. Keep this tab open; if interrupted, progress resumes when you return.</small>' : ""}</div><div class="upa-sync-actions">${syncPreparing ? "" : syncJob?.active ? '<button data-action="stop-sync">Pause</button>' : syncIncomplete ? '<button data-action="continue-sync">Continue</button>' : '<button data-action="sync-all">Try full sync again</button>'}${syncFailed ? '<button data-action="download-support">Download support report</button>' : ""}</div>${syncJob?.active ? `<div class="upa-progress ${syncPreparing ? "upa-progress-preparing" : ""}"><i style="width:${progress}%"></i></div>` : ""}</section>` : ""}
+          <main class="upa-content" data-section="${section}" data-view="${view}">${section === "groups" ? groupsPanel(performanceOptions) : section === "settings" ? settingsPanel() : records.length ? `<section class="upa-dashboard-view upa-view-panel upa-view-dashboard" id="upa-view-dashboard">${dashboardSummary}<article class="upa-dashboard-chart"><div class="upa-section-title"><div><small>BUSINESS ACTIVITY</small><h2>Performance over time</h2><p>${intervalName(overviewChartData.interval)} revenue, pageviews, and downloads on aligned timelines.</p></div><div class="upa-section-tools"><span>${overviewChartData.points.length} periods</span>${chartActions("overview")}</div></div><div class="upa-pulse-legend"><span><i class="upa-pulse-revenue"></i>Gross revenue</span><span><i class="upa-pulse-views"></i>Pageviews</span><span><i class="upa-pulse-downloads"></i>Downloads</span></div><div id="upa-overview-chart" class="upa-overview-chart" role="img" aria-label="Aligned gross revenue, pageviews, and downloads timelines"></div></article>${dashboardPackageTable}</section>
             <section class="upa-dashboard-grid"><section class="upa-view-panel upa-view-revenue upa-performance-view" id="upa-view-revenue"><article class="upa-card upa-performance-controls"><div class="upa-performance-control-layout"><div><small>CATALOG PERFORMANCE</small><h2>Compare the signals that drive your business</h2><p>Choose All assets, a saved group, or an individual asset. Every included asset gets its own line across all four charts.</p></div><div class="upa-performance-tools">${performanceLayoutControls}${performanceScopeControls}</div></div>${performanceLegend}</article><div class="upa-performance-chart-grid" data-layout="${prefs.performanceLayout}">${performanceChartsMarkup}</div></section>
             <article class="upa-card upa-packages-card upa-view-panel upa-view-packages" id="upa-view-packages"><div class="upa-section-title"><div><small>AUDIENCE &amp; CONVERSION</small><h2>Package performance</h2><p>Top packages ranked by gross revenue.</p></div><span>${packages.length} packages</span></div><div class="upa-package-list">${packages.slice(0, 10).map((item, index) => `<button class="upa-package-row" type="button" data-package-id="${escapeHtml(item.id)}" aria-label="View details for ${escapeHtml(item.name)}"><b>${String(index + 1).padStart(2, "0")}</b>${packageIconMarkup(item)}<div><strong>${escapeHtml(item.name)}</strong><span>${number(item.pageViews)} views · ${item.conversion.toFixed(2)}% conversion · ${number(item.downloads)} downloads</span></div><em>${money(item.sales)}</em><i aria-hidden="true">→</i></button>`).join("")}</div></article></section>
             <section class="upa-card upa-insight-card upa-view-panel upa-view-lifetime" id="upa-view-lifetime"><div class="upa-section-title"><div><small>LIFETIME GROWTH</small><h2>How packages accumulate ${escapeHtml(lifetimeData.metric.noun)}</h2><p>Cumulative ${escapeHtml(lifetimeData.metric.label.toLowerCase())} across all available history makes momentum and plateaus visible.</p></div><div class="upa-section-tools"><span>${lifetimeData.pointCount} months</span>${chartActions("lifetime", !lifetimeData.series.length)}</div></div><div class="upa-insight-toolbar upa-lifetime-toolbar"><div class="upa-lifetime-controls"><label class="upa-inline-select">View<select id="upa-lifetime-style"><option value="area" ${lifetimeData.style === "area" ? "selected" : ""}>Stacked area</option><option value="lines" ${lifetimeData.style === "lines" ? "selected" : ""}>Cumulative lines</option></select></label><label class="upa-inline-select upa-metric-select">Metric<select id="upa-lifetime-metric" aria-describedby="upa-lifetime-metric-help">${Object.values(LIFETIME_METRICS).map(metric => `<option value="${metric.id}" ${lifetimeData.metric.id === metric.id ? "selected" : ""}>${metric.label}</option>`).join("")}</select><span id="upa-lifetime-metric-help" class="upa-metric-tooltip" role="tooltip">${escapeHtml(lifetimeData.metric.description)}</span></label>${lifetimeData.style === "lines" ? `<label class="upa-inline-select">Align<select id="upa-lifetime-align"><option value="calendar" ${lifetimeData.align === "calendar" ? "selected" : ""}>Calendar time</option><option value="age" ${lifetimeData.align === "age" ? "selected" : ""}>${lifetimeData.metric.ageLabel}</option></select></label>` : ""}<details class="upa-package-filter"><summary><span>Packages</span><strong>${lifetimeData.explicitKeys.length ? `${lifetimeData.explicitKeys.length} selected` : `Top 8 by ${lifetimeData.metric.rankingLabel}`}</strong></summary><div class="upa-package-filter-panel"><div class="upa-package-filter-head"><span>Choose packages to compare</span><button data-action="lifetime-top">Use top 8</button></div><div class="upa-package-checklist">${lifetimeData.options.map(item => `<label><input type="checkbox" data-lifetime-package="${escapeHtml(item.key)}" ${lifetimeData.activePackages.some(active => active.key === item.key) ? "checked" : ""}><span><strong>${escapeHtml(item.name)}</strong><small>${lifetimeValue(lifetimeData.metric, item.total)}</small></span></label>`).join("")}</div></div></details></div></div><div class="upa-lifetime-legend">${lifetimeData.legend.map(item => `<button type="button" data-lifetime-legend-package="${escapeHtml(item.key)}" aria-pressed="${item.visible}" title="${item.visible ? "Hide" : "Show"} ${escapeHtml(item.name)}"><i style="background:${item.color}"></i><strong>${escapeHtml(item.name)}</strong><em>${lifetimeValue(lifetimeData.metric, item.total)}</em></button>`).join("")}</div><div id="upa-lifetime-chart" class="upa-lifetime-chart" role="img" aria-label="Cumulative ${escapeHtml(lifetimeData.metric.label.toLowerCase())} by package"></div></section>
@@ -2158,12 +2333,18 @@
       const themeButton = event.target.closest("[data-theme]");
       if (themeButton) {
         prefs.theme = ["system", "light", "dark"].includes(themeButton.dataset.theme) ? themeButton.dataset.theme : "system";
-        await savePrefs(); render(); return;
+        if (publisherIdentityState === "ready") await savePrefs(); render(); return;
+      }
+      if (action === "download-support") { download(`publisher-analytics-support-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(supportReport(), null, 2)); return; }
+      if (action === "open-settings" || action === "recovery-home") {
+        prefs.section = action === "open-settings" ? "settings" : "dashboard";
+        groupEditor = null; accountMenuOpen = false;
+        render();
+        if (publisherIdentityState === "ready") await savePrefs();
+        return;
       }
       if (action === "retry-publisher") {
-        publisherIdentityState = "loading"; render();
-        try { await activatePublisher(await fetchPublisherIdentity(true), { initial: true }); }
-        catch (error) { publisherIdentityState = "error"; console.warn("Publisher Analytics+ could not identify the active publisher:", error.message); render(); }
+        await openPublisherWorkspace(true);
         return;
       }
       if (publisherIdentityState !== "ready" && action && !["toggle-account", "exit-analytics"].includes(action)) return;
@@ -2292,7 +2473,6 @@
       if (calendarStyleButton) { prefs.calendarStyle = calendarStyleButton.dataset.calendarStyle === "assets" ? "assets" : "calendar"; await savePrefs(); render(); return; }
       if (event.target.closest(".upa-fab")) { isOpen = true; render(); return; }
       if (action === "toggle-account") { accountMenuOpen = !accountMenuOpen; render(); return; }
-      if (action === "open-settings") { prefs.section = "settings"; groupEditor = null; accountMenuOpen = false; await savePrefs(); render(); return; }
       if (action === "settings-sync") {
         const shouldStart = !syncJob?.active && !["preparing", "months", "daily"].includes(syncJob?.phase);
         prefs.section = "dashboard"; accountMenuOpen = false; await savePrefs(); render();
@@ -2365,8 +2545,7 @@
     try { isOpen = Boolean((await extensionApi.runtime.sendMessage({ type: "UPA_CONSUME_OPEN" }))?.open); }
     catch { /* The in-page launcher remains available if the service worker is unavailable. */ }
     const root = document.createElement("div"); root.id = "upa-root"; document.body.appendChild(root); bindEvents(); render();
-    try { await activatePublisher(await fetchPublisherIdentity(), { initial: true }); }
-    catch (error) { publisherIdentityState = "error"; console.warn("Publisher Analytics+ could not identify the active publisher:", error.message); render(); }
+    await openPublisherWorkspace();
   }
 
   init().catch(error => console.error("Publisher Analytics+ failed to initialize:", error));

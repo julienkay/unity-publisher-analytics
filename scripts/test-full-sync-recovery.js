@@ -98,6 +98,7 @@ function createHarness(job, failureMessage, options = {}) {
     DAILY_API_WINDOW_DAYS: windowDays,
     publisherIdentity: { id: "publisher-a" },
     workspaceGeneration: 7,
+    diagnosticEvents: [],
     syncJob: plain(job),
     records: [],
     ownsWorkspace: (publisherId, generation) => context.publisherIdentity.id === publisherId && context.workspaceGeneration === generation,
@@ -122,7 +123,7 @@ function createHarness(job, failureMessage, options = {}) {
     toast: (message, type) => { notices.push({ message, type }); },
     console: { error: (...values) => { errors.push(values.map(String).join(" ")); } }
   };
-  vm.runInNewContext(`${addDaysSource}\n${runFullSyncSource}\n${continueFullSyncSource}\nthis.syncActions = { runFullSync, continueFullSync };`, context);
+  vm.runInNewContext(`${extractFunction("recordDiagnostic")}\n${extractFunction("failureDetails")}\n${addDaysSource}\n${runFullSyncSource}\n${continueFullSyncSource}\nthis.syncActions = { runFullSync, continueFullSync };`, context);
   return { context, requests, savedJobs, storedRows, errors, notices, actions: context.syncActions };
 }
 
@@ -212,4 +213,39 @@ test("a monthly failure resumes the same month without discarding committed rows
   assert.equal(harness.context.syncJob.monthIndex, checkpoint.months.length);
   assert.equal(harness.context.syncJob.completed, checkpoint.total);
   assert.ok(harness.storedRows.length > 1);
+});
+
+test("a failure to save the error checkpoint still pauses sync and exposes diagnostics", async () => {
+  const harness = createHarness(dailyJob(), "Synthetic network failure");
+  harness.context.saveJob = async () => { throw new Error("Storage quota exceeded"); };
+  await harness.actions.runFullSync("publisher-a", 7);
+  assert.equal(harness.context.syncJob.active, false);
+  assert.equal(harness.context.syncJob.completed, 620);
+  assert.equal(harness.context.diagnosticEvents.at(-1).kind, "checkpoint");
+  assert.equal(harness.context.diagnosticEvents.at(-1).code, "storage-full");
+});
+
+test("continue does not send requests when its checkpoint cannot be saved", async () => {
+  const job = dailyJob(); job.active = false;
+  const harness = createHarness(job, "unused");
+  harness.context.saveJob = async () => { throw new Error("Storage quota exceeded"); };
+  await harness.actions.continueFullSync();
+  assert.equal(harness.context.syncJob.active, false);
+  assert.equal(harness.context.syncJob.completed, 620);
+  assert.equal(harness.requests.length, 0);
+});
+
+test("loading completed history fails separately from syncing and keeps the complete checkpoint", async () => {
+  const job = dailyJob(); job.scopeIndex = job.scopes.length;
+  const harness = createHarness(job, "unused", { failFirstRequest: false });
+  harness.context.getAll = async () => { throw new Error("Message exceeded maximum allowed size of 64MiB."); };
+  Object.assign(harness.context, { workspaceStage: "render", publisherIdentityState: "ready", workspaceFailure: null });
+  await harness.actions.runFullSync("publisher-a", 7);
+  assert.equal(harness.context.syncJob.phase, "complete");
+  assert.equal(harness.context.syncJob.active, false);
+  assert.equal(harness.context.publisherIdentityState, "error");
+  assert.equal(harness.context.workspaceFailure.stage, "local-data");
+  assert.equal(harness.context.workspaceFailure.code, "message-too-large");
+  assert.equal(harness.savedJobs.at(-1).phase, "complete");
+  assert.equal(harness.context.syncJob.error, undefined);
 });

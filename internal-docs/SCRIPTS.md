@@ -40,6 +40,7 @@ npm run capture:marketing
 | `npm run test:isolation` | Test publisher ownership, package groups, and clear-data recovery. | Console pass/fail result |
 | `npm run test:sync` | Test incremental scheduling and full-sync interruption recovery. | TAP test results |
 | `npm run test:chrome-smoke` | Load the unpacked extension in a temporary browser profile and exercise its background storage APIs. | Console pass/fail result |
+| `npm run test:workspace` | Test large saved histories and workspace recovery in a temporary Edge profile. | Console results and recovery screenshots in `marketing/screenshots/` |
 | `npm run capture:marketing` | Render every Chrome Web Store feature screenshot in light mode from fictional data. | `marketing/screenshots/*.png` |
 | `npm run capture:daily-patterns-prototype` | Render the asset heatmap with 30 fictional assets and more than four years of daily history. | `marketing/prototypes/daily-patterns-asset-heatmap.png` |
 | `npm run capture:marketing -- [light\|dark] [png\|webp] [capture-name]` | Render all screenshots, or one named screenshot, in the selected theme and format. | Files in `marketing/screenshots/` |
@@ -198,6 +199,25 @@ session storage, and IndexedDB. It does not open the Publisher Portal. It does
 not use an existing profile, credentials, or real publisher data. The marketing
 preview tests the injected interface with fictional data. Set `UPA_BROWSER_PATH`
 to another Chromium-family browser when Edge is unavailable.
+
+## Workspace recovery test
+
+Source: [`scripts/test-workspace-recovery.mjs`](../scripts/test-workspace-recovery.mjs)
+
+Run `npm run test:workspace`. This test requires the same browser as the Chrome
+smoke test. It uses a temporary profile and synthetic data. It blocks HTTP and
+HTTPS requests. It does not use a live Unity account.
+
+The test loads 18,000 records with a serialized size of 74.9 MiB. It checks
+bounded database responses, complete loading, publisher isolation, and retained
+sync progress. It injects storage, preference, HTTP 401, missing-identity, HTML,
+timeout, and rendering failures. It checks Settings, retry, report download,
+report privacy, and a narrow viewport. It also checks optional display-cache
+failure. The synthetic text padding tests transport size. It does not establish
+a performance budget for large daily-history charts.
+
+The full-sync unit tests also cover checkpoint-save failure and record-loading
+failure after sync completion. A read failure must not require a new full sync.
 
 ## Marketing screenshots
 
@@ -366,6 +386,7 @@ Run the checks that apply to the changed files and behavior:
 | Sync scheduling, checkpoint, resume, or package bootstrap behavior | Run `npm run test:sync`. |
 | Publisher identity, storage, sync, preferences, exports, clearing behavior, or package groups | Run `npm run test:isolation`. |
 | Service-worker startup, session storage, or IndexedDB behavior | Run `npm run test:chrome-smoke`. |
+| Record pagination, workspace recovery, or support reports | Run `npm run test:workspace`. |
 | Manifest inputs, generation, permissions, or packaging | Run `npm run validate:manifests`. Run the applicable package command when packaged contents can change. |
 | Release preparation | Run `npm run package`. This command performs the complete package validation. |
 | Documentation only | Check links and examples that the change affects. Run `git diff --check`. |

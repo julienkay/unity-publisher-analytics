@@ -81,6 +81,24 @@ batch checks the local generation before it writes data.
 Changing storage ownership requires checking publisher switching, in-flight
 sync, clearing, export, and browser-profile behavior together.
 
+Record loading uses `UPA_DB_GET_RECORDS_PAGE`. Each page queries the publisher
+index. The previous primary key selects the next position. Each response holds
+at most 500 records and approximately 1 MiB of UTF-8 JSON. A larger single record
+fails visibly. The schema and existing records do not change. The content script
+checks record ownership and cursor progress. A generation change stops the load.
+Each page uses a separate read transaction. The load is not a cross-tab snapshot.
+
+Workspace activation loads the checkpoint before the records. Failure stages
+separate identity, preferences, checkpoint, record loading, and rendering.
+The recovery screen does not calculate analytics. It permits Settings, appearance
+changes, report download, retry, and return to the Portal. It does not permit
+analytics export, clearing, or sync before the workspace is ready.
+
+Diagnostics retain at most 60 events in page memory. A failed full sync also
+stores a failure summary and 12 recent events in its publisher-scoped checkpoint.
+Publisher changes reset the event list. Stale requests do not add events to the
+new workspace. See [EXPORTS.md](EXPORTS.md#support-reports) for the report fields.
+
 The resumable sync job also stores the discovered package list and each current
 icon URL. The sync reads the icon from `package_key_images` by published version
 ID, then joins it to the discovered package ID. When an icon is shown, the

@@ -241,3 +241,31 @@ There is no native CSV export.
 Per-asset daily gross revenue is stored in `daily` records with `scope: "package"`. The `sales` field contains gross revenue. No CSV file is generated.
 
 Per-asset net revenue is stored by month in `sales` records under `net`. `revenue` records are account-level ledger entries and do not contain an asset split.
+
+## Support reports
+
+**Download support report** creates `publisher-analytics-support-YYYY-MM-DD.json`.
+The action is available in Settings, on workspace errors, and after sync errors.
+The report does not use the analytics export schema. Its `format` is
+`publisher-analytics-support`, and its schema `version` is `1`.
+
+The report contains these fields:
+
+- Extension version, browser version, and report time.
+- Workspace state, failure stage, publisher-confirmation result, and loaded record count.
+- Sync phase, progress counts, package count, month index, scope index, and date cursor.
+- Failure categories, exception types, and local source-file line locations.
+- Up to 60 recent events with operation names and times.
+- Request endpoint labels, methods, HTTP status, duration, and response container types.
+- A boolean that states whether the identity response contained a publisher ID.
+- A saved full-sync failure summary, including up to 12 events from that failure.
+
+The report excludes publisher IDs, names, asset IDs, asset names, and financial
+values. It excludes raw response bodies, raw error messages, full stacks, request
+bodies, query strings, cookies, and headers. Nothing uploads automatically.
+The report still reveals history dates, counts, and activity times. Publishers
+can inspect the preview before they download or share it.
+
+Page events disappear on refresh. The failed full-sync summary remains in the
+publisher's checkpoint until continuation or analytics clearing removes it.
+A failure to save the checkpoint can leave only page-memory diagnostics.

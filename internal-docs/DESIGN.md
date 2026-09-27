@@ -68,6 +68,11 @@ The type tokens live on `#upa-root` in `styles.css`.
   period. Omit the comparison when its baseline is incomplete or zero.
 - Move calculation details into a focused, keyboard-accessible info tooltip when persistent helper text would repeat across a compact metric grid.
 - Empty, loading, error, and success states use publisher-facing language and keep the next action obvious.
+- Workspace errors distinguish publisher verification, saved-data loading, and
+  display failures. Use a compact error card. Keep Settings, retry, support
+  report download, and return to the Publisher Portal available. Do not require
+  chart rendering to show these controls. Hide data actions until the workspace
+  is ready. Keep technical report fields inside an optional preview.
 - Tooltips must add information or context. Do not use them to repeat the
   visible label or value.
 

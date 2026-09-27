@@ -13,6 +13,7 @@
     "test:sync": "node --test scripts/test-incremental-sync.js scripts/test-full-sync-recovery.js",
     "test:sales": "node scripts/validate-sale-calendar.mjs",
     "test:chrome-smoke": "node scripts/smoke-chrome.mjs",
+    "test:workspace": "node scripts/test-workspace-recovery.mjs",
     "validate:manifests": "node scripts/validate-manifests.mjs",
     "validate:packages": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-packages.ps1 -Target All",
     "package": "node scripts/run-package.mjs All",

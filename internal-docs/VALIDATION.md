@@ -5,6 +5,59 @@ Live API and fixture evidence comes from one publisher account unless stated.
 
 ## Validation scope
 
+### Large-history failure investigation, 2026-09-27
+
+The supplied forum report described a failure near step 620 of 1,393. The later
+screenshot showed the publisher name and icon below an identity-error screen.
+The reporter's installed extension version and underlying exception are unknown.
+
+The old startup catch covered identity lookup, preferences, IndexedDB loading,
+and rendering. Any exception in those operations produced the identity message.
+The old event guard also blocked Settings in that state. These are confirmed
+source behaviors. A visible publisher name does not prove that every API request
+succeeded. It is consistent with failure after identity assignment.
+
+**Confirmed with synthetic data in Edge:** a database reply above 64 MiB fails
+with `Message exceeded maximum allowed size of 64MiB.` The probe used the old
+`UPA_DB_GET_ALL` handler in a temporary extension profile. It stored 18,000 rows
+with 4,096 padding characters per row. The caller received the size exception.
+
+The new browser test loads 18,000 records totaling 74.9 MiB through 75 bounded
+messages. It keeps the paused checkpoint at 620 of 1,393. It tests recovery from
+storage, preferences, authentication, missing publisher ID, HTML response,
+timeout, and rendering failures. It checks report privacy and a 390-pixel view.
+No live Unity session participates in these tests.
+
+**Inferred:** the browser message limit can explain repeated startup failures
+for a large saved history. It does not establish the cause of this reporter's
+original mid-sync failure. Commit `a627d65` removed repeated identity requests
+and preserved failed checkpoints. The current loading defect is a separate path.
+
+**Unknown:** the reporter's actual exception, stored byte count, Unity response,
+rate limits, and installed build. The public Asset Store profile cannot expose
+these values. No request ran against that publisher's private account.
+
+For the next report:
+
+1. Install a build that includes these changes.
+2. Reload the unpacked extension manually if applicable. Refresh the Portal tab.
+3. Open the existing workspace. Do not clear saved analytics first.
+4. If an error occurs, select **Download support report** on the error screen or in Settings.
+5. Ask the publisher to share that file and describe whether failure occurred before sync, during sync, or after refresh.
+
+Use the report's stage to select the investigation. `identity` with HTTP 401 or
+403 suggests session or access failure. A successful identity response without
+the required field needs a targeted response-shape investigation. `local-data`
+with `message-too-large` identifies a local transfer failure. `render` with a
+source location identifies a display failure. A sync request failure retains
+the endpoint label, status, scope index, and date cursor.
+
+The report omits private response content. If its summary is insufficient,
+follow [DATA-SOURCES.md](DATA-SOURCES.md) for a targeted, authorized CDP probe.
+Do not request cookies, session headers, a complete HAR, or a financial export.
+The 2019 history floor remains an independent, unverified limitation. Pagination
+does not change that floor or guarantee low memory use for all chart workloads.
+
 Development used one publisher account. The task evidence shows these account
 properties:
 

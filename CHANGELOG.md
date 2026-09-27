@@ -5,6 +5,10 @@ This file lists the main changes that affect publishers.
 ## 1.2.2 — Unreleased
 
 - Added package icons to Dashboard and Analytics package views.
+- Fixed opening large saved histories that exceed the browser's message limit.
+- Distinguished sign-in problems from problems loading or displaying saved history.
+- Kept Settings and the Publisher Portal accessible after workspace errors.
+- Added downloadable support reports that exclude account details and sales figures.
 
 ## 1.2.1 — 2026-09-24
 

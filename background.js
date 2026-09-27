@@ -151,8 +151,8 @@ async function transaction(storeName, mode, operation) {
 async function handleDatabaseMessage(message) {
   const publisherId = publisherIdFrom(message);
   switch (message.type) {
-    case "UPA_DB_GET_ALL":
-      return transaction("records", "readonly", store => store.index("publisherId").getAll(publisherId));
+    case "UPA_DB_GET_RECORDS_PAGE":
+      return readRecordsPage(publisherId, message.after);
     case "UPA_DB_PUT_MANY":
       return transaction("records", "readwrite", store => {
         for (const record of message.records || []) {
@@ -180,6 +180,32 @@ async function handleDatabaseMessage(message) {
     default:
       throw new Error(`Unknown database operation: ${message.type}`);
   }
+}
+
+async function readRecordsPage(publisherId, after) {
+  if (after !== undefined && typeof after !== "string") throw new Error("Invalid record page cursor.");
+  const db = await openDatabase();
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction("records", "readonly");
+      const request = tx.objectStore("records").index("publisherId").openCursor(IDBKeyRange.only(publisherId));
+      const rows = [], encoder = new TextEncoder();
+      let bytes = 0, next = null;
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) return;
+        if (after !== undefined && cursor.primaryKey < after) { cursor.continuePrimaryKey(publisherId, after); return; }
+        if (cursor.primaryKey === after) { cursor.continue(); return; }
+        const size = encoder.encode(JSON.stringify(cursor.value)).byteLength;
+        if (rows.length && (rows.length >= 500 || bytes + size > 1024 * 1024)) { next = rows.at(-1).id; return; }
+        if (size > 1024 * 1024) { tx.abort(); return; }
+        rows.push(cursor.value); bytes += size; cursor.continue();
+      };
+      tx.oncomplete = () => resolve({ rows, next });
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error("A saved record exceeds the page size limit."));
+    });
+  } finally { db.close(); }
 }
 
 extensionApi.runtime.onMessage.addListener((message, sender, sendResponse) => {
