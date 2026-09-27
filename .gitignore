@@ -1,6 +1,7 @@
 *.zip
 /publisher-analytics-*.json
 node_modules/
+/.local-mock-extension/
 .DS_Store
 Thumbs.db
 marketing/screenshots/

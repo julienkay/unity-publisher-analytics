@@ -34,13 +34,15 @@ npm run capture:marketing
 
 | Command | Purpose | Output |
 |---|---|---|
+| `npm run build:content` | Join nine focused source files into the extension content script. | `content.js` |
 | `npm test` | Run fixture, sync, isolation, recovery, and sale-calendar tests. | Console pass/fail result |
 | `npm run build:charts` | Build the local ECharts runtime used by the extension. | `vendor/echarts.min.js` and its legal notice |
 | `npm run test:fixtures` | Test the fixture-backed package publication-date mapping. | Console pass/fail result |
 | `npm run test:isolation` | Test publisher ownership, package groups, and clear-data recovery. | Console pass/fail result |
 | `npm run test:sync` | Test incremental scheduling and full-sync interruption recovery. | TAP test results |
 | `npm run test:chrome-smoke` | Load the unpacked extension in a temporary browser profile and exercise its background storage APIs. | Console pass/fail result |
-| `npm run test:workspace` | Test large saved histories and workspace recovery in a temporary Edge profile. | Console results and recovery screenshots in `marketing/screenshots/` |
+| `npm run test:workspace` | Test direct IndexedDB loading of large saved histories and workspace recovery in a temporary Edge profile. | Console results and recovery screenshots in `marketing/screenshots/` |
+| `npm run prepare:local-mock-extension` | Build a separate unpacked extension with a synthetic publisher switch for local visual testing. | `.local-mock-extension/` |
 | `npm run capture:marketing` | Render every Chrome Web Store feature screenshot in light mode from fictional data. | `marketing/screenshots/*.png` |
 | `npm run capture:daily-patterns-prototype` | Render the asset heatmap with 30 fictional assets and more than four years of daily history. | `marketing/prototypes/daily-patterns-asset-heatmap.png` |
 | `npm run capture:marketing -- [light\|dark] [png\|webp] [capture-name]` | Render all screenshots, or one named screenshot, in the selected theme and format. | Files in `marketing/screenshots/` |
@@ -76,8 +78,9 @@ Source: [`scripts/validate-api-fixtures.js`](../scripts/validate-api-fixtures.js
 npm run test:fixtures
 ```
 
-This test covers the package publication-date mapping. The script requires
-`content.js` to include `first_published_at`. It also parses each fixture
+This test covers the package publication-date mapping. The source file
+`content-src/publisher-api.js` must include `first_published_at`. The pre-test
+step rebuilds `content.js`. The validator also parses each fixture
 publication date.
 
 The validation does not run the other normalizers. It does not validate the
@@ -99,7 +102,8 @@ Sources:
 npm run test:sync
 ```
 
-This test executes the scheduling functions from `content.js`. It uses the
+This test executes the scheduling functions from generated `content.js`. They
+come from `content-src/sync.js`. It uses the
 retained package fixture for a new-package example. It tests these rules:
 
 - A new package starts at `first_published_at`.
@@ -216,8 +220,40 @@ report privacy, and a narrow viewport. It also checks optional display-cache
 failure. The synthetic text padding tests transport size. It does not establish
 a performance budget for large daily-history charts.
 
+Set `UPA_PERF_TRACE=1` to report record-page round-trip time, IndexedDB page
+read time, JSON size-measure time, content validation time, and workspace render
+time. These timings are machine-specific. The test reads the measured page byte
+count directly; it does not serialize each returned page a second time.
+
 The full-sync unit tests also cover checkpoint-save failure and record-loading
 failure after sync completion. A read failure must not require a new full sync.
+
+To also exercise the local mock switch and workspace tabs, prepare the local
+mock extension, then set `UPA_EXTENSION_PATH` to `.local-mock-extension` before
+running the same command. This extra pass switches to 100 synthetic assets with
+two years of history by default, opens the Analytics tab, and returns to the live
+publisher. Set `UPA_MOCK_CATALOG_COUNT` and `UPA_MOCK_CATALOG_YEARS` to choose a
+larger workload.
+
+## Local mock extension
+
+Run `npm run prepare:local-mock-extension` to create `.local-mock-extension/`.
+Load that folder as an unpacked extension. Open the publisher menu and select
+**Open local mock publisher…**. Choose up to 2,000 synthetic assets and 1–10
+years of history. Select **Return to live publisher** to re-check the signed-in
+Portal identity.
+
+The mock uses generated normalized records. It does not impersonate or intercept
+Unity API responses. Analytics requests are blocked while the mock workspace is
+active; an identity request is allowed so the extension can return to the live
+publisher. The separate extension has its own storage origin. It cannot read data
+saved by the normal extension. Export a version 2 publisher backup from the
+normal extension, then select **Import publisher backup…** in the local copy
+while signed in to the same publisher. The import requires a matching publisher
+ID and adds or replaces matching records. It does not clear existing records.
+The live workspace in this copy can also use the signed-in Portal. The mock
+extension output is ignored by Git and excluded from packages by the package
+file allowlist.
 
 ## Marketing screenshots
 

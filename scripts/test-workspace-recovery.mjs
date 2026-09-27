@@ -7,6 +7,7 @@ import { chromium } from "playwright-core";
 
 // All account data and failures in this test are synthetic. No Unity requests run.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const extensionRoot = path.resolve(process.env.UPA_EXTENSION_PATH || root);
 const profile = await fs.mkdtemp(path.join(os.tmpdir(), "upa-workspace-test-"));
 const output = path.join(root, "marketing", "screenshots");
 let context;
@@ -14,12 +15,16 @@ try {
   context = await chromium.launchPersistentContext(profile, {
     executablePath: process.env.UPA_BROWSER_PATH || "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
     headless: true, ignoreDefaultArgs: ["--disable-extensions"],
-    args: [`--disable-extensions-except=${root}`, `--load-extension=${root}`]
+    args: [`--disable-extensions-except=${extensionRoot}`, `--load-extension=${extensionRoot}`]
   });
   const worker = context.serviceWorkers()[0] || await context.waitForEvent("serviceworker", { timeout: 15000 });
   const base = worker.url().replace(/background\.js$/, "");
   const publisherId = "synthetic-private-publisher", privateMarker = "PRIVATE-DO-NOT-EXPORT";
-  const seed = await worker.evaluate(async ({ publisherId, privateMarker }) => {
+  const tracePerformance = process.env.UPA_PERF_TRACE === "1";
+  const performanceEvents = [];
+  const pageErrors = [];
+  const seed = await worker.evaluate(async ({ publisherId, privateMarker, tracePerformance }) => {
+    globalThis.__UPA_PERF_TRACE = tracePerformance;
     const rows = Array.from({ length: 18000 }, (_, index) => ({
       id: `${publisherId}|${String(index).padStart(6, "0")}`, publisherId,
       type: "revenue", date: "2026-01-01", period: "2026-01", capturedAt: "2026-09-01T00:00:00Z",
@@ -32,12 +37,14 @@ try {
       scopeIndex: 45, monthIndex: 92, cursor: "2022-01-01", packages: [], scopes: [], error: "Synthetic previous failure"
     } });
     return { bytes: JSON.stringify(rows).length, count: rows.length };
-  }, { publisherId, privateMarker });
+  }, { publisherId, privateMarker, tracePerformance });
   assert.ok(seed.bytes > 64 * 1024 * 1024);
 
   const page = await context.newPage();
-  const pageErrors = [];
   page.on("pageerror", error => pageErrors.push(error.message));
+  page.on("console", message => {
+    if (message.text().startsWith("[UPA performance]")) performanceEvents.push(message.text());
+  });
   await page.route(/^https?:/, route => route.abort());
   async function open(mode = "normal") {
     await page.goto(`${base}manifest.json`);
@@ -47,20 +54,28 @@ try {
     await page.evaluate(async publisherId => {
       await chrome.storage.local.set({ [`unityPublisherAnalyticsPrefsV2:${publisherId}`]: { section: "dashboard", range: "all", theme: "light" } });
     }, publisherId);
-    await page.evaluate(({ publisherId, privateMarker, mode, base }) => {
+    await page.evaluate(({ publisherId, privateMarker, mode, base, tracePerformance }) => {
       window.testMode = mode;
       window.testRequests = [];
-      window.testPages = [];
+      window.__UPA_PERF_TRACE = tracePerformance;
       const send = chrome.runtime.sendMessage.bind(chrome.runtime);
       chrome.runtime.sendMessage = async message => {
-        if (message.type === "UPA_CONSUME_OPEN") return { open: true };
-        if (message.type === "UPA_DB_GET_RECORDS_PAGE") {
-          if (window.testMode === "storage") throw new Error("Message exceeded maximum allowed size of 64MiB.");
-          const result = await send(message);
-          window.testPages.push({ count: result.result.rows.length, bytes: JSON.stringify(result).length });
-          return result;
+        if (message.type === "UPA_PORTAL_API") {
+          window.testRequests.push(message.path);
+          if (window.testMode === "timeout") return new Promise(() => {});
+          const status = window.testMode === "auth" ? 401 : 200;
+          const data = window.testMode === "missing" ? { name: privateMarker }
+            : window.testMode === "html" ? `<html>${privateMarker}</html>`
+            : status === 401 ? { message: privateMarker }
+            : { publisherId, publisherName: privateMarker, avatar: `${base}icons/publisher-analytics-128.png` };
+          return { ok: status === 200, status, data };
         }
         return send(message);
+      };
+      const getAll = IDBIndex.prototype.getAll;
+      IDBIndex.prototype.getAll = function (...args) {
+        if (window.testMode === "storage" && this.name === "publisherId") throw new Error("Synthetic IndexedDB read failure.");
+        return getAll.apply(this, args);
       };
       const get = chrome.storage.local.get.bind(chrome.storage.local);
       chrome.storage.local.get = async key => {
@@ -73,19 +88,7 @@ try {
       const formatter = Intl.NumberFormat;
       if (mode === "render") Intl.NumberFormat = function () { throw new RangeError("Synthetic render failure"); };
       window.restoreFormatter = () => { Intl.NumberFormat = formatter; };
-      window.addEventListener("message", event => {
-        const message = event.data;
-        if (message?.type !== "UPA_API_REQUEST") return;
-        window.testRequests.push(message.path);
-        if (window.testMode === "timeout") return;
-        const status = window.testMode === "auth" ? 401 : 200;
-        const data = window.testMode === "missing" ? { name: privateMarker }
-          : window.testMode === "html" ? `<html>${privateMarker}</html>`
-          : status === 401 ? { message: privateMarker }
-          : { publisherId, publisherName: privateMarker, avatar: `${base}icons/publisher-analytics-128.png` };
-        window.postMessage({ source: "unity-publisher-analytics-api", type: "UPA_API_RESPONSE", requestId: message.requestId, ok: status === 200, status, data }, location.origin);
-      });
-    }, { publisherId, privateMarker, mode, base });
+    }, { publisherId, privateMarker, mode, base, tracePerformance });
     await page.addScriptTag({ url: `${base}content.js` });
   }
   async function report() {
@@ -102,12 +105,19 @@ try {
   await open();
   await page.locator(".upa-dashboard-view").waitFor({ timeout: 60000 });
   const loaded = await report();
+  if (tracePerformance) console.log(`Performance baseline for 18,000-row padded workspace: ${performanceEvents.join("\n  ")}`);
   assert.equal(loaded.workspace.loadedRecords, seed.count);
   assert.equal(loaded.workspace.publisherConfirmed, true);
   assert.equal(loaded.sync.completed, 620);
   assert.equal(loaded.sync.active, false);
-  const pages = await page.evaluate(() => window.testPages);
-  assert.ok(pages.length > 1 && pages.every(item => item.count <= 500 && item.bytes < 1024 * 1024 + 1024));
+  const originalUrl = page.url();
+  await page.locator('button[data-section="dashboard"]:visible').first().click();
+  await page.locator(".upa-view-dashboard").waitFor();
+  await page.locator('button[data-section="analytics"]:visible').first().click();
+  await page.locator(".upa-view-revenue").waitFor();
+  assert.equal(page.url(), originalUrl, "Changing analytics sections must not navigate the extension page.");
+  assert.equal(await page.locator("#upa-root.upa-open").count(), 1, "The analytics workspace must stay open after changing sections.");
+  await report();
   assert.deepEqual(await page.evaluate(() => window.testRequests), ["/publisher-v2-api/user"]);
   const [download] = await Promise.all([
     page.waitForEvent("download"),
@@ -116,10 +126,10 @@ try {
   const downloaded = JSON.parse(await fs.readFile(await download.path(), "utf8"));
   assert.equal(downloaded.workspace.loadedRecords, seed.count);
   assert.ok(!JSON.stringify(downloaded).includes(privateMarker));
-  console.log(`Paged loading passed: ${seed.count} rows, ${(seed.bytes / 1024 / 1024).toFixed(1)} MiB, ${pages.length} messages.`);
+  console.log(`Direct IndexedDB loading passed: ${seed.count} rows, ${(seed.bytes / 1024 / 1024).toFixed(1)} MiB.`);
 
   for (const [mode, stage, code] of [
-    ["storage", "local-data", "message-too-large"], ["preferences", "preferences", "unexpected-error"],
+    ["storage", "local-data", "unexpected-error"], ["preferences", "preferences", "unexpected-error"],
     ["auth", "identity", "http"], ["missing", "identity", "missing-publisher"],
     ["html", "identity", "missing-publisher"], ["timeout", "identity", "timeout"],
     ["render", "render", "stack-limit"]
@@ -159,21 +169,61 @@ try {
   assert.equal((await report()).workspace.state, "ready");
 
   const boundaries = await worker.evaluate(async () => {
-    const read = (publisherId, after) => handleDatabaseMessage({ type: "UPA_DB_GET_RECORDS_PAGE", publisherId, after });
-    const empty = await read("empty-publisher");
-    const other = await read("other-publisher");
-    const end = await read("other-publisher", "other-row");
-    const missingCursor = await read("other-publisher", "nonexistent-key");
-    let noIdentityRejected = false;
-    try { await read(""); } catch { noIdentityRejected = true; }
-    return { empty, other, end, missingCursor, noIdentityRejected };
+    const db = await new Promise((resolve, reject) => { const request = indexedDB.open("unity-publisher-analytics-api", 3); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+    try {
+      const read = publisherId => new Promise((resolve, reject) => { const request = db.transaction("records").objectStore("records").index("publisherId").getAll(IDBKeyRange.only(publisherId)); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+      return { empty: await read("empty-publisher"), other: await read("other-publisher"), current: await read("synthetic-private-publisher") };
+    } finally { db.close(); }
   });
-  assert.deepEqual(boundaries.empty, { rows: [], next: null });
-  assert.deepEqual(boundaries.end, { rows: [], next: null });
-  assert.equal(boundaries.other.rows.length, 1);
-  assert.equal(boundaries.other.rows[0].publisherId, "other-publisher");
-  assert.equal(boundaries.missingCursor.rows.length, 1);
-  assert.ok(boundaries.noIdentityRejected);
+  assert.deepEqual(boundaries.empty, []);
+  assert.equal(boundaries.other.length, 1);
+  assert.equal(boundaries.other[0].publisherId, "other-publisher");
+  assert.equal(boundaries.current.length, seed.count);
+
+  if (extensionRoot !== root) {
+    await open();
+    await page.locator(".upa-dashboard-view").waitFor({ timeout: 60000 });
+    const mockPackageCount = Number(process.env.UPA_MOCK_CATALOG_COUNT || 100), mockYears = Number(process.env.UPA_MOCK_CATALOG_YEARS || 2);
+    await page.evaluate(({ packageCount, years }) => { const answers = [String(packageCount), String(years)]; window.prompt = () => answers.shift(); }, { packageCount: mockPackageCount, years: mockYears });
+    await page.locator('[data-action="toggle-account"]').click();
+    const mockStartedAt = Date.now();
+    await page.locator('[data-action="local-mock"]').click();
+    await page.locator("#upa-root .upa-recovery-card").waitFor({ timeout: 10000 });
+    await page.locator("#upa-root .upa-recovery-card").waitFor({ state: "detached", timeout: 120000 });
+    await page.getByText("Local Mock Publisher", { exact: true }).waitFor({ timeout: 60000 });
+    const mockLoadMs = Date.now() - mockStartedAt;
+    if (tracePerformance) console.log(`Performance local mock open: ${performanceEvents.slice(-2).join("\n  ")}`);
+    const mockId = "local-mock-catalog-v1";
+    const mockRows = await worker.evaluate(async publisherId => {
+      const db = await openDatabase();
+      try { return await new Promise((resolve, reject) => { const request = db.transaction("records").objectStore("records").index("publisherId").count(IDBKeyRange.only(publisherId)); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); }); }
+      finally { db.close(); }
+    }, mockId);
+    assert.ok(mockRows > mockPackageCount * mockYears * 12 * 3, "The mock switch must load a multi-year synthetic catalog.");
+    const liveTabUrl = page.url();
+    const analyticsStartedAt = Date.now();
+    await page.locator('button[data-section="analytics"]:visible').first().click();
+    await page.locator(".upa-view-revenue").waitFor({ timeout: 60000 });
+    const analyticsSwitchMs = Date.now() - analyticsStartedAt;
+    assert.equal(page.url(), liveTabUrl, "The mock Analytics tab must not navigate to the Portal.");
+    assert.equal(await page.locator("#upa-root.upa-open").count(), 1, "The mock workspace must remain open after switching tabs.");
+    await page.locator('[data-action="toggle-account"]').click();
+    await page.locator('[data-action="local-live"]').click();
+    await page.locator("#upa-root .upa-recovery-card").waitFor({ timeout: 10000 });
+    await page.locator("#upa-root .upa-recovery-card").waitFor({ state: "detached", timeout: 120000 });
+    await page.getByText(privateMarker, { exact: true }).waitFor({ timeout: 60000 });
+    assert.equal(await page.locator("#upa-root.upa-open").count(), 1, "Returning to the live publisher must finish the workspace switch.");
+    await page.evaluate(({ packageCount, years }) => { const answers = [String(packageCount), String(years)]; window.prompt = () => answers.shift(); }, { packageCount: mockPackageCount, years: mockYears });
+    await page.locator('[data-action="toggle-account"]').click();
+    const cachedOpenStartedAt = Date.now();
+    await page.locator('[data-action="local-mock"]').click();
+    await page.locator("#upa-root .upa-recovery-card").waitFor({ timeout: 10000 });
+    await page.locator("#upa-root .upa-recovery-card").waitFor({ state: "detached", timeout: 120000 });
+    const cachedOpenMs = Date.now() - cachedOpenStartedAt;
+    if (tracePerformance) console.log(`Performance cached mock open: ${performanceEvents.slice(-2).join("\n  ")}`);
+    console.log(`Local mock switch passed: ${mockRows} records for ${mockPackageCount} assets across ${mockYears} years (${(mockLoadMs / 1000).toFixed(1)}s first open; ${(cachedOpenMs / 1000).toFixed(1)}s cached open; ${(analyticsSwitchMs / 1000).toFixed(1)}s to open Analytics); return to live publisher kept the page open.`);
+  }
+
   assert.deepEqual(pageErrors, []);
   console.log("Workspace recovery browser tests passed. No live Unity session was used.");
 } finally {

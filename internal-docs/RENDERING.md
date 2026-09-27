@@ -37,6 +37,32 @@ windows and years for long windows. The labels update when the zoom changes.
 
 ## Decision
 
+## Workspace recalculation
+
+The workspace builds record indexes once for each loaded records array. The
+indexes group rows by type and reporting scope, sort them by date, and support
+date-range selection with binary search. Replacing the records array rebuilds
+the indexes. Current loading and sync paths replace the array after data
+changes.
+
+Date-range changes recalculate range-dependent summaries and charts. Lifetime,
+package-history, and package revenue heatmap models do not depend on the
+selected range. Keep these models cached for the current records array. The
+calendar and asset heatmap depend on the selected range.
+
+Analytics range-dependent models are refreshed for the selected view. Models
+for other Analytics views keep their previous values until the publisher opens
+those views. The view switch checks its model key and runs a synchronous render
+when the key is stale. This keeps the complete saved history available before
+any view is shown. The calendar model includes the selected date range. The
+asset heatmap is built when its view is active. Do not show an empty placeholder
+as if it were current data.
+
+Do not cache a model without listing its inputs. Include every preference and
+metadata source that can change the result. Keep caches scoped to the current
+records array so a publisher switch, data clear, or completed sync cannot show
+stale results.
+
 Use three deliberately separate layers:
 
 1. **Native DOM and CSS** for the application shell, controls, KPI cards, tables, empty states, and accessible text summaries.

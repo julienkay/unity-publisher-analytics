@@ -7,13 +7,19 @@ product intent. [`DATA-EVIDENCE.md`](DATA-EVIDENCE.md) describes data semantics.
 
 ## Runtime contexts
 
-Publisher Analytics+ is a Manifest V3 extension with three runtime contexts:
+Publisher Analytics+ is a Manifest V3 extension with four runtime contexts:
 
 | Context | Files | Responsibility |
 |---|---|---|
-| Publisher Portal page world | `api-client.js` | Performs explicitly allowlisted same-origin requests with the signed-in Portal session and returns parsed responses through `window.postMessage`. |
-| Extension content-script world | `content.js`, `styles.css`, `vendor/echarts.min.js` | Owns identity activation, API orchestration, normalization, sync, preferences, package groups, aggregation, rendering, and exports. |
-| Extension background context | `background.js` | Owns publisher-scoped IndexedDB access, package icon downloads and caching, sync metadata persistence, and toolbar-driven opening behavior. |
+| Publisher Portal page world | `api-client.js` | Performs allowlisted same-origin requests with the signed-in Portal session. |
+| Publisher Portal content-script world | `portal-bridge.js` | Relays requests between the extension page and the Portal page world. |
+| Extension page | `analytics.html`, bundled `content.js`, `styles.css`, `vendor/echarts.min.js` | Owns workspace loading, sync, preferences, groups, aggregation, rendering, and exports. It reads saved rows from IndexedDB directly. |
+| Extension background context | `background.js` | Owns IndexedDB writes, package icon downloads and caching, sync metadata persistence, and toolbar-driven opening behavior. |
+
+`content-src/` holds the content script source in nine focused files. `publisher-workspace.js` owns publisher identity, preferences, workspace initialization, and recovery. `local-storage.js` owns IndexedDB reads. `publisher-api.js` owns Portal requests and response normalization. `sync.js` owns scheduling and checkpoints. The build
+joins them into `content.js`. The extension loads that one bundled file. Edit
+the source files. Do not edit the generated bundle directly. Run
+`npm run build:content` to rebuild it.
 
 `manifest.json` is the canonical declaration of these contexts. Packaging uses
 the same runtime files for Chrome and Firefox. The packaging scripts generate
@@ -22,12 +28,15 @@ the target-specific manifest differences.
 ## Request path
 
 ```text
-content.js API definition and caller
-  -> UPA_API_REQUEST window message
+analytics extension page API definition and caller
+  -> UPA_PORTAL_API runtime message
+  -> background checks the Portal tab and relays the request
+  -> portal-bridge.js UPA_API_REQUEST window message
   -> api-client.js allowedRequest()
   -> same-origin publisher.unity.com fetch
   -> UPA_API_RESPONSE window message
-  -> content.js validation and normalization
+  -> portal-bridge.js runtime response
+  -> analytics page validation and normalization
 ```
 
 The page-world bridge exists because requests use the active Publisher Portal
@@ -56,7 +65,7 @@ Unity JSON response
   -> UPA_DB_PUT_MANY extension message
   -> ownership check in background.js
   -> IndexedDB records store
-  -> publisher-scoped query
+  -> direct publisher-indexed IndexedDB query from analytics.html
   -> aggregation and rendering in content.js
   -> optional local JSON export
 ```
@@ -81,12 +90,13 @@ batch checks the local generation before it writes data.
 Changing storage ownership requires checking publisher switching, in-flight
 sync, clearing, export, and browser-profile behavior together.
 
-Record loading uses `UPA_DB_GET_RECORDS_PAGE`. Each page queries the publisher
-index. The previous primary key selects the next position. Each response holds
-at most 500 records and approximately 1 MiB of UTF-8 JSON. A larger single record
-fails visibly. The schema and existing records do not change. The content script
-checks record ownership and cursor progress. A generation change stops the load.
-Each page uses a separate read transaction. The load is not a cross-tab snapshot.
+Workspace activation confirms identity through the Portal API before opening
+the publisher index in IndexedDB. One `getAll` request returns the full history
+to the analytics page. This avoids JSON size measurement, page cursors, and
+large runtime messages for reads. The page still waits for the full history
+before rendering analytics. A generation change discards a result if the
+active workspace changes. The read is not a cross-tab snapshot. Writes reject
+records whose `publisherId` does not match the requested publisher.
 
 Workspace activation loads the checkpoint before the records. Failure stages
 separate identity, preferences, checkpoint, record loading, and rendering.
@@ -139,13 +149,13 @@ incremental refresh does not run while this checkpoint is incomplete.
 
 | Concern | Primary files | Also inspect |
 |---|---|---|
-| Request route, method, query, or body | `content.js`, `api-client.js` | `internal-docs/api-fixtures/request-shapes.json`, `scripts/validate-publisher-isolation.js` |
-| Response fields and normalization | `content.js` | fixtures, provenance, `scripts/validate-api-fixtures.js`, `EXPORTS.md` |
-| Sync scheduling, coverage, or resume | `content.js`, `background.js` | `DATA-EVIDENCE.md`, `DECISIONS.md`, `VALIDATION.md` |
-| Publisher identity or ownership | `content.js`, `background.js`, `api-client.js` | `scripts/validate-publisher-isolation.js`, fixture evidence |
-| Stored or exported schema | `content.js`, `background.js` | `EXPORTS.md`, migration and clearing behavior |
-| Analytics interpretation | `content.js` | `DATA-EVIDENCE.md`, `DECISIONS.md`, reconciliation fixtures |
-| Charts and presentation | `content.js`, `styles.css`, `scripts/echarts-entry.js` | `DESIGN.md`, `RENDERING.md`, marketing fixture |
+| Request route, method, query, or body | `content-src/publisher-api.js`, `api-client.js` | `internal-docs/api-fixtures/request-shapes.json`, `scripts/validate-publisher-isolation.js` |
+| Response fields and normalization | `content-src/publisher-api.js` | fixtures, provenance, `scripts/validate-api-fixtures.js`, `EXPORTS.md` |
+| Sync scheduling, coverage, or resume | `content-src/sync.js`, `background.js` | `DATA-EVIDENCE.md`, `DECISIONS.md`, `VALIDATION.md` |
+| Publisher identity or ownership | `content-src/publisher-workspace.js`, `background.js`, `api-client.js` | `scripts/validate-publisher-isolation.js`, fixture evidence |
+| Stored or exported schema | `content-src/local-storage.js`, `content-src/publisher-api.js`, `background.js` | `EXPORTS.md`, migration and clearing behavior |
+| Analytics interpretation | `content-src/analytics-models.js` | `DATA-EVIDENCE.md`, `DECISIONS.md`, reconciliation fixtures |
+| Charts and presentation | `content-src/charts.js`, `content-src/workspace-ui.js`, `styles.css`, `scripts/echarts-entry.js` | `DESIGN.md`, `RENDERING.md`, marketing fixture |
 | Browser packaging | `manifest.json`, packaging scripts | `DEVELOPMENT.md`, `SCRIPTS.md` |
 
 Follow [`DATA-SOURCES.md`](DATA-SOURCES.md) for a new endpoint or
@@ -169,11 +179,11 @@ previously unseen account capability. Do not treat adding a constant to the
 
 ## Why the page-world bridge exists
 
-The content script runs in an isolated extension world. Portal requests need the
-active page session. `api-client.js` therefore runs in the Portal page world.
-
-The content script sends a request through `window.postMessage`. The page-world
-script accepts only known request shapes. It returns the parsed response.
+The analytics page cannot read the Portal page's session cookies or DOM. Portal
+requests need the active page session. `portal-bridge.js` relays requests from
+the extension page to `api-client.js`, which runs in the Portal page world.
+The page-world script accepts only known request shapes and returns parsed
+responses through the bridge.
 
 Live API investigation uses browser CDP from a signed-in Portal tab. It does not
 require an extension change. Follow [`DATA-SOURCES.md`](DATA-SOURCES.md).

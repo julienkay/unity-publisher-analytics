@@ -22,11 +22,25 @@ with `Message exceeded maximum allowed size of 64MiB.` The probe used the old
 `UPA_DB_GET_ALL` handler in a temporary extension profile. It stored 18,000 rows
 with 4,096 padding characters per row. The caller received the size exception.
 
-The new browser test loads 18,000 records totaling 74.9 MiB through 75 bounded
-messages. It keeps the paused checkpoint at 620 of 1,393. It tests recovery from
+The current browser test loads 18,000 records totaling 74.9 MiB by querying the
+publisher index from the extension page. It keeps the paused checkpoint at 620
+of 1,393. It tests recovery from
 storage, preferences, authentication, missing publisher ID, HTML response,
 timeout, and rendering failures. It checks report privacy and a 390-pixel view.
 No live Unity session participates in these tests.
+
+**Measured in Edge with synthetic data on 2026-09-27:** the 74.9 MiB read took
+about 0.84 seconds, and the dashboard render took about 0.03 seconds. A
+1,000-asset, five-year mock with 184,948 records took about 3.0 seconds to read
+and 0.43 seconds to render on a cached reopen. Total cached reopen time was
+about 3.5 seconds. These are local measurements, not Unity response timings or
+promises for every device. The 184,948-row run used the local mock extension.
+
+The largest remaining measured cost is reading all rows from IndexedDB into
+the analytics page. The load no longer serializes rows to measure their JSON
+size or sends the full catalog across extension messages. The dashboard
+renderer groups selected-range package rows once before building per-asset
+options. This avoids rescanning all rows once for every asset.
 
 **Inferred:** the browser message limit can explain repeated startup failures
 for a large saved history. It does not establish the cause of this reporter's

@@ -14,8 +14,10 @@ $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 
 $packageFiles = @(
     "api-client.js"
+    "analytics.html"
     "background.js"
     "content.js"
+    "portal-bridge.js"
     "styles.css"
     "icons/publisher-analytics-16.png"
     "icons/publisher-analytics-32.png"

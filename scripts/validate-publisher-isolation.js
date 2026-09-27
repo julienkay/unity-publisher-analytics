@@ -59,14 +59,13 @@ function validateNamespacePropagation() {
 }
 
 function validateIdentityLifecycle() {
-  const content = fs.readFileSync(path.join(root, "content.js"), "utf8");
-  const fullSync = content.slice(content.indexOf("  async function prepareFullSync"), content.indexOf("  async function startFullSync"));
-  const startFullSync = content.slice(content.indexOf("  async function startFullSync"), content.indexOf("  async function incrementalSync"));
-  const incrementalSync = content.slice(content.indexOf("  async function incrementalSync"), content.indexOf("  function availableDateBounds"));
-
-  assert.ok(!content.includes("identityRefreshInFlight"), "Publisher identity must not use a polling lock.");
-  assert.ok(!content.includes("setInterval(async () =>"), "Publisher identity must not use a periodic API poll.");
-  assert.ok(!content.includes("verifyPublisherWorkspace"), "Sync batches must not request publisher identity before each write.");
+  const sync = fs.readFileSync(path.join(root, "content-src", "sync.js"), "utf8");
+  const fullSync = sync.slice(sync.indexOf("  async function prepareFullSync"), sync.indexOf("  async function startFullSync"));
+  const startFullSync = sync.slice(sync.indexOf("  async function startFullSync"), sync.indexOf("  async function incrementalSync"));
+  const incrementalSync = sync.slice(sync.indexOf("  async function incrementalSync"), sync.indexOf("  function availableDateBounds"));
+  assert.ok(!sync.includes("identityRefreshInFlight"), "Publisher identity must not use a polling lock.");
+  assert.ok(!sync.includes("setInterval(async () =>"), "Publisher identity must not use a periodic API poll.");
+  assert.ok(!sync.includes("verifyPublisherWorkspace"), "Sync batches must not request publisher identity before each write.");
   assert.ok(!fullSync.includes("fetchPublisherIdentity("), "Full-sync batches must use the activated workspace identity.");
   assert.ok(!incrementalSync.includes("fetchPublisherIdentity("), "Incremental-sync batches must use the activated workspace identity.");
   assert.ok((fullSync.match(/if \(!ownsWorkspace\(publisherId, generation\)\) return;/g) || []).length >= 4, "Full sync must stop stale work at local async boundaries.");

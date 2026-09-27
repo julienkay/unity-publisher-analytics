@@ -45,6 +45,7 @@ request path and parser.
   sentences. Define necessary technical terms. Use one term for one meaning.
 - Do not represent inferred or one-account behavior as a Unity contract.
 - Do not bump the extension version unless explicitly requested.
+- After finishing work that touched any file in `content-src/`, run `npm run build:content`.
 - Do not automate `chrome://extensions`. Ask the user to reload the unpacked
   extension.
 

@@ -184,7 +184,7 @@ behavior is unsafe or incomplete. It requires a product or engineering decision.
 ## D-016 — Use a narrow page-world request bridge
 
 - **Status:** Accepted.
-- **Current behavior:** `api-client.js` runs in the Publisher Portal page world. It accepts only explicit message origins, methods, paths, query forms, and request bodies. It adds the active Portal request context and returns parsed results to `content.js`.
+- **Current behavior:** `api-client.js` runs in the Publisher Portal page world. It accepts only explicit message origins, methods, paths, query forms, and request bodies. The extension analytics page sends requests through `background.js` and `portal-bridge.js`, which returns parsed results to `content.js`.
 - **Basis:** The extension content script has an isolated JavaScript context.
   The page-world bridge uses the active Portal session without exposing a
   generic request proxy.

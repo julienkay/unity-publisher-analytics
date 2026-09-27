@@ -151,8 +151,6 @@ async function transaction(storeName, mode, operation) {
 async function handleDatabaseMessage(message) {
   const publisherId = publisherIdFrom(message);
   switch (message.type) {
-    case "UPA_DB_GET_RECORDS_PAGE":
-      return readRecordsPage(publisherId, message.after);
     case "UPA_DB_PUT_MANY":
       return transaction("records", "readwrite", store => {
         for (const record of message.records || []) {
@@ -182,33 +180,37 @@ async function handleDatabaseMessage(message) {
   }
 }
 
-async function readRecordsPage(publisherId, after) {
-  if (after !== undefined && typeof after !== "string") throw new Error("Invalid record page cursor.");
-  const db = await openDatabase();
-  try {
-    return await new Promise((resolve, reject) => {
-      const tx = db.transaction("records", "readonly");
-      const request = tx.objectStore("records").index("publisherId").openCursor(IDBKeyRange.only(publisherId));
-      const rows = [], encoder = new TextEncoder();
-      let bytes = 0, next = null;
-      request.onsuccess = () => {
-        const cursor = request.result;
-        if (!cursor) return;
-        if (after !== undefined && cursor.primaryKey < after) { cursor.continuePrimaryKey(publisherId, after); return; }
-        if (cursor.primaryKey === after) { cursor.continue(); return; }
-        const size = encoder.encode(JSON.stringify(cursor.value)).byteLength;
-        if (rows.length && (rows.length >= 500 || bytes + size > 1024 * 1024)) { next = rows.at(-1).id; return; }
-        if (size > 1024 * 1024) { tx.abort(); return; }
-        rows.push(cursor.value); bytes += size; cursor.continue();
-      };
-      tx.oncomplete = () => resolve({ rows, next });
-      tx.onerror = () => reject(tx.error);
-      tx.onabort = () => reject(tx.error || new Error("A saved record exceeds the page size limit."));
-    });
-  } finally { db.close(); }
-}
-
 extensionApi.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "UPA_PORTAL_READY") {
+    const tabId = sender.tab?.id;
+    if (!tabId) return false;
+    const key = `${OPEN_REQUEST_PREFIX}${tabId}`;
+    extensionApi.storage.session.get(key).then(async values => {
+      if (values[key] !== true) return;
+      await extensionApi.storage.session.remove(key);
+      await extensionApi.tabs.create({ url: extensionApi.runtime.getURL(`analytics.html?portalTabId=${tabId}`) });
+    }).catch(() => {});
+    return false;
+  }
+  if (message?.type === "UPA_PORTAL_API") {
+    const extensionRoot = extensionApi.runtime.getURL("");
+    if (!sender.url?.startsWith(extensionRoot)) { sendResponse({ ok: false, status: 0, error: "Invalid analytics page." }); return false; }
+    const portalTabId = Number(message.portalTabId);
+    extensionApi.tabs.get(portalTabId).then(tab => {
+      if (!tab?.url || new URL(tab.url).origin !== "https://publisher.unity.com") throw new Error("Open Publisher Portal in a signed-in tab to make requests.");
+      return extensionApi.tabs.sendMessage(portalTabId, {
+        type: "UPA_PORTAL_API_BRIDGE", requestId: message.requestId, path: message.path,
+        method: message.method, body: message.body
+      });
+    }).then(sendResponse).catch(error => sendResponse({ ok: false, status: 0, error: error.message }));
+    return true;
+  }
+  if (message?.type === "UPA_FOCUS_PORTAL") {
+    const extensionRoot = extensionApi.runtime.getURL("");
+    if (!sender.url?.startsWith(extensionRoot)) return false;
+    extensionApi.tabs.update(Number(message.portalTabId), { active: true }).then(tab => extensionApi.windows.update(tab.windowId, { focused: true })).catch(() => {});
+    return false;
+  }
   if (message?.type === "UPA_CONSUME_OPEN") {
     const key = `${OPEN_REQUEST_PREFIX}${sender.tab?.id}`;
     extensionApi.storage.session.get(key)
@@ -226,7 +228,7 @@ extensionApi.runtime.onMessage.addListener((message, sender, sendResponse) => {
 extensionApi.action.onClicked.addListener(async tab => {
   if (!tab.id) return;
   if (tab.url?.startsWith(PUBLISHER_PORTAL_URL)) {
-    try { await extensionApi.tabs.sendMessage(tab.id, { type: "UPA_TOGGLE" }); } catch { /* Reload the portal once after installing. */ }
+    await extensionApi.tabs.create({ url: extensionApi.runtime.getURL(`analytics.html?portalTabId=${tab.id}`) });
     return;
   }
   const portalTab = await extensionApi.tabs.create({ url: "about:blank" });

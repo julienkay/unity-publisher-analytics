@@ -10,6 +10,8 @@
   const SYNC_KEY = "apiSyncV1";
   const DAILY_API_MIN_DATE = "2019-01-01";
   const DAILY_API_WINDOW_DAYS = 365;
+  const standalone = /^(chrome|moz)-extension:$/.test(location.protocol);
+  const portalTabId = Number(new URLSearchParams(location.search).get("portalTabId")) || 0;
   const RANGE_OPTIONS = [
     { id: "all", label: "All time" }, { id: "7d", label: "Last 7 days" }, { id: "30d", label: "Last 30 days" }, { id: "3", label: "Last 3 months" },
     { id: "6", label: "Last 6 months" }, { id: "12", label: "Last 1 year" }, { id: "36", label: "Last 3 years" }, { id: "60", label: "Last 5 years" },
@@ -40,6 +42,7 @@
   let workspaceStage = "identity";
   let workspaceFailure = null;
   let workspaceLoading = false;
+  let workspaceRecordsLoaded = 0;
   let publisherConfirmed = false;
   const diagnosticEvents = [];
   let workspaceGeneration = 0;
@@ -49,6 +52,8 @@
   let isPerformanceScopeMenuOpen = false;
   let isDashboardPackageSettingsOpen = false;
   let dashboardPackageRows = [];
+  let dashboardChartModels = null;
+  let analyticsChartModels = null;
   const chartInstances = new Map();
   const chartResizeObservers = new Map();
   const chartShareMetadata = new Map();
@@ -82,81 +87,6 @@
     calendarScale: "#f7f7fa", calendarScaleBorder: "#ebeaf1", calendarRange: ["#f1f0f8", "#d9d4f6", "#a99def", "#6c5ce7", "#372c83"], sankeyLabel: "#343b4d"
   };
 
-  function publisherFromHeader() {
-    const button = [...document.querySelectorAll("button")].find(item => /User menu/i.test(item.getAttribute("aria-label") || "")) || document.querySelector('nav[aria-label="User"] button:last-of-type');
-    if (!button) return null;
-    const lines = String(button.innerText || "").split(/\n+/).map(compact).filter(Boolean);
-    const labelParts = (button.getAttribute("aria-label") || "").split(",").map(compact).filter(Boolean);
-    const portalLabel = lines.at(-1) || labelParts.at(-2) || "";
-    const username = lines.at(-2) || labelParts[0] || "";
-    return { portalLabel, username, name: portalLabel.replace(/\s+Publisher$/i, "") || username || "Publisher" };
-  }
-
-  function profileValue(doc, labelText) {
-    const label = [...doc.querySelectorAll("div, span, p")].find(item => !item.children.length && compact(item.textContent) === labelText);
-    if (!label) return "";
-    let node = label.parentElement;
-    while (node && node !== doc.body) {
-      const text = compact(node.innerText);
-      if (text.startsWith(labelText) && text.length > labelText.length && text.length < 180) return compact(text.slice(labelText.length));
-      node = node.parentElement;
-    }
-    return "";
-  }
-
-  function publisherFromProfile(doc) {
-    const image = doc.querySelector('img[alt="Profile picture"]');
-    const name = profileValue(doc, "Profile name"), icon = image?.currentSrc || image?.src || "";
-    return name || icon ? { name, icon } : null;
-  }
-
-  async function loadPublisherProfile() {
-    if (location.pathname === "/account/profile") {
-      for (let attempt = 0; attempt < 30; attempt += 1) {
-        const profile = publisherFromProfile(document); if (profile) return profile;
-        await sleep(200);
-      }
-      return null;
-    }
-    const frame = document.createElement("iframe");
-    frame.className = "upa-profile-frame"; frame.src = "/account/profile"; frame.tabIndex = -1; frame.setAttribute("aria-hidden", "true");
-    document.body.appendChild(frame);
-    try {
-      for (let attempt = 0; attempt < 40; attempt += 1) {
-        await sleep(200);
-        try { const profile = frame.contentDocument && publisherFromProfile(frame.contentDocument); if (profile) return profile; } catch { return null; }
-      }
-      return null;
-    } finally { frame.remove(); }
-  }
-
-  async function fetchPublisherIdentity(force = false) {
-    const user = await apiJson(API.user);
-    const id = compact(user?.publisherId);
-    if (!id) throw Object.assign(new Error("The active Publisher Portal account did not provide a publisher identity."), { code: "missing-publisher" });
-    publisherConfirmed = true;
-    const header = publisherFromHeader();
-    const key = publisherStorageKey(PUBLISHER_KEY_PREFIX, id);
-    let cached;
-    try { cached = (await extensionApi.storage.local.get(key))[key]; }
-    catch (error) { recordDiagnostic({ kind: "publisher-display-cache", ...failureDetails(error) }); }
-    const fresh = !force && cached?.id === id && Date.now() - Number(cached.updatedAt || 0) < 86400000;
-    if (fresh) return { ...cached, portalLabel: displayText(cached.portalLabel), name: displayText(cached.name) };
-    const apiIcon = typeof user.avatar === "string" ? user.avatar : "";
-    const apiName = displayText(user.publisherName || user.publisherOrgName);
-    const profile = apiIcon && apiName ? null : await loadPublisherProfile();
-    const identity = {
-      id,
-      organizationId: compact(user.publisherOrgId || user.defaultOrgId),
-      portalLabel: displayText(header?.portalLabel),
-      name: apiName || displayText(profile?.name) || displayText(header?.name) || "Publisher",
-      icon: apiIcon || profile?.icon || "",
-      updatedAt: Date.now()
-    };
-    try { await extensionApi.storage.local.set({ [key]: identity }); }
-    catch (error) { recordDiagnostic({ kind: "publisher-display-cache", ...failureDetails(error) }); }
-    return identity;
-  }
   const DAILY_METRICS = {
     carted: { id: "carted", label: "Carted", field: "carted", description: "Times a package was added to a cart." },
     quickLooks: { id: "quickLooks", label: "Quick looks", field: "quickLooks", description: "Quick looks recorded for a package." },
@@ -257,623 +187,57 @@
     return { ...ownedRecord, id: recordId(ownedRecord), source: "publisher-api", capturedAt: new Date().toISOString() };
   }
 
-  async function database(message) {
-    const generation = workspaceGeneration;
-    try {
-      const response = await extensionApi.runtime.sendMessage(message);
-      if (!response?.ok) throw new Error(response?.error || "The local analytics database is unavailable.");
-      return response.result;
-    } catch (error) {
-      if (generation === workspaceGeneration) recordDiagnostic({ kind: "storage", operation: message.type, ...failureDetails(error) });
-      throw error;
-    }
-  }
+  let indexedRecordsSource = null;
+  let indexedRecordsByType = new Map();
+  let indexedRecordsByTypeAndScope = new Map();
+  let indexedSortedTypes = new Set();
+  let indexedDateBounds = { start: "", end: "" };
+  let indexedLatestCapturedAt = "";
 
-  async function getAll(publisherId = publisherIdentity.id) {
-    const rows = [], generation = workspaceGeneration;
-    let after;
-    do {
-      const page = await database({ type: "UPA_DB_GET_RECORDS_PAGE", publisherId, after });
-      if (!ownsWorkspace(publisherId, generation)) throw new Error("The publisher workspace changed while records were loading.");
-      if (!Array.isArray(page?.rows) || page.rows.some(row => row.publisherId !== publisherId)
-        || (page.next !== null && (typeof page.next !== "string" || (after !== undefined && page.next <= after)))) {
-        throw new Error("Invalid publisher record page.");
-      }
-      for (const row of page.rows) rows.push(row);
-      after = page.next;
-    } while (after !== null);
-    recordDiagnostic({ kind: "storage", operation: "load-records", count: rows.length });
-    return rows;
-  }
-  const putMany = (rows, publisherId = publisherIdentity.id) => rows.length ? database({ type: "UPA_DB_PUT_MANY", publisherId, records: rows }) : Promise.resolve(0);
-  const getMeta = (key, publisherId = publisherIdentity.id) => database({ type: "UPA_DB_GET_META", publisherId, key });
-  const setMeta = (key, value, publisherId = publisherIdentity.id) => database({ type: "UPA_DB_SET_META", publisherId, key, value });
-  const clearPublisherData = async (publisherId = publisherIdentity.id) => {
-    const result = await database({ type: "UPA_DB_CLEAR", publisherId });
-    if (publisherId === publisherIdentity.id) {
-      packageIconDataUrls.clear();
-      for (const key of packageIconRetryAt.keys()) if (key.startsWith(`${publisherId}\u0000`)) packageIconRetryAt.delete(key);
-    }
-    return result;
-  };
-
-  function cachedIconKey(packageId, url, publisherId = publisherIdentity.id) { return `${publisherId}\u0000${packageId}\u0000${url}`; }
-
-  function packageIconUrl(value) {
-    const icon = typeof value === "string" ? value.trim() : "";
-    try {
-      const parsed = new URL(icon.startsWith("//") ? `https:${icon}` : icon, location.href);
-      if (parsed.protocol === "https:" && parsed.hostname === "assetstorev1-prd-cdn.unity3d.com") return { url: parsed.href, cacheable: true };
-      if (location.protocol === "http:" && ["127.0.0.1", "localhost"].includes(location.hostname) && parsed.origin === location.origin && parsed.pathname.startsWith("/scripts/marketing-assets/package-icons/")) {
-        return { url: parsed.href, cacheable: false };
-      }
-    } catch { /* A malformed or untrusted URL uses the letter fallback. */ }
-    return null;
-  }
-
-  function hydrateVisiblePackageIcons() {
-    if (!publisherIdentity.id) return;
-    const generation = workspaceGeneration;
-    const pending = new Map();
-    for (const wrapper of document.querySelectorAll("#upa-root .upa-package-icon-pending[data-package-icon-id][data-package-icon-url]")) {
-      const packageId = wrapper.dataset.packageIconId, url = wrapper.dataset.packageIconUrl, key = cachedIconKey(packageId, url);
-      if (packageIconDataUrls.has(key) || packageIconRequests.has(key) || (packageIconRetryAt.get(key) || 0) > Date.now()) continue;
-      pending.set(packageId, { url, key });
-    }
-    if (!pending.size) return;
-    for (const { key } of pending.values()) { packageIconRequests.add(key); packageIconRetryAt.set(key, Date.now() + 60000); }
-    const publisherId = publisherIdentity.id;
-    database({ type: "UPA_DB_CACHE_PACKAGE_ICONS", publisherId, items: [...pending].map(([packageId, item]) => ({ packageId, url: item.url })) })
-      .then(icons => {
-        if (!ownsWorkspace(publisherId, generation)) return;
-        for (const icon of icons || []) {
-          const item = pending.get(icon.packageId);
-          if (!item || item.url !== icon.url || typeof icon.dataUrl !== "string" || !icon.dataUrl.startsWith("data:image/")) continue;
-          packageIconDataUrls.set(item.key, icon.dataUrl);
-          packageIconRetryAt.delete(item.key);
-          for (const wrapper of document.querySelectorAll("#upa-root .upa-package-icon-pending[data-package-icon-id][data-package-icon-url]")) {
-            if (wrapper.dataset.packageIconId !== icon.packageId || wrapper.dataset.packageIconUrl !== icon.url) continue;
-            const image = document.createElement("img");
-            image.alt = ""; image.loading = "lazy"; image.src = icon.dataUrl;
-            wrapper.replaceChildren(image); wrapper.classList.remove("upa-package-icon-pending"); wrapper.classList.add("upa-package-icon-wrap");
-          }
-        }
-      })
-      .catch(() => { /* Missing or unavailable icons keep the letter fallback. */ })
-      .finally(() => {
-        for (const { key } of pending.values()) packageIconRequests.delete(key);
-        if (publisherIdentity.id === publisherId) hydrateVisiblePackageIcons();
-      });
-  }
-
-  async function cacheDiscoveredPackageIcons(packages, publisherId, generation) {
-    const items = (packages || []).map(item => ({ packageId: String(item.id || "").trim(), url: packageIconUrl(item.icon) }))
-      .filter(item => item.packageId && item.url?.cacheable).map(item => ({ packageId: item.packageId, url: item.url.url }));
-    for (let offset = 0; offset < items.length; offset += 30) {
-      if (!ownsWorkspace(publisherId, generation)) return;
-      const batch = items.slice(offset, offset + 30).map(item => ({ ...item, key: cachedIconKey(item.packageId, item.url, publisherId) })).filter(item => {
-        const key = item.key;
-        if (packageIconDataUrls.has(key) || packageIconRequests.has(key) || (packageIconRetryAt.get(key) || 0) > Date.now()) return false;
-        packageIconRequests.add(key);
-        return true;
-      });
-      if (!batch.length) continue;
-      let cached = false;
-      try {
-        await database({ type: "UPA_DB_CACHE_PACKAGE_ICONS", publisherId, items: batch, returnDataUrls: false });
-        cached = true;
-        if (!ownsWorkspace(publisherId, generation)) return;
-      } catch { /* Icon caching is optional; each package keeps its letter fallback. */ }
-      finally {
-        for (const item of batch) {
-          packageIconRequests.delete(item.key);
-          if (!cached) packageIconRetryAt.set(item.key, Date.now() + 60000);
-        }
-        if (publisherIdentity.id === publisherId) hydrateVisiblePackageIcons();
+  function ensureRecordIndexes() {
+    if (indexedRecordsSource === records) return;
+    indexedRecordsSource = records;
+    indexedRecordsByType = new Map();
+    indexedRecordsByTypeAndScope = new Map();
+    indexedSortedTypes = new Set();
+    let start = "", end = "";
+    indexedLatestCapturedAt = "";
+    for (const item of records) {
+      const typeRows = indexedRecordsByType.get(item.type) || [];
+      typeRows.push(item);
+      indexedRecordsByType.set(item.type, typeRows);
+      const scopeKey = `${item.type}\u0000${item.scope || ""}`;
+      const scopedRows = indexedRecordsByTypeAndScope.get(scopeKey) || [];
+      scopedRows.push(item);
+      indexedRecordsByTypeAndScope.set(scopeKey, scopedRows);
+      if (item.capturedAt > indexedLatestCapturedAt) indexedLatestCapturedAt = item.capturedAt;
+      if (item.type === "daily" && item.scope === "all" && item.date) {
+        if (!start || item.date < start) start = item.date;
+        if (!end || item.date > end) end = item.date;
       }
     }
-  }
-
-  function recordDiagnostic(event) {
-    diagnosticEvents.push({ at: new Date().toISOString(), ...event });
-    if (diagnosticEvents.length > 60) diagnosticEvents.shift();
-  }
-
-  function failureDetails(error) {
-    const message = String(error?.message || "");
-    const code = ["missing-publisher", "timeout", "network", "http", "unexpected-response"].includes(error?.code) ? error.code
-      : /maximum allowed size|message.*too large/i.test(message) ? "message-too-large"
-      : /quota/i.test(message) ? "storage-full"
-      : /extension context invalidated/i.test(message) ? "extension-reloaded"
-      : /stack|recursion/i.test(message) ? "stack-limit" : "unexpected-error";
-    const name = ["Error", "TypeError", "RangeError", "QuotaExceededError", "SecurityError", "AbortError"].includes(error?.name) ? error.name : "Error";
-    const locations = [...new Set(String(error?.stack || "").match(/(?:content|background|api-client)\.js:\d+:\d+/g) || [])].slice(0, 5);
-    return { code, name, locations };
-  }
-
-  function supportReport() {
-    let version = "unknown";
-    try { version = extensionApi.runtime.getManifest().version; } catch { /* Local previews have no manifest. */ }
-    const job = syncJob;
-    return {
-      format: "publisher-analytics-support", version: 1, extensionVersion: version, generatedAt: new Date().toISOString(),
-      browser: navigator.userAgent.match(/(?:Firefox|Edg|Chrome)\/[\d.]+/g)?.join(" ") || "unknown",
-      workspace: { state: publisherIdentityState, stage: workspaceStage, publisherConfirmed, loadedRecords: records.length, failure: workspaceFailure },
-      sync: job ? { phase: job.phase, active: Boolean(job.active), completed: job.completed, total: job.total,
-        packageCount: job.packages?.length || 0, monthIndex: job.monthIndex, scopeIndex: job.scopeIndex,
-        cursor: job.cursor, endExclusive: job.endExclusive, failure: job.failure || null } : null,
-      events: diagnosticEvents.slice()
+    const sortByDate = (a, b) => {
+      const left = String(a.date || ""), right = String(b.date || "");
+      return left < right ? -1 : left > right ? 1 : 0;
     };
-  }
-
-  function supportPanel() {
-    return `<section class="upa-settings-section"><div class="upa-settings-intro"><h2>Troubleshooting</h2><p>Save a report if you need help.</p></div><article class="upa-settings-panel upa-support-panel"><p>The report includes your extension version, sync progress, and recent error types. It excludes account names, asset names, sales figures, and sign-in details. Nothing is sent automatically.</p><button class="upa-settings-primary" type="button" data-action="download-support">Download support report</button><details><summary>Preview report</summary><pre>${escapeHtml(JSON.stringify(supportReport(), null, 2))}</pre></details></article></section>`;
-  }
-
-  function workspaceErrorCopy() {
-    if (workspaceStage === "identity") return { title: "We couldn't confirm your publisher.", detail: "Open the Publisher Portal and check that you are signed in. Then try again." };
-    if (workspaceStage === "render") return { title: "We couldn't display your analytics.", detail: "Your saved history has not been cleared. Download a support report, or try opening the workspace again." };
-    return { title: "We couldn't open your saved workspace.", detail: "Your publisher was confirmed, but saved data could not be loaded. Download a support report before trying again. Your saved history has not been cleared." };
-  }
-
-  function renderRecovery(host) {
-    try { disposeCharts(); }
-    catch (error) {
-      recordDiagnostic({ kind: "chart-cleanup", ...failureDetails(error) });
-      chartResizeObservers.clear(); chartInstances.clear();
+    for (const type of ["daily", "sales"]) {
+      const rows = indexedRecordsByType.get(type);
+      if (rows) { rows.sort(sortByDate); indexedSortedTypes.add(type); }
     }
-    host.classList.toggle("upa-open", isOpen);
-    host.classList.toggle("upa-theme-dark", darkThemeActive());
-    document.documentElement.classList.toggle("upa-dashboard-open", isOpen);
-    const settings = prefs.section === "settings", loading = publisherIdentityState === "loading";
-    const logo = extensionApi.runtime.getURL("icons/publisher-analytics-128.png"), copy = workspaceErrorCopy();
-    const status = loading ? `<h2>${workspaceStage === "identity" ? "Checking your publisher…" : "Opening your saved workspace…"}</h2><p>Your local workspace will open in a moment.</p>`
-      : `<h2>${copy.title}</h2><p>${copy.detail}</p><div class="upa-recovery-actions"><button class="upa-primary" data-action="retry-publisher">Try again</button><button data-action="exit-analytics">Open Publisher Portal</button></div>`;
-    host.innerHTML = `<button class="upa-fab" aria-label="Open Publisher Analytics+" title="Publisher Analytics+"><img src="${logo}" alt=""></button><aside class="upa-panel" aria-label="Publisher Analytics+ dashboard"><div class="upa-shell"><aside class="upa-sidebar" aria-label="Analytics workspace"><div class="upa-brand"><span><img src="${logo}" alt=""></span><div><strong>Publisher Analytics+</strong><small>Asset Store Insights</small></div></div><div class="upa-primary-nav"><button data-action="recovery-home">Home</button><button data-action="open-settings">Settings</button><button data-action="exit-analytics">Exit to Publisher Portal</button></div>${publisherAccount()}</aside><section class="upa-workspace"><header class="upa-header upa-header-compact"><div class="upa-header-main"><div class="upa-header-copy"><small>Publisher workspace</small><h1>${settings ? "Settings" : "Your workspace"}</h1></div></div><nav class="upa-mobile-nav" aria-label="Workspace sections"><button data-action="recovery-home">Home</button><button data-action="open-settings">Settings</button><button data-action="exit-analytics">Publisher Portal</button></nav></header><main class="upa-content" data-section="${settings ? "settings" : "dashboard"}"><section class="upa-recovery-card" role="status">${status}</section>${settings ? '<section class="upa-recovery-card"><h2>Appearance</h2><div class="upa-recovery-actions"><button data-theme="system">System</button><button data-theme="light">Light</button><button data-theme="dark">Dark</button></div><p>Data management becomes available when your workspace opens.</p></section>' : ""}${supportPanel()}</main></section></div><div class="upa-toast" role="status"></div></aside>`;
+    indexedDateBounds = { start, end };
   }
 
-  async function openPublisherWorkspace(force = false) {
-    if (workspaceLoading) return;
-    workspaceLoading = true;
-    publisherConfirmed = false;
-    workspaceFailure = null;
-    workspaceStage = "identity";
-    publisherIdentityState = "loading";
-    render();
-    try { await activatePublisher(await fetchPublisherIdentity(force), { initial: true }); }
-    catch (error) {
-      publisherIdentityState = "error";
-      workspaceFailure = { stage: workspaceStage, ...failureDetails(error) };
-      recordDiagnostic({ kind: "workspace", ...workspaceFailure });
-      console.warn("Publisher Analytics+ workspace failed:", workspaceStage, error);
-      render();
-    } finally { workspaceLoading = false; }
+  function indexedRecords(type, scope) {
+    ensureRecordIndexes();
+    if (type === undefined) return records;
+    return scope === undefined ? (indexedRecordsByType.get(type) || []) : (indexedRecordsByTypeAndScope.get(`${type}\u0000${scope || ""}`) || []);
   }
 
-  async function apiJson(path, options = {}) {
-    const requestId = crypto.randomUUID(), method = options.method || "GET";
-    return new Promise((resolve, reject) => {
-      const endpoint = Object.entries(API).find(([, value]) => typeof value === "string" && value === path)?.[0]
-        || (/monthly-sales/.test(path) ? "sales" : /monthly-downloads/.test(path) ? "downloads" : "unknown");
-      const generation = workspaceGeneration, startedAt = Date.now();
-      const timeout = setTimeout(() => {
-        pendingApiRequests.delete(requestId);
-        if (generation === workspaceGeneration) recordDiagnostic({ kind: "request", endpoint, method, outcome: "timeout", durationMs: Date.now() - startedAt });
-        reject(Object.assign(new Error(`Publisher API timed out for ${path.split("?")[0]}.`), { code: "timeout" }));
-      }, 45000);
-      pendingApiRequests.set(requestId, { resolve, reject, timeout, path, endpoint, method, generation, startedAt });
-      window.postMessage({ source: "unity-publisher-analytics", type: "UPA_API_REQUEST", requestId, path, method, body: options.body }, location.origin);
-    });
-  }
-
-  window.addEventListener("message", event => {
-    const message = event.data;
-    if (event.source !== window || event.origin !== location.origin || message?.source !== "unity-publisher-analytics-api" || message?.type !== "UPA_API_RESPONSE") return;
-    const pending = pendingApiRequests.get(message.requestId); if (!pending) return;
-    pendingApiRequests.delete(message.requestId); clearTimeout(pending.timeout);
-    const shape = Array.isArray(message.data) ? "array" : message.data === null ? "null" : typeof message.data;
-    if (pending.generation === workspaceGeneration) recordDiagnostic({ kind: "request", endpoint: pending.endpoint, method: pending.method,
-      status: Number(message.status) || 0, outcome: message.ok ? "success" : "failure", durationMs: Date.now() - pending.startedAt, shape,
-      ...(pending.endpoint === "user" ? { publisherIdPresent: Boolean(compact(message.data?.publisherId)) } : {}) });
-    if (message.ok) pending.resolve(message.data);
-    else {
-      const detail = typeof message.data === "string" ? compact(message.data).slice(0, 180) : message.data?.message || message.error || "";
-      pending.reject(Object.assign(new Error(`Publisher API returned ${message.status || "a network error"} for ${pending.path.split("?")[0]}${detail ? `: ${detail}` : ""}.`), { code: message.status ? "http" : "network" }));
-    }
-  });
-
-  function categoryReference(item) {
-    const raw = valueFrom(item, ["category_id", "categoryId", "category"]);
-    if (raw === "" || raw === null || raw === undefined) return null;
-    if (typeof raw === "object") {
-      const id = String(valueFrom(raw, ["id", "category_id", "categoryId"]) || ""), name = compact(valueFrom(raw, ["assetstore_name", "assetstoreName", "name", "title", "label"]));
-      return id || name ? { id: id || name, name } : null;
-    }
-    const value = compact(raw);
-    return value ? { id: value, name: value } : null;
-  }
-
-  async function fetchPackageCategoryMetadata() {
-    const categoriesByIdentifier = new Map(), categoriesByName = new Map(), reviewCountsByPackage = new Map(), iconsByPackage = new Map(), limit = 200;
-    let offset = 0;
-    while (true) {
-      const body = { limit: String(limit), order_by: "name", order: "asc" };
-      if (offset) body.offset = String(offset);
-      const response = await apiJson(API.packageMetadata, { method: "POST", body });
-      const rows = valueFrom(response, ["package_versions", "packageVersions"]);
-      if (!Array.isArray(rows) || !rows.length) break;
-      for (const item of rows) {
-        const packageId = String(valueFrom(item, ["package_id", "packageId"]) || ""), rawRatingCount = valueFrom(item, ["count_ratings"]), ratingCount = Number(rawRatingCount);
-        const versionId = String(valueFrom(item, ["id"]) || ""), icon = response.package_key_images?.[versionId]?.icon;
-        if (packageId && compact(valueFrom(item, ["status"])).toLowerCase() === "published" && typeof icon === "string" && icon.trim()) {
-          const existing = iconsByPackage.get(packageId);
-          if (!existing || String(valueFrom(item, ["modified", "status_updated"]) || "") > existing.modified) {
-            iconsByPackage.set(packageId, { icon: icon.trim(), modified: String(valueFrom(item, ["modified", "status_updated"]) || "") });
-          }
-        }
-        if (packageId && compact(valueFrom(item, ["status"])).toLowerCase() === "published" && rawRatingCount !== null && rawRatingCount !== undefined && rawRatingCount !== "" && Number.isSafeInteger(ratingCount) && ratingCount >= 0) {
-          const existing = reviewCountsByPackage.get(packageId);
-          reviewCountsByPackage.set(packageId, existing === undefined ? ratingCount : Math.max(existing, ratingCount));
-        }
-        const category = categoryReference(item);
-        if (!category) continue;
-        for (const identifier of [valueFrom(item, ["package_id", "packageId"]), valueFrom(item, ["genesis_product_id", "genesisProductId", "product_id", "productId"]), valueFrom(item, ["id"])]) {
-          if (identifier !== "" && identifier !== null && identifier !== undefined) categoriesByIdentifier.set(String(identifier), category);
-        }
-        const name = compact(valueFrom(item, ["name", "package_name", "packageName"])).toLocaleLowerCase();
-        if (name) categoriesByName.set(name, category);
-      }
-      offset += rows.length;
-      const total = toNumber(valueFrom(response, ["total"]));
-      if (rows.length < limit || (total && offset >= total)) break;
-    }
-    return { categoriesByIdentifier, categoriesByName, reviewCountsByPackage, iconsByPackage };
-  }
-
-  async function fetchPackages() {
-    const [raw, categoryRows, metadata] = await Promise.all([apiJson(API.packages), apiJson(API.categories), fetchPackageCategoryMetadata()]);
-    const categories = new Map((Array.isArray(categoryRows) ? categoryRows : []).map(item => [String(valueFrom(item, ["id", "category_id", "categoryId"]) || ""), compact(valueFrom(item, ["assetstore_name", "assetstoreName", "name", "title", "category_name", "categoryName"]))]).filter(([id, name]) => id && name));
-    return (Array.isArray(raw) ? raw : []).map(item => {
-      const id = String(valueFrom(item, ["package_id", "packageId", "id"]) || "");
-      const name = valueFrom(item, ["name", "title", "package_name"]) || `Package ${id}`;
-      const metadataCategory = metadata.categoriesByIdentifier.get(id) || metadata.categoriesByName.get(compact(name).toLocaleLowerCase());
-      const categoryId = String(valueFrom(item, ["category_id", "categoryId"]) || metadataCategory?.id || "");
-      return { id, name, categoryId, category: categories.get(categoryId) || packageCategory(item) || metadataCategory?.name || "", firstPublished: parseDate(valueFrom(item, ["first_published_at", "first_published_time", "firstPublishedTime", "first_published"])), reviewCount: metadata.reviewCountsByPackage.get(id) ?? null, icon: metadata.iconsByPackage.get(id)?.icon || "" };
-    }).filter(item => item.id);
-  }
-
-  function normalizeSales(raw, period, publisherId) {
-    return (Array.isArray(raw) ? raw : []).map(item => normalize({
-      type: "sales", period, date: `${period}-01`, packageId: String(valueFrom(item, ["package_id", "packageId"]) || ""), package: valueFrom(item, ["name", "package_name"]), category: packageCategory(item),
-      price: toNumber(item.price), qty: toNumber(valueFrom(item, ["sales", "quantity"])), refunds: toNumber(item.refunds), chargebacks: toNumber(item.chargebacks),
-      gross: toNumber(item.gross), net: toNumber(item.revenue), first: parseDate(item.first), last: parseDate(item.last), currency: "USD"
-    }, publisherId));
-  }
-
-  function normalizeDownloads(raw, period, publisherId) {
-    return (Array.isArray(raw) ? raw : []).map(item => {
-      const data = item.downloads || {};
-      const freeDownloads = toNumber(valueFrom(data, ["free_downloads", "freeDownloads"])), entitledDownloads = toNumber(valueFrom(data, ["entitled_downloads", "entitledDownloads"]));
-      const freeUsers = toNumber(valueFrom(data, ["free_users", "freeUsers"])), entitledUsers = toNumber(valueFrom(data, ["entitled_users", "entitledUsers"]));
-      return normalize({ type: "downloads", period, date: `${period}-01`, packageId: String(valueFrom(item, ["package_id", "packageId"]) || ""), package: item.name, category: packageCategory(item),
-        downloads: freeDownloads + entitledDownloads, users: freeUsers + entitledUsers, freeDownloads, freeUsers, entitledDownloads, entitledUsers,
-        freeFirst: parseDate(valueFrom(data, ["free_first", "freeFirst"])), freeLast: parseDate(valueFrom(data, ["free_last", "freeLast"])),
-        entitledFirst: parseDate(valueFrom(data, ["entitled_first", "entitledFirst"])), entitledLast: parseDate(valueFrom(data, ["entitled_last", "entitledLast"])) }, publisherId);
-    });
-  }
-
-  function normalizeRevenue(raw, publisherId) {
-    return (Array.isArray(raw) ? raw : []).map(item => {
-      const date = parseDate(item.date);
-      return normalize({ type: "revenue", period: date?.slice(0, 7), date, description: item.description, debit: toNumber(item.debit), credit: toNumber(item.credit), balance: toNumber(item.balance), currency: "USD" }, publisherId);
-    }).filter(item => item.date);
-  }
-
-  function normalizeDaily(raw, scope, publisherId) {
-    const result = [];
-    for (const [dateKey, metrics] of Object.entries(raw || {})) {
-      if (!metrics || typeof metrics !== "object") continue;
-      const date = parseDate(dateKey); if (!date) continue;
-      const pageViews = toNumber(valueFrom(metrics, ["page_views", "pageViews"]));
-      const paidQty = toNumber(valueFrom(metrics, ["sales", "paid_sales", "paidSales"]));
-      const freeQty = toNumber(valueFrom(metrics, ["free_obtained", "freeObtained"]));
-      const salesQty = paidQty + freeQty;
-      result.push(normalize({ type: "daily", period: date.slice(0, 7), date, scope: scope.id ? "package" : "all", packageId: scope.id, package: scope.name, category: scope.category || "",
-        sales: toNumber(valueFrom(metrics, ["gross"])), salesQty, paidQty, freeQty, pageViews, conversionRate: Math.min(1, salesQty / (pageViews || 1)) * 100,
-        downloads: toNumber(metrics.downloads), wishlisted: toNumber(metrics.wishlisted), refunds: toNumber(metrics.refunds), ratingAvg: toNumber(valueFrom(metrics, ["rating", "ratingAvg"])),
-        quickLooks: toNumber(valueFrom(metrics, ["quick_looks", "quickLooks"])), carted: toNumber(metrics.carted), currency: "USD" }, publisherId));
-    }
-    return result;
-  }
-
-  function earliestAccountDate(packages, revenue) {
-    const dates = [...packages.map(item => item.firstPublished), ...revenue.map(item => item.date)].filter(Boolean).sort();
-    if (!dates.length) throw new Error("The Publisher API did not return an account start date.");
-    return [dates[0], DAILY_API_MIN_DATE].sort().at(-1);
-  }
-
-  function incrementalDailyStart(scope, publisherRecords) {
-    const latest = publisherRecords.filter(item => item.type === "daily" && item.packageId === scope.id).map(item => item.date).sort().at(-1);
-    if (latest) return latest;
-    if (!scope.id) return "";
-    if (!scope.firstPublished) throw new Error(`The asset "${scope.name}" did not include a publication date.`);
-    return [scope.firstPublished, DAILY_API_MIN_DATE].sort().at(-1);
-  }
-
-  function incrementalDailyRanges(scope, publisherRecords, endExclusive) {
-    const ranges = [];
-    let start = incrementalDailyStart(scope, publisherRecords);
-    while (start && start < endExclusive) {
-      const rangeEnd = [addDays(start, DAILY_API_WINDOW_DAYS), endExclusive].sort()[0];
-      ranges.push({ start, endExclusive: rangeEnd });
-      start = rangeEnd;
-    }
-    return ranges;
-  }
-
-  function sanitizedPreferences(storedPrefs = {}) {
-    const analyticsViews = ["revenue", "lifetime", "calendar", "sankey", "packages"], ranges = ["all", "7d", "30d", "3", "6", "12", "36", "60", "mtd", "ytd", "custom"];
-    const storedSankeyGroupBy = ["none", "category"].includes(storedPrefs.sankeyGroupBy) ? storedPrefs.sankeyGroupBy : "category";
-    const storedDashboardColumns = Array.isArray(storedPrefs.dashboardPackageColumns) ? storedPrefs.dashboardPackageColumns : null;
-    const dashboardReviewsDefaultOffApplied = storedPrefs.dashboardPackageReviewsDefaultOffApplied === true;
-    const storedLifetimeAlign = storedPrefs.lifetimeAlign === "age" ? "age" : "calendar";
-    const storedLifetimeStyle = storedPrefs.lifetimeStyle === "area" && storedLifetimeAlign === "calendar" ? "area" : "lines";
-    const lifetimeStyle = storedPrefs.lifetimeStackDefaultApplied === true ? storedLifetimeStyle : "area";
-    return {
-      section: ["dashboard", "analytics", "package", "groups", "settings"].includes(storedPrefs.section) ? storedPrefs.section : (storedPrefs.view && storedPrefs.view !== "overview" ? "analytics" : "dashboard"),
-      view: analyticsViews.includes(storedPrefs.view) ? storedPrefs.view : "revenue", packageId: compact(storedPrefs.packageId), packageRevenueMode: storedPrefs.packageRevenueMode === "interval" ? "interval" : "cumulative", range: ranges.includes(storedPrefs.range) ? storedPrefs.range : "all", interval: storedPrefs.interval || "auto", start: storedPrefs.start || "", end: storedPrefs.end || "", theme: ["system", "light", "dark"].includes(storedPrefs.theme) ? storedPrefs.theme : "system",
-      performanceLayout: storedPrefs.performanceLayout === "wide" ? "wide" : "grid", performanceScopes: sanitizedPerformanceScopes(storedPrefs.performanceScopes), performanceHiddenScopes: Array.isArray(storedPrefs.performanceHiddenScopes) ? [...new Set(storedPrefs.performanceHiddenScopes.map(String).filter(Boolean))] : [], dashboardPackageColumns: (storedDashboardColumns ? DASHBOARD_PACKAGE_COLUMNS.filter(key => storedDashboardColumns.includes(key)) : [...DEFAULT_DASHBOARD_PACKAGE_COLUMNS]).filter(key => dashboardReviewsDefaultOffApplied || key !== "reviews"), dashboardPackageReviewsDefaultOffApplied: true, calendarMetric: storedPrefs.calendarMetric || "sales", calendarStyle: storedPrefs.calendarStyle === "assets" ? "assets" : "calendar", lifetimeMetric: LIFETIME_METRICS[storedPrefs.lifetimeMetric] ? storedPrefs.lifetimeMetric : "revenue", lifetimeStyle, lifetimeAlign: lifetimeStyle === "area" ? "calendar" : storedLifetimeAlign, lifetimeStackDefaultApplied: true, lifetimePackages: Array.isArray(storedPrefs.lifetimePackages) ? storedPrefs.lifetimePackages : [], lifetimeHiddenPackages: Array.isArray(storedPrefs.lifetimeHiddenPackages) ? storedPrefs.lifetimeHiddenPackages : [], sankeyPackages: Array.isArray(storedPrefs.sankeyPackages) ? storedPrefs.sankeyPackages : [], sankeyGroupBy: storedPrefs.sankeyCategoryDefaultApplied === true ? storedSankeyGroupBy : "category", sankeyCategoryDefaultApplied: true
-    };
-  }
-
-  function sanitizedPerformanceScopes(value) {
-    if (!Array.isArray(value)) return [{ type: "all", id: "all" }];
-    const seen = new Set(), scopes = [];
-    for (const item of value) {
-      const type = item?.type, id = type === "all" ? "all" : compact(item?.id), key = `${type}:${id}`;
-      if (!["all", "group", "asset"].includes(type) || !id || seen.has(key)) continue;
-      seen.add(key); scopes.push({ type, id });
-    }
-    return scopes.length ? scopes : [{ type: "all", id: "all" }];
-  }
-
-  function sanitizedPackageGroups(value) {
-    if (!Array.isArray(value)) return [];
-    const ids = new Set(), names = new Set(), memberships = new Set(), groups = [];
-    for (const item of value) {
-      const id = compact(item?.id), name = compact(item?.name).slice(0, 40), normalizedName = name.toLocaleLowerCase();
-      const packageIds = [...new Set((Array.isArray(item?.packageIds) ? item.packageIds : []).map(value => compact(value)).filter(Boolean))];
-      const membership = [...packageIds].sort().join("\u0000");
-      if (!id || ["all", "custom"].includes(id) || !name || !packageIds.length || ids.has(id) || names.has(normalizedName) || memberships.has(membership) || normalizedName === "all assets") continue;
-      ids.add(id); names.add(normalizedName); memberships.add(membership);
-      groups.push({ id, name, packageIds, createdAt: item.createdAt || new Date().toISOString(), updatedAt: item.updatedAt || item.createdAt || new Date().toISOString() });
-    }
-    return groups.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
-  }
-
-  async function savePrefs() {
-    if (!publisherIdentity.id) return;
-    await extensionApi.storage.local.set({ [publisherStorageKey(PREFS_KEY_PREFIX)]: prefs });
-  }
-
-  async function savePackageGroups() {
-    if (!publisherIdentity.id) return;
-    packageGroups = sanitizedPackageGroups(packageGroups);
-    await extensionApi.storage.local.set({ [publisherStorageKey(GROUPS_KEY_PREFIX)]: packageGroups });
-  }
-
-  function ownsWorkspace(publisherId, generation) {
-    return publisherIdentity.id === publisherId && workspaceGeneration === generation;
-  }
-
-  async function activatePublisher(identity, { initial = false, resume = true } = {}) {
-    if (publisherIdentity.id && publisherIdentity.id !== identity.id) diagnosticEvents.length = 0;
-    workspaceGeneration += 1;
-    const generation = workspaceGeneration;
-    publisherIdentity = identity;
-    publisherIdentityState = "loading";
-    records = [];
-    syncJob = null;
-    packageGroups = [];
-    groupEditor = null;
-    isPerformanceScopeMenuOpen = false;
-    isDashboardPackageSettingsOpen = false;
-    isRefreshing = false;
-    workspaceStage = "preferences";
-    render();
-    const preferencesKey = publisherStorageKey(PREFS_KEY_PREFIX, identity.id), groupsKey = publisherStorageKey(GROUPS_KEY_PREFIX, identity.id);
-    const stored = await extensionApi.storage.local.get([preferencesKey, groupsKey]);
-    if (!ownsWorkspace(identity.id, generation)) return;
-    prefs = sanitizedPreferences(stored[preferencesKey] || {});
-    packageGroups = sanitizedPackageGroups(stored[groupsKey] || []);
-    prefs.performanceScopes = sanitizedPerformanceScopes(prefs.performanceScopes).filter(scope => scope.type !== "group" || packageGroups.some(group => group.id === scope.id));
-    if (!prefs.performanceScopes.length) prefs.performanceScopes = [{ type: "all", id: "all" }];
-    await extensionApi.storage.local.set({ [preferencesKey]: prefs });
-    workspaceStage = "checkpoint";
-    const publisherJob = await getMeta(SYNC_KEY, identity.id);
-    if (!ownsWorkspace(identity.id, generation)) return;
-    syncJob = publisherJob;
-    workspaceStage = "local-data";
-    const publisherRecords = await getAll(identity.id);
-    if (!ownsWorkspace(identity.id, generation)) return;
-    records = publisherRecords;
-    syncJob = publisherJob;
-    publisherIdentityState = "ready";
-    workspaceStage = "render";
-    if (initial && syncJob?.active) isOpen = true;
-    render();
-    if (!resume || publisherIdentityState !== "ready") return;
-    if (syncJob?.active) runFullSync(identity.id, generation);
-    else if (records.length) incrementalSync(false, identity.id, generation);
-  }
-
-  async function saveJob(job = syncJob, publisherId = publisherIdentity.id) { await setMeta(SYNC_KEY, job, publisherId); }
-
-  async function prepareFullSync(publisherId, generation) {
-    const [packages, revenueRaw] = await Promise.all([fetchPackages(), apiJson(API.revenue)]);
-    if (!ownsWorkspace(publisherId, generation)) return;
-    const revenue = normalizeRevenue(revenueRaw, publisherId); await putMany(revenue, publisherId);
-    if (!ownsWorkspace(publisherId, generation)) return;
-    const start = earliestAccountDate(packages, revenue), endInclusive = latestCompleteDailyDate(), months = monthSequence(start, new Date().toISOString().slice(0, 10));
-    const scopes = [{ id: null, name: "All assets" }, ...packages];
-    const chunksPerScope = Math.max(1, Math.ceil((new Date(`${addDays(endInclusive, 1)}T00:00:00Z`) - new Date(`${start}T00:00:00Z`)) / 86400000 / DAILY_API_WINDOW_DAYS));
-    syncJob = { publisherId, active: true, phase: "months", startedAt: new Date().toISOString(), packages, start, endExclusive: addDays(endInclusive, 1), months, monthIndex: 0,
-      scopes, scopeIndex: 0, cursor: start, completed: 1, total: 1 + months.length * 2 + scopes.length * chunksPerScope, label: "Getting your history ready" };
-    await saveJob(syncJob, publisherId); render();
-    void cacheDiscoveredPackageIcons(packages, publisherId, generation);
-  }
-
-  async function runFullSync(publisherId = publisherIdentity.id, generation = workspaceGeneration) {
-    try {
-      if (!ownsWorkspace(publisherId, generation)) return;
-      if (!syncJob?.active || !syncJob.phase || syncJob.phase === "preparing") await prepareFullSync(publisherId, generation);
-      if (!ownsWorkspace(publisherId, generation)) return;
-      const job = syncJob;
-      if (job.publisherId !== publisherId) throw new Error("The saved sync does not belong to this publisher.");
-      if (job.phase === "months") {
-        while (job.active && ownsWorkspace(publisherId, generation) && job.monthIndex < job.months.length) {
-          const month = job.months[job.monthIndex]; job.label = `Syncing sales and downloads · ${month}`; render();
-          const [salesRaw, downloadsRaw] = await Promise.all([apiJson(API.sales(month)), apiJson(API.downloads(month))]);
-          if (!ownsWorkspace(publisherId, generation)) return;
-          await putMany([...normalizeSales(salesRaw, month, publisherId), ...normalizeDownloads(downloadsRaw, month, publisherId)], publisherId);
-          job.monthIndex += 1; job.completed += 2; await saveJob(job, publisherId); render();
-        }
-        if (!job.active || !ownsWorkspace(publisherId, generation)) return;
-        job.phase = "daily"; await saveJob(job, publisherId);
-      }
-      if (job.phase === "daily") {
-        while (job.active && ownsWorkspace(publisherId, generation) && job.scopeIndex < job.scopes.length) {
-          const scope = job.scopes[job.scopeIndex];
-          while (job.active && ownsWorkspace(publisherId, generation) && job.cursor < job.endExclusive) {
-            const chunkEnd = [addDays(job.cursor, DAILY_API_WINDOW_DAYS), job.endExclusive].sort()[0];
-            job.label = `Syncing daily performance · ${scope.name} · ${job.cursor}–${addDays(chunkEnd, -1)}`; render();
-            let raw;
-            try { raw = await apiJson(API.daily, { method: "POST", body: { start_date: apiTimestamp(job.cursor), end_date: apiTimestamp(chunkEnd), package_ids: scope.id ? [scope.id] : [] } }); }
-            catch (error) { error.message += ` Range ${job.cursor}–${addDays(chunkEnd, -1)}, scope ${scope.name}.`; throw error; }
-            if (!ownsWorkspace(publisherId, generation)) return;
-            await putMany(normalizeDaily(raw, scope, publisherId), publisherId);
-            job.cursor = chunkEnd; job.completed += 1; await saveJob(job, publisherId); render(); await sleep(120);
-          }
-          if (!ownsWorkspace(publisherId, generation)) return;
-          job.scopeIndex += 1; job.cursor = job.start; await saveJob(job, publisherId);
-        }
-      }
-      if (job.active && ownsWorkspace(publisherId, generation)) {
-        const completedAt = new Date().toISOString();
-        job.active = false; job.phase = "complete"; job.finishedAt = completedAt; job.lastRefreshedAt = completedAt; job.label = "Your history is up to date";
-        await saveJob(job, publisherId); records = await getAll(publisherId); render(); toast("Your complete publisher history is ready.");
-      }
-    } catch (error) {
-      if (!ownsWorkspace(publisherId, generation)) return;
-      console.error("Publisher Analytics+ sync failed:", error);
-      if (syncJob?.phase === "complete") {
-        workspaceStage = "local-data";
-        publisherIdentityState = "error";
-        workspaceFailure = { stage: workspaceStage, ...failureDetails(error) };
-        recordDiagnostic({ kind: "workspace", ...workspaceFailure });
-        render();
-        return;
-      }
-      const failure = { stage: "sync", ...failureDetails(error), events: diagnosticEvents.slice(-12) };
-      recordDiagnostic({ kind: "sync", ...failureDetails(error) });
-      syncJob = { ...(syncJob || {}), publisherId, active: false, error: error.message, failure, label: "Sync couldn't be completed" };
-      try { await saveJob(syncJob, publisherId); }
-      catch (saveError) { recordDiagnostic({ kind: "checkpoint", ...failureDetails(saveError) }); }
-      render(); toast("We couldn't finish syncing your history. Download a support report if this happens again.", "error");
-    }
-  }
-
-  async function continueFullSync() {
-    if (!syncJob || syncJob.active || !["months", "daily"].includes(syncJob.phase)) return;
-    const publisherId = publisherIdentity.id, generation = workspaceGeneration;
-    if (syncJob.publisherId !== publisherId) return;
-    syncJob.active = true;
-    syncJob.error = "";
-    syncJob.failure = null;
-    syncJob.label = "Resuming your history";
-    try { await saveJob(syncJob, publisherId); }
-    catch (error) {
-      syncJob.active = false;
-      syncJob.error = error.message;
-      recordDiagnostic({ kind: "checkpoint", ...failureDetails(error) });
-      render();
-      return;
-    }
-    if (!ownsWorkspace(publisherId, generation)) return;
-    render();
-    await runFullSync(publisherId, generation);
-  }
-
-  async function startFullSync() {
-    let identity;
-    try { identity = await fetchPublisherIdentity(true); }
-    catch (error) {
-      recordDiagnostic({ kind: "full-sync-identity", ...failureDetails(error) });
-      console.warn("Publisher Analytics+ could not verify the publisher before full sync:", error.message);
-      toast("We couldn't confirm your publisher. We did not change your saved analytics. Please try again.", "error");
-      return;
-    }
-    if (identity.id !== publisherIdentity.id) await activatePublisher(identity, { resume: false });
-    else publisherIdentity = identity;
-    const publisherId = identity.id, generation = workspaceGeneration;
-    if (!ownsWorkspace(publisherId, generation)) return;
-    syncJob = { publisherId, active: true, phase: "preparing", startedAt: new Date().toISOString(), completed: 0, total: 0, label: "Preparing your history" };
-    isOpen = true;
-    render();
-    try {
-      await clearPublisherData(publisherId);
-      if (!ownsWorkspace(publisherId, generation)) return;
-      records = [];
-      syncJob = { publisherId, active: true, phase: "preparing", startedAt: new Date().toISOString(), completed: 0, total: 0, label: "Preparing your history" };
-      render();
-      await runFullSync(publisherId, generation);
-    } catch (error) {
-      if (!ownsWorkspace(publisherId, generation)) return;
-      syncJob.active = false;
-      syncJob.error = error.message;
-      syncJob.failure = { stage: "sync-start", ...failureDetails(error) };
-      recordDiagnostic({ kind: "sync-start", ...failureDetails(error) });
-      render();
-    }
-  }
-
-  async function incrementalSync(announce = false, publisherId = publisherIdentity.id, generation = workspaceGeneration) {
-    if (syncJob?.active || ["preparing", "months", "daily"].includes(syncJob?.phase) || isRefreshing || !records.length) return;
-    isRefreshing = true; render();
-    let notice = "", noticeType = "success";
-    try {
-      const packages = await fetchPackages(), currentMonth = new Date().toISOString().slice(0, 7);
-      if (ownsWorkspace(publisherId, generation)) void cacheDiscoveredPackageIcons(packages, publisherId, generation);
-      const [salesRaw, downloadsRaw, revenueRaw] = await Promise.all([apiJson(API.sales(currentMonth)), apiJson(API.downloads(currentMonth)), apiJson(API.revenue)]);
-      if (!ownsWorkspace(publisherId, generation)) return;
-      await putMany([...normalizeSales(salesRaw, currentMonth, publisherId), ...normalizeDownloads(downloadsRaw, currentMonth, publisherId), ...normalizeRevenue(revenueRaw, publisherId)], publisherId);
-      const scopes = [{ id: null, name: "All assets" }, ...packages];
-      for (const scope of scopes) {
-        if (!ownsWorkspace(publisherId, generation)) return;
-        const endExclusive = addDays(latestCompleteDailyDate(), 1);
-        for (const range of incrementalDailyRanges(scope, records, endExclusive)) {
-          if (!ownsWorkspace(publisherId, generation)) return;
-          const raw = await apiJson(API.daily, { method: "POST", body: { start_date: apiTimestamp(range.start), end_date: apiTimestamp(range.endExclusive), package_ids: scope.id ? [scope.id] : [] } });
-          if (!ownsWorkspace(publisherId, generation)) return;
-          await putMany(normalizeDaily(raw, scope, publisherId), publisherId);
-        }
-      }
-      if (!ownsWorkspace(publisherId, generation)) return;
-      records = await getAll(publisherId);
-      syncJob = { ...(syncJob || {}), publisherId, packages, active: false, phase: "complete", error: "", label: "Your history is up to date", lastRefreshedAt: new Date().toISOString() };
-      await saveJob(syncJob, publisherId);
-      if (announce) notice = "Your publisher data has been refreshed.";
-    } catch (error) {
-      if (!ownsWorkspace(publisherId, generation)) return;
-      console.warn("Publisher Analytics+ incremental API sync failed:", error.message);
-      recordDiagnostic({ kind: "refresh", ...failureDetails(error) });
-      if (announce) { notice = "We couldn't refresh your publisher data. Please try again."; noticeType = "error"; }
-    } finally { if (ownsWorkspace(publisherId, generation)) { isRefreshing = false; render(); if (notice) toast(notice, noticeType); } }
-  }
+  function latestRecordCapturedAt() { ensureRecordIndexes(); return indexedLatestCapturedAt; }
 
   function availableDateBounds() {
-    const dates = records.filter(item => item.type === "daily" && item.scope === "all").map(item => item.date).filter(Boolean).sort();
-    return { start: dates[0] || "", end: dates.at(-1) || "" };
+    ensureRecordIndexes();
+    return indexedDateBounds;
   }
 
   function selectedDateBounds() {
@@ -940,7 +304,25 @@
 
   function filtered(type) {
     const bounds = selectedDateBounds();
-    return records.filter(item => item.type === type && (!bounds.start || (item.date >= bounds.start && item.date <= bounds.end)));
+    const rows = indexedRecords(type);
+    if (!indexedSortedTypes.has(type)) {
+      rows.sort((a, b) => {
+        const left = String(a.date || ""), right = String(b.date || "");
+        return left < right ? -1 : left > right ? 1 : 0;
+      });
+      indexedSortedTypes.add(type);
+    }
+    if (!bounds.start || !rows.length) return rows.slice();
+    const lowerBound = (target, strict) => {
+      let low = 0, high = rows.length;
+      while (low < high) {
+        const middle = (low + high) >>> 1, date = String(rows[middle].date || "");
+        if (strict ? date <= target : date < target) low = middle + 1;
+        else high = middle;
+      }
+      return low;
+    };
+    return rows.slice(lowerBound(bounds.start, false), lowerBound(bounds.end, true));
   }
 
   function aggregateSales(items) {
@@ -1152,51 +534,6 @@
     const pointCount = align === "age" ? Math.max(0, ...series.map(item => item.points.length)) : new Set(series.flatMap(item => item.points.map(point => point[0]))).size;
     return { metric, options, explicitKeys, activePackages, legend, series, pointCount, align, style };
   }
-
-  function renderLifetimeChart(viewModel) {
-    const container = document.getElementById("upa-lifetime-chart");
-    if (!container) return;
-    if (!viewModel.series.length) { container.innerHTML = `<div class="upa-empty-chart">${viewModel.legend.length ? "Choose at least one package from the legend." : viewModel.metric.emptyLabel}</div>`; return; }
-    if (!globalThis.UPAECharts?.init) { container.innerHTML = '<div class="upa-empty-chart">The chart renderer could not be loaded.</div>'; return; }
-    const compactValue = value => new Intl.NumberFormat(undefined, viewModel.metric.currency
-      ? { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 }
-      : { notation: "compact", maximumFractionDigits: 1 }).format(value || 0);
-    const fullValue = value => new Intl.NumberFormat(undefined, viewModel.metric.currency
-      ? { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }
-      : { maximumFractionDigits: 0 }).format(value || 0);
-    const dateLabel = timestamp => new Intl.DateTimeFormat(undefined, { month: "short", year: "numeric", timeZone: "UTC" }).format(timestamp);
-    const axisLabel = value => viewModel.align === "age" ? `Month ${Math.round(value) + 1}` : dateLabel(value);
-    const theme = chartTheme();
-    const chart = createChart("lifetime", container); if (!chart) return;
-    chart.setOption({
-      animation: false,
-      color: viewModel.series.map(item => item.color),
-      aria: { enabled: true, description: `Cumulative ${viewModel.metric.label.toLowerCase()} for ${viewModel.series.length} packages, aligned by ${viewModel.align === "age" ? `months since ${viewModel.metric.ageDescription}` : "calendar month"}.` },
-      grid: { left: 14, right: 20, top: 25, bottom: 72, containLabel: true },
-      tooltip: {
-        trigger: "axis", confine: true, axisPointer: { type: "line", lineStyle: { color: "#a9afbc" } }, backgroundColor: "#151927", borderWidth: 0, padding: [10, 12], textStyle: { color: "#fff", fontSize: 11 },
-        formatter: parameters => {
-          const visible = parameters.filter(parameter => Array.isArray(parameter.data)).sort((a, b) => b.data[1] - a.data[1]);
-          if (!visible.length) return "";
-          return `<strong>${axisLabel(visible[0].data[0])}</strong>${visible.map(parameter => `<br/><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${parameter.color};margin-right:6px"></span>${escapeHtml(parameter.seriesName)}&nbsp;&nbsp;${fullValue(parameter.data[1])}`).join("")}`;
-        }
-      },
-      xAxis: viewModel.align === "age"
-        ? { type: "value", min: 0, minInterval: 1, axisLine: { lineStyle: { color: theme.axisLine } }, axisTick: { show: false }, axisLabel: { color: theme.axis, fontSize: 10, formatter: value => `${Math.round(value) + 1}m` }, splitLine: { show: false } }
-        : { type: "time", boundaryGap: false, axisLine: { lineStyle: { color: theme.axisLine } }, axisTick: { show: false }, axisLabel: { color: theme.axis, fontSize: 10, hideOverlap: true }, splitLine: { show: false } },
-      yAxis: { type: "value", min: 0, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: theme.axis, fontSize: 10, formatter: compactValue }, splitLine: { lineStyle: { color: theme.grid } } },
-      dataZoom: [
-        { type: "inside", filterMode: "none", zoomOnMouseWheel: true, moveOnMouseMove: true, moveOnMouseWheel: true, preventDefaultMouseMove: true },
-        { type: "slider", filterMode: "none", height: 20, bottom: 16, borderColor: "transparent", backgroundColor: theme.zoom, fillerColor: "rgba(108,92,231,.18)", dataBackground: { lineStyle: { color: theme.zoomLine }, areaStyle: { color: theme.zoomArea } }, selectedDataBackground: { lineStyle: { color: "#6c5ce7" }, areaStyle: { color: "#5a4f8f" } }, handleStyle: { color: theme.handle, borderColor: "#6c5ce7" }, moveHandleStyle: { color: "#6c5ce7" }, textStyle: { color: theme.axis, fontSize: 9 } }
-      ],
-      series: viewModel.series.map(item => ({
-        name: item.name, type: "line", data: item.points, stack: viewModel.style === "area" ? "lifetime" : undefined, smooth: .12, showSymbol: false,
-        lineStyle: { color: item.color, width: viewModel.style === "area" ? 1.5 : 2.4 }, itemStyle: { color: item.color }, areaStyle: viewModel.style === "area" ? { color: item.color, opacity: .68 } : undefined,
-        emphasis: { focus: "series", lineStyle: { width: 3.2 } }
-      }))
-    });
-  }
-
   function overviewViewModel(items, bounds) {
     const interval = automaticInterval(bounds), buckets = new Map();
     for (const item of items) {
@@ -1289,7 +626,854 @@
   function intervalName(interval) {
     return ({ day: "Daily", week: "Weekly", month: "Monthly", quarter: "Quarterly", year: "Yearly" })[interval] || "Revenue";
   }
+  function calendarViewModel(items, metricKey) {
+    const metric = calendarMetric(metricKey), byDate = new Map();
+    for (const item of items) {
+      const value = byDate.get(item.date) || { value: 0, revenue: 0, pageViews: 0 };
+      if (metric.ratio) { value.revenue += toNumber(item.sales); value.pageViews += toNumber(item.pageViews); }
+      else value.value += toNumber(item[metric.key]);
+      byDate.set(item.date, value);
+    }
+    const points = [...byDate].sort(([a], [b]) => a.localeCompare(b)).map(([date, value]) => [date, metric.ratio ? (value.pageViews ? value.revenue / value.pageViews : 0) : value.value]);
+    const years = [...new Set(points.map(([date]) => date.slice(0, 4)))];
+    const values = points.map(([, value]) => value).filter(value => value > 0).sort((a, b) => a - b);
+    const scaleMax = values.length ? values[Math.min(values.length - 1, Math.floor(values.length * .95))] : 1;
+    const peak = points.reduce((best, point) => !best || point[1] > best[1] ? point : best, null);
+    const totals = [...byDate.values()].reduce((sum, value) => ({ revenue: sum.revenue + value.revenue, pageViews: sum.pageViews + value.pageViews, value: sum.value + value.value }), { revenue: 0, pageViews: 0, value: 0 });
+    return { metric, points, years, scaleMax: Math.max(scaleMax, 1), peak, total: metric.ratio ? (totals.pageViews ? totals.revenue / totals.pageViews : 0) : totals.value };
+  }
 
+  function assetHeatmapViewModel(items, packageOptions, metricKey) {
+    const metric = calendarMetric(metricKey), dates = [...new Set(items.map(item => item.date).filter(Boolean))].sort();
+    const assetsByKey = new Map(packageOptions.map(item => [item.key, { key: item.key, name: item.name, total: 0, revenue: 0, pageViews: 0 }]));
+    const valuesByCell = new Map();
+    for (const item of items) {
+      const key = String(item.packageId || item.package || "unknown"), value = Math.max(0, toNumber(item[metric.key]));
+      if (!assetsByKey.has(key)) assetsByKey.set(key, { key, name: item.package || `Package ${key}`, total: 0, revenue: 0, pageViews: 0 });
+      const asset = assetsByKey.get(key);
+      if (metric.ratio) { asset.revenue += toNumber(item.sales); asset.pageViews += toNumber(item.pageViews); }
+      else asset.total += value;
+      const cellKey = `${key}\u0000${item.date}`;
+      const cell = valuesByCell.get(cellKey) || { value: 0, revenue: 0, pageViews: 0 };
+      if (metric.ratio) { cell.revenue += toNumber(item.sales); cell.pageViews += toNumber(item.pageViews); }
+      else cell.value += value;
+      valuesByCell.set(cellKey, cell);
+    }
+    if (metric.ratio) for (const asset of assetsByKey.values()) asset.total = asset.pageViews ? asset.revenue / asset.pageViews : 0;
+    if (metric.ratio) for (const [key, cell] of valuesByCell) valuesByCell.set(key, cell.pageViews ? cell.revenue / cell.pageViews : 0);
+    else for (const [key, cell] of valuesByCell) valuesByCell.set(key, cell.value);
+    const assets = [...assetsByKey.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+    const positiveValues = [...valuesByCell.values()].filter(value => value > 0).sort((a, b) => a - b);
+    const scaleValue = positiveValues.length ? positiveValues[Math.min(positiveValues.length - 1, Math.floor(positiveValues.length * .97))] : 1;
+    const points = [], assetNames = new Map(assets.map(item => [item.key, item.name]));
+    let peak = null;
+    for (const [cellKey, value] of valuesByCell) {
+      const separator = cellKey.indexOf("\u0000"), key = cellKey.slice(0, separator), date = cellKey.slice(separator + 1);
+      points.push([date, key, Math.sqrt(value), value]);
+      if (!peak || value > peak.value) peak = { key, name: assetNames.get(key) || key, date, value };
+    }
+    return {
+      metric, dates, assets, points, peak,
+      total: assets.reduce((sum, asset) => sum + asset.total, 0),
+      scaleMax: Math.max(1, Math.sqrt(scaleValue)),
+      initialStart: dates[0] || "",
+      initialEnd: dates.at(-1) || ""
+    };
+  }
+  function sankeyPackageOptions(items, categoriesByPackage) {
+    const packages = new Map();
+    for (const item of items) {
+      const key = String(item.packageId || item.package || "unknown"), current = packages.get(key) || { key, name: item.package || `Package ${key}`, category: item.category || categoriesByPackage.get(key) || "", gross: 0 };
+      if (!current.category) current.category = item.category || categoriesByPackage.get(key) || "";
+      current.gross += Math.max(0, item.gross); packages.set(key, current);
+    }
+    return [...packages.values()].filter(item => item.gross > 0).sort((a, b) => b.gross - a.gross);
+  }
+
+  function sankeyViewModel(items, selectedPackageKeys, requestedGroupBy, categoriesByPackage) {
+    const options = sankeyPackageOptions(items, categoriesByPackage), availableKeys = new Set(options.map(item => item.key));
+    const explicitKeys = (selectedPackageKeys || []).filter(key => availableKeys.has(key));
+    const activePackages = explicitKeys.length ? options.filter(item => explicitKeys.includes(item.key)) : options.slice(0, 8);
+    const categoryAvailable = options.some(item => item.category);
+    const groupBy = requestedGroupBy === "category" && categoryAvailable ? "category" : "none";
+    const palette = ["#6c5ce7", "#8b7cf0", "#4e8bd7", "#21a7bd", "#aa69c7", "#6170c7", "#6751aa", "#3f8fa4"];
+    const total = activePackages.reduce((sum, item) => sum + item.gross, 0);
+    const nodes = [{ name: "revenue", displayLabel: "Gross revenue", kind: "total", depth: 0, label: { position: "left" }, itemStyle: { color: "#2f9c69" } }];
+    const links = [];
+    const categoryTotals = new Map();
+    if (groupBy === "category") {
+      for (const item of activePackages) {
+        const category = item.category || "Uncategorized";
+        categoryTotals.set(category, (categoryTotals.get(category) || 0) + item.gross);
+      }
+      for (const [category, value] of categoryTotals) {
+        const key = `category:${category}`;
+        nodes.push({ name: key, displayLabel: category, kind: "category", depth: 1, itemStyle: { color: "#34a7b7" } });
+        links.push({ source: "revenue", target: key, value, sourceLabel: "Gross revenue", targetLabel: category });
+      }
+    }
+    activePackages.forEach((item, index) => {
+      const packageNode = `package:${item.key}`, source = groupBy === "category" ? `category:${item.category || "Uncategorized"}` : "revenue";
+      nodes.push({ name: packageNode, displayLabel: item.name, kind: "package", depth: groupBy === "category" ? 2 : 1, label: { position: "right" }, itemStyle: { color: palette[index % palette.length] } });
+      links.push({ source, target: packageNode, value: item.gross, sourceLabel: groupBy === "category" ? (item.category || "Uncategorized") : "Gross revenue", targetLabel: item.name });
+    });
+    return { options, explicitKeys, activePackages, nodes, links, total, groupBy, categoryAvailable, categories: categoryTotals.size };
+  }
+
+  function publisherFromHeader() {
+    const button = [...document.querySelectorAll("button")].find(item => /User menu/i.test(item.getAttribute("aria-label") || "")) || document.querySelector('nav[aria-label="User"] button:last-of-type');
+    if (!button) return null;
+    const lines = String(button.innerText || "").split(/\n+/).map(compact).filter(Boolean);
+    const labelParts = (button.getAttribute("aria-label") || "").split(",").map(compact).filter(Boolean);
+    const portalLabel = lines.at(-1) || labelParts.at(-2) || "";
+    const username = lines.at(-2) || labelParts[0] || "";
+    return { portalLabel, username, name: portalLabel.replace(/\s+Publisher$/i, "") || username || "Publisher" };
+  }
+
+  function profileValue(doc, labelText) {
+    const label = [...doc.querySelectorAll("div, span, p")].find(item => !item.children.length && compact(item.textContent) === labelText);
+    if (!label) return "";
+    let node = label.parentElement;
+    while (node && node !== doc.body) {
+      const text = compact(node.innerText);
+      if (text.startsWith(labelText) && text.length > labelText.length && text.length < 180) return compact(text.slice(labelText.length));
+      node = node.parentElement;
+    }
+    return "";
+  }
+
+  function publisherFromProfile(doc) {
+    const image = doc.querySelector('img[alt="Profile picture"]');
+    const name = profileValue(doc, "Profile name"), icon = image?.currentSrc || image?.src || "";
+    return name || icon ? { name, icon } : null;
+  }
+
+  async function loadPublisherProfile() {
+    if (standalone) return null;
+    if (location.pathname === "/account/profile") {
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        const profile = publisherFromProfile(document); if (profile) return profile;
+        await sleep(200);
+      }
+      return null;
+    }
+    const frame = document.createElement("iframe");
+    frame.className = "upa-profile-frame"; frame.src = "/account/profile"; frame.tabIndex = -1; frame.setAttribute("aria-hidden", "true");
+    document.body.appendChild(frame);
+    try {
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        await sleep(200);
+        try { const profile = frame.contentDocument && publisherFromProfile(frame.contentDocument); if (profile) return profile; } catch { return null; }
+      }
+      return null;
+    } finally { frame.remove(); }
+  }
+
+  async function fetchPublisherIdentity(force = false) {
+    const user = await apiJson(API.user);
+    const id = compact(user?.publisherId);
+    if (!id) throw Object.assign(new Error("The active Publisher Portal account did not provide a publisher identity."), { code: "missing-publisher" });
+    publisherConfirmed = true;
+    const header = publisherFromHeader();
+    const key = publisherStorageKey(PUBLISHER_KEY_PREFIX, id);
+    let cached;
+    try { cached = (await extensionApi.storage.local.get(key))[key]; }
+    catch (error) { recordDiagnostic({ kind: "publisher-display-cache", ...failureDetails(error) }); }
+    const fresh = !force && cached?.id === id && Date.now() - Number(cached.updatedAt || 0) < 86400000;
+    if (fresh) return { ...cached, portalLabel: displayText(cached.portalLabel), name: displayText(cached.name) };
+    const apiIcon = typeof user.avatar === "string" ? user.avatar : "";
+    const apiName = displayText(user.publisherName || user.publisherOrgName);
+    const profile = apiIcon && apiName ? null : await loadPublisherProfile();
+    const identity = {
+      id,
+      organizationId: compact(user.publisherOrgId || user.defaultOrgId),
+      portalLabel: displayText(header?.portalLabel),
+      name: apiName || displayText(profile?.name) || displayText(header?.name) || "Publisher",
+      icon: apiIcon || profile?.icon || "",
+      updatedAt: Date.now()
+    };
+    try { await extensionApi.storage.local.set({ [key]: identity }); }
+    catch (error) { recordDiagnostic({ kind: "publisher-display-cache", ...failureDetails(error) }); }
+    return identity;
+  }
+  function recordDiagnostic(event) {
+    diagnosticEvents.push({ at: new Date().toISOString(), ...event });
+    if (diagnosticEvents.length > 60) diagnosticEvents.shift();
+  }
+
+  function failureDetails(error) {
+    const message = String(error?.message || "");
+    const code = ["missing-publisher", "timeout", "network", "http", "unexpected-response"].includes(error?.code) ? error.code
+      : /maximum allowed size|message.*too large/i.test(message) ? "message-too-large"
+      : /quota/i.test(message) ? "storage-full"
+      : /extension context invalidated/i.test(message) ? "extension-reloaded"
+      : /stack|recursion/i.test(message) ? "stack-limit" : "unexpected-error";
+    const name = ["Error", "TypeError", "RangeError", "QuotaExceededError", "SecurityError", "AbortError"].includes(error?.name) ? error.name : "Error";
+    const locations = [...new Set(String(error?.stack || "").match(/(?:content|background|api-client)\.js:\d+:\d+/g) || [])].slice(0, 5);
+    return { code, name, locations };
+  }
+
+  function supportReport() {
+    let version = "unknown";
+    try { version = extensionApi.runtime.getManifest().version; } catch { /* Local previews have no manifest. */ }
+    const job = syncJob;
+    return {
+      format: "publisher-analytics-support", version: 1, extensionVersion: version, generatedAt: new Date().toISOString(),
+      browser: navigator.userAgent.match(/(?:Firefox|Edg|Chrome)\/[\d.]+/g)?.join(" ") || "unknown",
+      workspace: { state: publisherIdentityState, stage: workspaceStage, publisherConfirmed, loadedRecords: records.length, failure: workspaceFailure },
+      sync: job ? { phase: job.phase, active: Boolean(job.active), completed: job.completed, total: job.total,
+        packageCount: job.packages?.length || 0, monthIndex: job.monthIndex, scopeIndex: job.scopeIndex,
+        cursor: job.cursor, endExclusive: job.endExclusive, failure: job.failure || null } : null,
+      events: diagnosticEvents.slice()
+    };
+  }
+
+  function supportPanel() {
+    return `<section class="upa-settings-section"><div class="upa-settings-intro"><h2>Troubleshooting</h2><p>Save a report if you need help.</p></div><article class="upa-settings-panel upa-support-panel"><p>The report includes your extension version, sync progress, and recent error types. It excludes account names, asset names, sales figures, and sign-in details. Nothing is sent automatically.</p><button class="upa-settings-primary" type="button" data-action="download-support">Download support report</button><details><summary>Preview report</summary><pre>${escapeHtml(JSON.stringify(supportReport(), null, 2))}</pre></details></article></section>`;
+  }
+
+  function workspaceErrorCopy() {
+    if (workspaceStage === "identity") return { title: "We couldn't confirm your publisher.", detail: "Open the Publisher Portal and check that you are signed in. Then try again." };
+    if (workspaceStage === "render") return { title: "We couldn't display your analytics.", detail: "Your saved history has not been cleared. Download a support report, or try opening the workspace again." };
+    return { title: "We couldn't open your saved workspace.", detail: "Your publisher was confirmed, but saved data could not be loaded. Download a support report before trying again. Your saved history has not been cleared." };
+  }
+
+  function renderRecovery(host) {
+    try { disposeCharts(); }
+    catch (error) {
+      recordDiagnostic({ kind: "chart-cleanup", ...failureDetails(error) });
+      chartResizeObservers.clear(); chartInstances.clear();
+    }
+    host.classList.toggle("upa-open", isOpen);
+    host.classList.toggle("upa-theme-dark", darkThemeActive());
+    document.documentElement.classList.toggle("upa-dashboard-open", isOpen);
+    const settings = prefs.section === "settings", loading = publisherIdentityState === "loading";
+    const logo = extensionApi.runtime.getURL("icons/publisher-analytics-128.png"), copy = workspaceErrorCopy();
+    const status = loading ? `<h2>${workspaceStage === "identity" ? "Checking your publisher…" : "Opening your saved workspace…"}</h2><p class="upa-workspace-load-status">${workspaceRecordsLoaded ? `Loading saved history · ${workspaceRecordsLoaded} records` : "Opening your local workspace. Large histories can take longer."}</p>`
+      : `<h2>${copy.title}</h2><p>${copy.detail}</p><div class="upa-recovery-actions"><button class="upa-primary" data-action="retry-publisher">Try again</button><button data-action="exit-analytics">Open Publisher Portal</button></div>`;
+    host.innerHTML = `<button class="upa-fab" aria-label="Open Publisher Analytics+" title="Publisher Analytics+"><img src="${logo}" alt=""></button><aside class="upa-panel" aria-label="Publisher Analytics+ dashboard"><div class="upa-shell"><aside class="upa-sidebar" aria-label="Analytics workspace"><div class="upa-brand"><span><img src="${logo}" alt=""></span><div><strong>Publisher Analytics+</strong><small>Asset Store Insights</small></div></div><div class="upa-primary-nav"><button data-action="recovery-home">Home</button><button data-action="open-settings">Settings</button><button data-action="exit-analytics">Exit to Publisher Portal</button></div>${publisherAccount()}</aside><section class="upa-workspace"><header class="upa-header upa-header-compact"><div class="upa-header-main"><div class="upa-header-copy"><small>Publisher workspace</small><h1>${settings ? "Settings" : "Your workspace"}</h1></div></div><nav class="upa-mobile-nav" aria-label="Workspace sections"><button data-action="recovery-home">Home</button><button data-action="open-settings">Settings</button><button data-action="exit-analytics">Publisher Portal</button></nav></header><main class="upa-content" data-section="${settings ? "settings" : "dashboard"}"><section class="upa-recovery-card" role="status">${status}</section>${settings ? '<section class="upa-recovery-card"><h2>Appearance</h2><div class="upa-recovery-actions"><button data-theme="system">System</button><button data-theme="light">Light</button><button data-theme="dark">Dark</button></div><p>Data management becomes available when your workspace opens.</p></section>' : ""}${supportPanel()}</main></section></div><div class="upa-toast" role="status"></div></aside>`;
+  }
+
+  async function openPublisherWorkspace(force = false) {
+    if (workspaceLoading) return;
+    workspaceLoading = true;
+    publisherConfirmed = false;
+    workspaceFailure = null;
+    workspaceStage = "identity";
+    workspaceRecordsLoaded = 0;
+    publisherIdentityState = "loading";
+    render();
+    try { await activatePublisher(await fetchPublisherIdentity(force), { initial: true }); }
+    catch (error) {
+      publisherIdentityState = "error";
+      workspaceFailure = { stage: workspaceStage, ...failureDetails(error) };
+      recordDiagnostic({ kind: "workspace", ...workspaceFailure });
+      console.warn("Publisher Analytics+ workspace failed:", workspaceStage, error);
+      render();
+    } finally { workspaceLoading = false; }
+  }
+  function sanitizedPreferences(storedPrefs = {}) {
+    const analyticsViews = ["revenue", "lifetime", "calendar", "sankey", "packages"], ranges = ["all", "7d", "30d", "3", "6", "12", "36", "60", "mtd", "ytd", "custom"];
+    const storedSankeyGroupBy = ["none", "category"].includes(storedPrefs.sankeyGroupBy) ? storedPrefs.sankeyGroupBy : "category";
+    const storedDashboardColumns = Array.isArray(storedPrefs.dashboardPackageColumns) ? storedPrefs.dashboardPackageColumns : null;
+    const dashboardReviewsDefaultOffApplied = storedPrefs.dashboardPackageReviewsDefaultOffApplied === true;
+    const storedLifetimeAlign = storedPrefs.lifetimeAlign === "age" ? "age" : "calendar";
+    const storedLifetimeStyle = storedPrefs.lifetimeStyle === "area" && storedLifetimeAlign === "calendar" ? "area" : "lines";
+    const lifetimeStyle = storedPrefs.lifetimeStackDefaultApplied === true ? storedLifetimeStyle : "area";
+    return {
+      section: ["dashboard", "analytics", "package", "groups", "settings"].includes(storedPrefs.section) ? storedPrefs.section : (storedPrefs.view && storedPrefs.view !== "overview" ? "analytics" : "dashboard"),
+      view: analyticsViews.includes(storedPrefs.view) ? storedPrefs.view : "revenue", packageId: compact(storedPrefs.packageId), packageRevenueMode: storedPrefs.packageRevenueMode === "interval" ? "interval" : "cumulative", range: ranges.includes(storedPrefs.range) ? storedPrefs.range : "all", interval: storedPrefs.interval || "auto", start: storedPrefs.start || "", end: storedPrefs.end || "", theme: ["system", "light", "dark"].includes(storedPrefs.theme) ? storedPrefs.theme : "system",
+      performanceLayout: storedPrefs.performanceLayout === "wide" ? "wide" : "grid", performanceScopes: sanitizedPerformanceScopes(storedPrefs.performanceScopes), performanceHiddenScopes: Array.isArray(storedPrefs.performanceHiddenScopes) ? [...new Set(storedPrefs.performanceHiddenScopes.map(String).filter(Boolean))] : [], dashboardPackageColumns: (storedDashboardColumns ? DASHBOARD_PACKAGE_COLUMNS.filter(key => storedDashboardColumns.includes(key)) : [...DEFAULT_DASHBOARD_PACKAGE_COLUMNS]).filter(key => dashboardReviewsDefaultOffApplied || key !== "reviews"), dashboardPackageReviewsDefaultOffApplied: true, calendarMetric: storedPrefs.calendarMetric || "sales", calendarStyle: storedPrefs.calendarStyle === "assets" ? "assets" : "calendar", lifetimeMetric: LIFETIME_METRICS[storedPrefs.lifetimeMetric] ? storedPrefs.lifetimeMetric : "revenue", lifetimeStyle, lifetimeAlign: lifetimeStyle === "area" ? "calendar" : storedLifetimeAlign, lifetimeStackDefaultApplied: true, lifetimePackages: Array.isArray(storedPrefs.lifetimePackages) ? storedPrefs.lifetimePackages : [], lifetimeHiddenPackages: Array.isArray(storedPrefs.lifetimeHiddenPackages) ? storedPrefs.lifetimeHiddenPackages : [], sankeyPackages: Array.isArray(storedPrefs.sankeyPackages) ? storedPrefs.sankeyPackages : [], sankeyGroupBy: storedPrefs.sankeyCategoryDefaultApplied === true ? storedSankeyGroupBy : "category", sankeyCategoryDefaultApplied: true
+    };
+  }
+
+  function sanitizedPerformanceScopes(value) {
+    if (!Array.isArray(value)) return [{ type: "all", id: "all" }];
+    const seen = new Set(), scopes = [];
+    for (const item of value) {
+      const type = item?.type, id = type === "all" ? "all" : compact(item?.id), key = `${type}:${id}`;
+      if (!["all", "group", "asset"].includes(type) || !id || seen.has(key)) continue;
+      seen.add(key); scopes.push({ type, id });
+    }
+    return scopes.length ? scopes : [{ type: "all", id: "all" }];
+  }
+
+  function sanitizedPackageGroups(value) {
+    if (!Array.isArray(value)) return [];
+    const ids = new Set(), names = new Set(), memberships = new Set(), groups = [];
+    for (const item of value) {
+      const id = compact(item?.id), name = compact(item?.name).slice(0, 40), normalizedName = name.toLocaleLowerCase();
+      const packageIds = [...new Set((Array.isArray(item?.packageIds) ? item.packageIds : []).map(value => compact(value)).filter(Boolean))];
+      const membership = [...packageIds].sort().join("\u0000");
+      if (!id || ["all", "custom"].includes(id) || !name || !packageIds.length || ids.has(id) || names.has(normalizedName) || memberships.has(membership) || normalizedName === "all assets") continue;
+      ids.add(id); names.add(normalizedName); memberships.add(membership);
+      groups.push({ id, name, packageIds, createdAt: item.createdAt || new Date().toISOString(), updatedAt: item.updatedAt || item.createdAt || new Date().toISOString() });
+    }
+    return groups.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  }
+
+  async function savePrefs() {
+    if (!publisherIdentity.id) return;
+    await extensionApi.storage.local.set({ [publisherStorageKey(PREFS_KEY_PREFIX)]: prefs });
+  }
+
+  async function savePackageGroups() {
+    if (!publisherIdentity.id) return;
+    packageGroups = sanitizedPackageGroups(packageGroups);
+    await extensionApi.storage.local.set({ [publisherStorageKey(GROUPS_KEY_PREFIX)]: packageGroups });
+  }
+
+  function ownsWorkspace(publisherId, generation) {
+    return publisherIdentity.id === publisherId && workspaceGeneration === generation;
+  }
+
+  async function activatePublisher(identity, { initial = false, resume = true } = {}) {
+    if (publisherIdentity.id && publisherIdentity.id !== identity.id) diagnosticEvents.length = 0;
+    workspaceGeneration += 1;
+    const generation = workspaceGeneration;
+    publisherIdentity = identity;
+    publisherIdentityState = "loading";
+    records = [];
+    workspaceRecordsLoaded = 0;
+    syncJob = null;
+    packageGroups = [];
+    groupEditor = null;
+    isPerformanceScopeMenuOpen = false;
+    isDashboardPackageSettingsOpen = false;
+    isRefreshing = false;
+    workspaceStage = "preferences";
+    render();
+    const preferencesKey = publisherStorageKey(PREFS_KEY_PREFIX, identity.id), groupsKey = publisherStorageKey(GROUPS_KEY_PREFIX, identity.id);
+    const stored = await extensionApi.storage.local.get([preferencesKey, groupsKey]);
+    if (!ownsWorkspace(identity.id, generation)) return;
+    prefs = sanitizedPreferences(stored[preferencesKey] || {});
+    packageGroups = sanitizedPackageGroups(stored[groupsKey] || []);
+    prefs.performanceScopes = sanitizedPerformanceScopes(prefs.performanceScopes).filter(scope => scope.type !== "group" || packageGroups.some(group => group.id === scope.id));
+    if (!prefs.performanceScopes.length) prefs.performanceScopes = [{ type: "all", id: "all" }];
+    await extensionApi.storage.local.set({ [preferencesKey]: prefs });
+    workspaceStage = "checkpoint";
+    const publisherJob = await getMeta(SYNC_KEY, identity.id);
+    if (!ownsWorkspace(identity.id, generation)) return;
+    syncJob = publisherJob;
+    workspaceStage = "local-data";
+    const publisherRecords = await getAll(identity.id);
+    if (!ownsWorkspace(identity.id, generation)) return;
+    records = publisherRecords;
+    syncJob = publisherJob;
+    publisherIdentityState = "ready";
+    workspaceStage = "render";
+    if (initial && syncJob?.active) isOpen = true;
+    render();
+    if (!resume || publisherIdentityState !== "ready") return;
+    if (syncJob?.active) runFullSync(identity.id, generation);
+    else if (records.length) incrementalSync(false, identity.id, generation);
+  }
+
+  async function database(message) {
+    const generation = workspaceGeneration;
+    try {
+      const response = await extensionApi.runtime.sendMessage(message);
+      if (!response?.ok) throw new Error(response?.error || "The local analytics database is unavailable.");
+      return response.result;
+    } catch (error) {
+      if (generation === workspaceGeneration) recordDiagnostic({ kind: "storage", operation: message.type, ...failureDetails(error) });
+      throw error;
+    }
+  }
+
+  async function getAll(publisherId = publisherIdentity.id) {
+    const tracePerformance = globalThis.__UPA_PERF_TRACE === true;
+    const loadStartedAt = tracePerformance ? performance.now() : 0;
+    const generation = workspaceGeneration;
+    const rows = standalone ? await readPublisherRecords(publisherId) : await database({ type: "UPA_DB_GET_RECORDS_PAGE", publisherId }).then(page => page.rows);
+    if (!ownsWorkspace(publisherId, generation)) throw new Error("The publisher workspace changed while records were loading.");
+    workspaceRecordsLoaded = rows.length;
+    recordDiagnostic({ kind: "storage", operation: "load-records", count: rows.length });
+    if (tracePerformance) console.info("[UPA performance] record load", { totalMs: performance.now() - loadStartedAt, records: rows.length });
+    return rows;
+  }
+  async function readPublisherRecords(publisherId) {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open("unity-publisher-analytics-api");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    try {
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction("records", "readonly");
+        const request = tx.objectStore("records").index("publisherId").getAll(IDBKeyRange.only(publisherId));
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+        tx.onabort = () => reject(tx.error || new Error("The saved record read was aborted."));
+      });
+    } finally { db.close(); }
+  }
+  const putMany = (rows, publisherId = publisherIdentity.id) => rows.length ? database({ type: "UPA_DB_PUT_MANY", publisherId, records: rows }) : Promise.resolve(0);
+  const getMeta = (key, publisherId = publisherIdentity.id) => database({ type: "UPA_DB_GET_META", publisherId, key });
+  const setMeta = (key, value, publisherId = publisherIdentity.id) => database({ type: "UPA_DB_SET_META", publisherId, key, value });
+  const clearPublisherData = async (publisherId = publisherIdentity.id) => {
+    const result = await database({ type: "UPA_DB_CLEAR", publisherId });
+    if (publisherId === publisherIdentity.id) {
+      packageIconDataUrls.clear();
+      for (const key of packageIconRetryAt.keys()) if (key.startsWith(`${publisherId}\u0000`)) packageIconRetryAt.delete(key);
+    }
+    return result;
+  };
+
+  function cachedIconKey(packageId, url, publisherId = publisherIdentity.id) { return `${publisherId}\u0000${packageId}\u0000${url}`; }
+
+  function packageIconUrl(value) {
+    const icon = typeof value === "string" ? value.trim() : "";
+    try {
+      const parsed = new URL(icon.startsWith("//") ? `https:${icon}` : icon, location.href);
+      if (parsed.protocol === "https:" && parsed.hostname === "assetstorev1-prd-cdn.unity3d.com") return { url: parsed.href, cacheable: true };
+      if (location.protocol === "http:" && ["127.0.0.1", "localhost"].includes(location.hostname) && parsed.origin === location.origin && parsed.pathname.startsWith("/scripts/marketing-assets/package-icons/")) {
+        return { url: parsed.href, cacheable: false };
+      }
+    } catch { /* A malformed or untrusted URL uses the letter fallback. */ }
+    return null;
+  }
+
+  function hydrateVisiblePackageIcons() {
+    if (!publisherIdentity.id) return;
+    const generation = workspaceGeneration;
+    const pending = new Map();
+    for (const wrapper of document.querySelectorAll("#upa-root .upa-package-icon-pending[data-package-icon-id][data-package-icon-url]")) {
+      const packageId = wrapper.dataset.packageIconId, url = wrapper.dataset.packageIconUrl, key = cachedIconKey(packageId, url);
+      if (packageIconDataUrls.has(key) || packageIconRequests.has(key) || (packageIconRetryAt.get(key) || 0) > Date.now()) continue;
+      pending.set(packageId, { url, key });
+    }
+    if (!pending.size) return;
+    for (const { key } of pending.values()) { packageIconRequests.add(key); packageIconRetryAt.set(key, Date.now() + 60000); }
+    const publisherId = publisherIdentity.id;
+    database({ type: "UPA_DB_CACHE_PACKAGE_ICONS", publisherId, items: [...pending].map(([packageId, item]) => ({ packageId, url: item.url })) })
+      .then(icons => {
+        if (!ownsWorkspace(publisherId, generation)) return;
+        for (const icon of icons || []) {
+          const item = pending.get(icon.packageId);
+          if (!item || item.url !== icon.url || typeof icon.dataUrl !== "string" || !icon.dataUrl.startsWith("data:image/")) continue;
+          packageIconDataUrls.set(item.key, icon.dataUrl);
+          packageIconRetryAt.delete(item.key);
+          for (const wrapper of document.querySelectorAll("#upa-root .upa-package-icon-pending[data-package-icon-id][data-package-icon-url]")) {
+            if (wrapper.dataset.packageIconId !== icon.packageId || wrapper.dataset.packageIconUrl !== icon.url) continue;
+            const image = document.createElement("img");
+            image.alt = ""; image.loading = "lazy"; image.src = icon.dataUrl;
+            wrapper.replaceChildren(image); wrapper.classList.remove("upa-package-icon-pending"); wrapper.classList.add("upa-package-icon-wrap");
+          }
+        }
+      })
+      .catch(() => { /* Missing or unavailable icons keep the letter fallback. */ })
+      .finally(() => {
+        for (const { key } of pending.values()) packageIconRequests.delete(key);
+        if (publisherIdentity.id === publisherId) hydrateVisiblePackageIcons();
+      });
+  }
+
+  async function cacheDiscoveredPackageIcons(packages, publisherId, generation) {
+    const items = (packages || []).map(item => ({ packageId: String(item.id || "").trim(), url: packageIconUrl(item.icon) }))
+      .filter(item => item.packageId && item.url?.cacheable).map(item => ({ packageId: item.packageId, url: item.url.url }));
+    for (let offset = 0; offset < items.length; offset += 30) {
+      if (!ownsWorkspace(publisherId, generation)) return;
+      const batch = items.slice(offset, offset + 30).map(item => ({ ...item, key: cachedIconKey(item.packageId, item.url, publisherId) })).filter(item => {
+        const key = item.key;
+        if (packageIconDataUrls.has(key) || packageIconRequests.has(key) || (packageIconRetryAt.get(key) || 0) > Date.now()) return false;
+        packageIconRequests.add(key);
+        return true;
+      });
+      if (!batch.length) continue;
+      let cached = false;
+      try {
+        await database({ type: "UPA_DB_CACHE_PACKAGE_ICONS", publisherId, items: batch, returnDataUrls: false });
+        cached = true;
+        if (!ownsWorkspace(publisherId, generation)) return;
+      } catch { /* Icon caching is optional; each package keeps its letter fallback. */ }
+      finally {
+        for (const item of batch) {
+          packageIconRequests.delete(item.key);
+          if (!cached) packageIconRetryAt.set(item.key, Date.now() + 60000);
+        }
+        if (publisherIdentity.id === publisherId) hydrateVisiblePackageIcons();
+      }
+    }
+  }
+
+  async function apiJson(path, options = {}) {
+    const requestId = crypto.randomUUID(), method = options.method || "GET";
+    return new Promise((resolve, reject) => {
+      const endpoint = Object.entries(API).find(([, value]) => typeof value === "string" && value === path)?.[0]
+        || (/monthly-sales/.test(path) ? "sales" : /monthly-downloads/.test(path) ? "downloads" : "unknown");
+      const generation = workspaceGeneration, startedAt = Date.now();
+      const timeout = setTimeout(() => {
+        pendingApiRequests.delete(requestId);
+        if (generation === workspaceGeneration) recordDiagnostic({ kind: "request", endpoint, method, outcome: "timeout", durationMs: Date.now() - startedAt });
+        reject(Object.assign(new Error(`Publisher API timed out for ${path.split("?")[0]}.`), { code: "timeout" }));
+      }, 45000);
+      pendingApiRequests.set(requestId, { resolve, reject, timeout, path, endpoint, method, generation, startedAt });
+      if (standalone) {
+        extensionApi.runtime.sendMessage({ type: "UPA_PORTAL_API", portalTabId, requestId, path, method, body: options.body })
+          .then(response => completeApiResponse({ ...response, requestId }))
+          .catch(error => completeApiResponse({ requestId, ok: false, status: 0, error: error.message }));
+      } else {
+        window.postMessage({ source: "unity-publisher-analytics", type: "UPA_API_REQUEST", requestId, path, method, body: options.body }, location.origin);
+      }
+    });
+  }
+
+  function completeApiResponse(message) {
+    const pending = pendingApiRequests.get(message.requestId); if (!pending) return;
+    pendingApiRequests.delete(message.requestId); clearTimeout(pending.timeout);
+    const shape = Array.isArray(message.data) ? "array" : message.data === null ? "null" : typeof message.data;
+    if (pending.generation === workspaceGeneration) recordDiagnostic({ kind: "request", endpoint: pending.endpoint, method: pending.method,
+      status: Number(message.status) || 0, outcome: message.ok ? "success" : "failure", durationMs: Date.now() - pending.startedAt, shape,
+      ...(pending.endpoint === "user" ? { publisherIdPresent: Boolean(compact(message.data?.publisherId)) } : {}) });
+    if (message.ok) pending.resolve(message.data);
+    else {
+      const detail = typeof message.data === "string" ? compact(message.data).slice(0, 180) : message.data?.message || message.error || "";
+      pending.reject(Object.assign(new Error(`Publisher API returned ${message.status || "a network error"} for ${pending.path.split("?")[0]}${detail ? `: ${detail}` : ""}.`), { code: message.status ? "http" : "network" }));
+    }
+  }
+
+  window.addEventListener("message", event => {
+    const message = event.data;
+    if (event.source !== window || event.origin !== location.origin || message?.source !== "unity-publisher-analytics-api" || message?.type !== "UPA_API_RESPONSE") return;
+    completeApiResponse(message);
+  });
+
+  function categoryReference(item) {
+    const raw = valueFrom(item, ["category_id", "categoryId", "category"]);
+    if (raw === "" || raw === null || raw === undefined) return null;
+    if (typeof raw === "object") {
+      const id = String(valueFrom(raw, ["id", "category_id", "categoryId"]) || ""), name = compact(valueFrom(raw, ["assetstore_name", "assetstoreName", "name", "title", "label"]));
+      return id || name ? { id: id || name, name } : null;
+    }
+    const value = compact(raw);
+    return value ? { id: value, name: value } : null;
+  }
+
+  async function fetchPackageCategoryMetadata() {
+    const categoriesByIdentifier = new Map(), categoriesByName = new Map(), reviewCountsByPackage = new Map(), iconsByPackage = new Map(), limit = 200;
+    let offset = 0;
+    while (true) {
+      const body = { limit: String(limit), order_by: "name", order: "asc" };
+      if (offset) body.offset = String(offset);
+      const response = await apiJson(API.packageMetadata, { method: "POST", body });
+      const rows = valueFrom(response, ["package_versions", "packageVersions"]);
+      if (!Array.isArray(rows) || !rows.length) break;
+      for (const item of rows) {
+        const packageId = String(valueFrom(item, ["package_id", "packageId"]) || ""), rawRatingCount = valueFrom(item, ["count_ratings"]), ratingCount = Number(rawRatingCount);
+        const versionId = String(valueFrom(item, ["id"]) || ""), icon = response.package_key_images?.[versionId]?.icon;
+        if (packageId && compact(valueFrom(item, ["status"])).toLowerCase() === "published" && typeof icon === "string" && icon.trim()) {
+          const existing = iconsByPackage.get(packageId);
+          if (!existing || String(valueFrom(item, ["modified", "status_updated"]) || "") > existing.modified) {
+            iconsByPackage.set(packageId, { icon: icon.trim(), modified: String(valueFrom(item, ["modified", "status_updated"]) || "") });
+          }
+        }
+        if (packageId && compact(valueFrom(item, ["status"])).toLowerCase() === "published" && rawRatingCount !== null && rawRatingCount !== undefined && rawRatingCount !== "" && Number.isSafeInteger(ratingCount) && ratingCount >= 0) {
+          const existing = reviewCountsByPackage.get(packageId);
+          reviewCountsByPackage.set(packageId, existing === undefined ? ratingCount : Math.max(existing, ratingCount));
+        }
+        const category = categoryReference(item);
+        if (!category) continue;
+        for (const identifier of [valueFrom(item, ["package_id", "packageId"]), valueFrom(item, ["genesis_product_id", "genesisProductId", "product_id", "productId"]), valueFrom(item, ["id"])]) {
+          if (identifier !== "" && identifier !== null && identifier !== undefined) categoriesByIdentifier.set(String(identifier), category);
+        }
+        const name = compact(valueFrom(item, ["name", "package_name", "packageName"])).toLocaleLowerCase();
+        if (name) categoriesByName.set(name, category);
+      }
+      offset += rows.length;
+      const total = toNumber(valueFrom(response, ["total"]));
+      if (rows.length < limit || (total && offset >= total)) break;
+    }
+    return { categoriesByIdentifier, categoriesByName, reviewCountsByPackage, iconsByPackage };
+  }
+
+  async function fetchPackages() {
+    const [raw, categoryRows, metadata] = await Promise.all([apiJson(API.packages), apiJson(API.categories), fetchPackageCategoryMetadata()]);
+    const categories = new Map((Array.isArray(categoryRows) ? categoryRows : []).map(item => [String(valueFrom(item, ["id", "category_id", "categoryId"]) || ""), compact(valueFrom(item, ["assetstore_name", "assetstoreName", "name", "title", "category_name", "categoryName"]))]).filter(([id, name]) => id && name));
+    return (Array.isArray(raw) ? raw : []).map(item => {
+      const id = String(valueFrom(item, ["package_id", "packageId", "id"]) || "");
+      const name = valueFrom(item, ["name", "title", "package_name"]) || `Package ${id}`;
+      const metadataCategory = metadata.categoriesByIdentifier.get(id) || metadata.categoriesByName.get(compact(name).toLocaleLowerCase());
+      const categoryId = String(valueFrom(item, ["category_id", "categoryId"]) || metadataCategory?.id || "");
+      return { id, name, categoryId, category: categories.get(categoryId) || packageCategory(item) || metadataCategory?.name || "", firstPublished: parseDate(valueFrom(item, ["first_published_at", "first_published_time", "firstPublishedTime", "first_published"])), reviewCount: metadata.reviewCountsByPackage.get(id) ?? null, icon: metadata.iconsByPackage.get(id)?.icon || "" };
+    }).filter(item => item.id);
+  }
+
+  function normalizeSales(raw, period, publisherId) {
+    return (Array.isArray(raw) ? raw : []).map(item => normalize({
+      type: "sales", period, date: `${period}-01`, packageId: String(valueFrom(item, ["package_id", "packageId"]) || ""), package: valueFrom(item, ["name", "package_name"]), category: packageCategory(item),
+      price: toNumber(item.price), qty: toNumber(valueFrom(item, ["sales", "quantity"])), refunds: toNumber(item.refunds), chargebacks: toNumber(item.chargebacks),
+      gross: toNumber(item.gross), net: toNumber(item.revenue), first: parseDate(item.first), last: parseDate(item.last), currency: "USD"
+    }, publisherId));
+  }
+
+  function normalizeDownloads(raw, period, publisherId) {
+    return (Array.isArray(raw) ? raw : []).map(item => {
+      const data = item.downloads || {};
+      const freeDownloads = toNumber(valueFrom(data, ["free_downloads", "freeDownloads"])), entitledDownloads = toNumber(valueFrom(data, ["entitled_downloads", "entitledDownloads"]));
+      const freeUsers = toNumber(valueFrom(data, ["free_users", "freeUsers"])), entitledUsers = toNumber(valueFrom(data, ["entitled_users", "entitledUsers"]));
+      return normalize({ type: "downloads", period, date: `${period}-01`, packageId: String(valueFrom(item, ["package_id", "packageId"]) || ""), package: item.name, category: packageCategory(item),
+        downloads: freeDownloads + entitledDownloads, users: freeUsers + entitledUsers, freeDownloads, freeUsers, entitledDownloads, entitledUsers,
+        freeFirst: parseDate(valueFrom(data, ["free_first", "freeFirst"])), freeLast: parseDate(valueFrom(data, ["free_last", "freeLast"])),
+        entitledFirst: parseDate(valueFrom(data, ["entitled_first", "entitledFirst"])), entitledLast: parseDate(valueFrom(data, ["entitled_last", "entitledLast"])) }, publisherId);
+    });
+  }
+
+  function normalizeRevenue(raw, publisherId) {
+    return (Array.isArray(raw) ? raw : []).map(item => {
+      const date = parseDate(item.date);
+      return normalize({ type: "revenue", period: date?.slice(0, 7), date, description: item.description, debit: toNumber(item.debit), credit: toNumber(item.credit), balance: toNumber(item.balance), currency: "USD" }, publisherId);
+    }).filter(item => item.date);
+  }
+
+  function normalizeDaily(raw, scope, publisherId) {
+    const result = [];
+    for (const [dateKey, metrics] of Object.entries(raw || {})) {
+      if (!metrics || typeof metrics !== "object") continue;
+      const date = parseDate(dateKey); if (!date) continue;
+      const pageViews = toNumber(valueFrom(metrics, ["page_views", "pageViews"]));
+      const paidQty = toNumber(valueFrom(metrics, ["sales", "paid_sales", "paidSales"]));
+      const freeQty = toNumber(valueFrom(metrics, ["free_obtained", "freeObtained"]));
+      const salesQty = paidQty + freeQty;
+      result.push(normalize({ type: "daily", period: date.slice(0, 7), date, scope: scope.id ? "package" : "all", packageId: scope.id, package: scope.name, category: scope.category || "",
+        sales: toNumber(valueFrom(metrics, ["gross"])), salesQty, paidQty, freeQty, pageViews, conversionRate: Math.min(1, salesQty / (pageViews || 1)) * 100,
+        downloads: toNumber(metrics.downloads), wishlisted: toNumber(metrics.wishlisted), refunds: toNumber(metrics.refunds), ratingAvg: toNumber(valueFrom(metrics, ["rating", "ratingAvg"])),
+        quickLooks: toNumber(valueFrom(metrics, ["quick_looks", "quickLooks"])), carted: toNumber(metrics.carted), currency: "USD" }, publisherId));
+    }
+    return result;
+  }
+
+  function earliestAccountDate(packages, revenue) {
+    const dates = [...packages.map(item => item.firstPublished), ...revenue.map(item => item.date)].filter(Boolean).sort();
+    if (!dates.length) throw new Error("The Publisher API did not return an account start date.");
+    return [dates[0], DAILY_API_MIN_DATE].sort().at(-1);
+  }
+
+  function incrementalDailyStart(scope, publisherRecords) {
+    const latest = publisherRecords.filter(item => item.type === "daily" && item.packageId === scope.id).map(item => item.date).sort().at(-1);
+    if (latest) return latest;
+    if (!scope.id) return "";
+    if (!scope.firstPublished) throw new Error(`The asset "${scope.name}" did not include a publication date.`);
+    return [scope.firstPublished, DAILY_API_MIN_DATE].sort().at(-1);
+  }
+
+  function incrementalDailyRanges(scope, publisherRecords, endExclusive) {
+    const ranges = [];
+    let start = incrementalDailyStart(scope, publisherRecords);
+    while (start && start < endExclusive) {
+      const rangeEnd = [addDays(start, DAILY_API_WINDOW_DAYS), endExclusive].sort()[0];
+      ranges.push({ start, endExclusive: rangeEnd });
+      start = rangeEnd;
+    }
+    return ranges;
+  }
+  async function saveJob(job = syncJob, publisherId = publisherIdentity.id) { await setMeta(SYNC_KEY, job, publisherId); }
+
+  async function prepareFullSync(publisherId, generation) {
+    const [packages, revenueRaw] = await Promise.all([fetchPackages(), apiJson(API.revenue)]);
+    if (!ownsWorkspace(publisherId, generation)) return;
+    const revenue = normalizeRevenue(revenueRaw, publisherId); await putMany(revenue, publisherId);
+    if (!ownsWorkspace(publisherId, generation)) return;
+    const start = earliestAccountDate(packages, revenue), endInclusive = latestCompleteDailyDate(), months = monthSequence(start, new Date().toISOString().slice(0, 10));
+    const scopes = [{ id: null, name: "All assets" }, ...packages];
+    const chunksPerScope = Math.max(1, Math.ceil((new Date(`${addDays(endInclusive, 1)}T00:00:00Z`) - new Date(`${start}T00:00:00Z`)) / 86400000 / DAILY_API_WINDOW_DAYS));
+    syncJob = { publisherId, active: true, phase: "months", startedAt: new Date().toISOString(), packages, start, endExclusive: addDays(endInclusive, 1), months, monthIndex: 0,
+      scopes, scopeIndex: 0, cursor: start, completed: 1, total: 1 + months.length * 2 + scopes.length * chunksPerScope, label: "Getting your history ready" };
+    await saveJob(syncJob, publisherId); render();
+    void cacheDiscoveredPackageIcons(packages, publisherId, generation);
+  }
+
+  async function runFullSync(publisherId = publisherIdentity.id, generation = workspaceGeneration) {
+    try {
+      if (!ownsWorkspace(publisherId, generation)) return;
+      if (!syncJob?.active || !syncJob.phase || syncJob.phase === "preparing") await prepareFullSync(publisherId, generation);
+      if (!ownsWorkspace(publisherId, generation)) return;
+      const job = syncJob;
+      if (job.publisherId !== publisherId) throw new Error("The saved sync does not belong to this publisher.");
+      if (job.phase === "months") {
+        while (job.active && ownsWorkspace(publisherId, generation) && job.monthIndex < job.months.length) {
+          const month = job.months[job.monthIndex]; job.label = `Syncing sales and downloads · ${month}`; render();
+          const [salesRaw, downloadsRaw] = await Promise.all([apiJson(API.sales(month)), apiJson(API.downloads(month))]);
+          if (!ownsWorkspace(publisherId, generation)) return;
+          await putMany([...normalizeSales(salesRaw, month, publisherId), ...normalizeDownloads(downloadsRaw, month, publisherId)], publisherId);
+          job.monthIndex += 1; job.completed += 2; await saveJob(job, publisherId); render();
+        }
+        if (!job.active || !ownsWorkspace(publisherId, generation)) return;
+        job.phase = "daily"; await saveJob(job, publisherId);
+      }
+      if (job.phase === "daily") {
+        while (job.active && ownsWorkspace(publisherId, generation) && job.scopeIndex < job.scopes.length) {
+          const scope = job.scopes[job.scopeIndex];
+          while (job.active && ownsWorkspace(publisherId, generation) && job.cursor < job.endExclusive) {
+            const chunkEnd = [addDays(job.cursor, DAILY_API_WINDOW_DAYS), job.endExclusive].sort()[0];
+            job.label = `Syncing daily performance · ${scope.name} · ${job.cursor}–${addDays(chunkEnd, -1)}`; render();
+            let raw;
+            try { raw = await apiJson(API.daily, { method: "POST", body: { start_date: apiTimestamp(job.cursor), end_date: apiTimestamp(chunkEnd), package_ids: scope.id ? [scope.id] : [] } }); }
+            catch (error) { error.message += ` Range ${job.cursor}–${addDays(chunkEnd, -1)}, scope ${scope.name}.`; throw error; }
+            if (!ownsWorkspace(publisherId, generation)) return;
+            await putMany(normalizeDaily(raw, scope, publisherId), publisherId);
+            job.cursor = chunkEnd; job.completed += 1; await saveJob(job, publisherId); render(); await sleep(120);
+          }
+          if (!ownsWorkspace(publisherId, generation)) return;
+          job.scopeIndex += 1; job.cursor = job.start; await saveJob(job, publisherId);
+        }
+      }
+      if (job.active && ownsWorkspace(publisherId, generation)) {
+        const completedAt = new Date().toISOString();
+        job.active = false; job.phase = "complete"; job.finishedAt = completedAt; job.lastRefreshedAt = completedAt; job.label = "Your history is up to date";
+        await saveJob(job, publisherId); records = await getAll(publisherId); render(); toast("Your complete publisher history is ready.");
+      }
+    } catch (error) {
+      if (!ownsWorkspace(publisherId, generation)) return;
+      console.error("Publisher Analytics+ sync failed:", error);
+      if (syncJob?.phase === "complete") {
+        workspaceStage = "local-data";
+        publisherIdentityState = "error";
+        workspaceFailure = { stage: workspaceStage, ...failureDetails(error) };
+        recordDiagnostic({ kind: "workspace", ...workspaceFailure });
+        render();
+        return;
+      }
+      const failure = { stage: "sync", ...failureDetails(error), events: diagnosticEvents.slice(-12) };
+      recordDiagnostic({ kind: "sync", ...failureDetails(error) });
+      syncJob = { ...(syncJob || {}), publisherId, active: false, error: error.message, failure, label: "Sync couldn't be completed" };
+      try { await saveJob(syncJob, publisherId); }
+      catch (saveError) { recordDiagnostic({ kind: "checkpoint", ...failureDetails(saveError) }); }
+      render(); toast("We couldn't finish syncing your history. Download a support report if this happens again.", "error");
+    }
+  }
+
+  async function continueFullSync() {
+    if (!syncJob || syncJob.active || !["months", "daily"].includes(syncJob.phase)) return;
+    const publisherId = publisherIdentity.id, generation = workspaceGeneration;
+    if (syncJob.publisherId !== publisherId) return;
+    syncJob.active = true;
+    syncJob.error = "";
+    syncJob.failure = null;
+    syncJob.label = "Resuming your history";
+    try { await saveJob(syncJob, publisherId); }
+    catch (error) {
+      syncJob.active = false;
+      syncJob.error = error.message;
+      recordDiagnostic({ kind: "checkpoint", ...failureDetails(error) });
+      render();
+      return;
+    }
+    if (!ownsWorkspace(publisherId, generation)) return;
+    render();
+    await runFullSync(publisherId, generation);
+  }
+
+  async function startFullSync() {
+    let identity;
+    try { identity = await fetchPublisherIdentity(true); }
+    catch (error) {
+      recordDiagnostic({ kind: "full-sync-identity", ...failureDetails(error) });
+      console.warn("Publisher Analytics+ could not verify the publisher before full sync:", error.message);
+      toast("We couldn't confirm your publisher. We did not change your saved analytics. Please try again.", "error");
+      return;
+    }
+    if (identity.id !== publisherIdentity.id) await activatePublisher(identity, { resume: false });
+    else publisherIdentity = identity;
+    const publisherId = identity.id, generation = workspaceGeneration;
+    if (!ownsWorkspace(publisherId, generation)) return;
+    syncJob = { publisherId, active: true, phase: "preparing", startedAt: new Date().toISOString(), completed: 0, total: 0, label: "Preparing your history" };
+    isOpen = true;
+    render();
+    try {
+      await clearPublisherData(publisherId);
+      if (!ownsWorkspace(publisherId, generation)) return;
+      records = [];
+      syncJob = { publisherId, active: true, phase: "preparing", startedAt: new Date().toISOString(), completed: 0, total: 0, label: "Preparing your history" };
+      render();
+      await runFullSync(publisherId, generation);
+    } catch (error) {
+      if (!ownsWorkspace(publisherId, generation)) return;
+      syncJob.active = false;
+      syncJob.error = error.message;
+      syncJob.failure = { stage: "sync-start", ...failureDetails(error) };
+      recordDiagnostic({ kind: "sync-start", ...failureDetails(error) });
+      render();
+    }
+  }
+
+  async function incrementalSync(announce = false, publisherId = publisherIdentity.id, generation = workspaceGeneration) {
+    if (syncJob?.active || ["preparing", "months", "daily"].includes(syncJob?.phase) || isRefreshing || !records.length) return;
+    isRefreshing = true; render();
+    let notice = "", noticeType = "success";
+    try {
+      const packages = await fetchPackages(), currentMonth = new Date().toISOString().slice(0, 7);
+      if (ownsWorkspace(publisherId, generation)) void cacheDiscoveredPackageIcons(packages, publisherId, generation);
+      const [salesRaw, downloadsRaw, revenueRaw] = await Promise.all([apiJson(API.sales(currentMonth)), apiJson(API.downloads(currentMonth)), apiJson(API.revenue)]);
+      if (!ownsWorkspace(publisherId, generation)) return;
+      await putMany([...normalizeSales(salesRaw, currentMonth, publisherId), ...normalizeDownloads(downloadsRaw, currentMonth, publisherId), ...normalizeRevenue(revenueRaw, publisherId)], publisherId);
+      const scopes = [{ id: null, name: "All assets" }, ...packages];
+      for (const scope of scopes) {
+        if (!ownsWorkspace(publisherId, generation)) return;
+        const endExclusive = addDays(latestCompleteDailyDate(), 1);
+        for (const range of incrementalDailyRanges(scope, records, endExclusive)) {
+          if (!ownsWorkspace(publisherId, generation)) return;
+          const raw = await apiJson(API.daily, { method: "POST", body: { start_date: apiTimestamp(range.start), end_date: apiTimestamp(range.endExclusive), package_ids: scope.id ? [scope.id] : [] } });
+          if (!ownsWorkspace(publisherId, generation)) return;
+          await putMany(normalizeDaily(raw, scope, publisherId), publisherId);
+        }
+      }
+      if (!ownsWorkspace(publisherId, generation)) return;
+      records = await getAll(publisherId);
+      syncJob = { ...(syncJob || {}), publisherId, packages, active: false, phase: "complete", error: "", label: "Your history is up to date", lastRefreshedAt: new Date().toISOString() };
+      await saveJob(syncJob, publisherId);
+      if (announce) notice = "Your publisher data has been refreshed.";
+    } catch (error) {
+      if (!ownsWorkspace(publisherId, generation)) return;
+      console.warn("Publisher Analytics+ incremental API sync failed:", error.message);
+      recordDiagnostic({ kind: "refresh", ...failureDetails(error) });
+      if (announce) { notice = "We couldn't refresh your publisher data. Please try again."; noticeType = "error"; }
+    } finally { if (ownsWorkspace(publisherId, generation)) { isRefreshing = false; render(); if (notice) toast(notice, noticeType); } }
+  }
+
+  function renderLifetimeChart(viewModel) {
+    const container = document.getElementById("upa-lifetime-chart");
+    if (!container) return;
+    if (!viewModel.series.length) { container.innerHTML = `<div class="upa-empty-chart">${viewModel.legend.length ? "Choose at least one package from the legend." : viewModel.metric.emptyLabel}</div>`; return; }
+    if (!globalThis.UPAECharts?.init) { container.innerHTML = '<div class="upa-empty-chart">The chart renderer could not be loaded.</div>'; return; }
+    const compactValue = value => new Intl.NumberFormat(undefined, viewModel.metric.currency
+      ? { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 }
+      : { notation: "compact", maximumFractionDigits: 1 }).format(value || 0);
+    const fullValue = value => new Intl.NumberFormat(undefined, viewModel.metric.currency
+      ? { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }
+      : { maximumFractionDigits: 0 }).format(value || 0);
+    const dateLabel = timestamp => new Intl.DateTimeFormat(undefined, { month: "short", year: "numeric", timeZone: "UTC" }).format(timestamp);
+    const axisLabel = value => viewModel.align === "age" ? `Month ${Math.round(value) + 1}` : dateLabel(value);
+    const theme = chartTheme();
+    const chart = createChart("lifetime", container); if (!chart) return;
+    chart.setOption({
+      animation: false,
+      color: viewModel.series.map(item => item.color),
+      aria: { enabled: true, description: `Cumulative ${viewModel.metric.label.toLowerCase()} for ${viewModel.series.length} packages, aligned by ${viewModel.align === "age" ? `months since ${viewModel.metric.ageDescription}` : "calendar month"}.` },
+      grid: { left: 14, right: 20, top: 25, bottom: 72, containLabel: true },
+      tooltip: {
+        trigger: "axis", confine: true, axisPointer: { type: "line", lineStyle: { color: "#a9afbc" } }, backgroundColor: "#151927", borderWidth: 0, padding: [10, 12], textStyle: { color: "#fff", fontSize: 11 },
+        formatter: parameters => {
+          const visible = parameters.filter(parameter => Array.isArray(parameter.data)).sort((a, b) => b.data[1] - a.data[1]);
+          if (!visible.length) return "";
+          return `<strong>${axisLabel(visible[0].data[0])}</strong>${visible.map(parameter => `<br/><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${parameter.color};margin-right:6px"></span>${escapeHtml(parameter.seriesName)}&nbsp;&nbsp;${fullValue(parameter.data[1])}`).join("")}`;
+        }
+      },
+      xAxis: viewModel.align === "age"
+        ? { type: "value", min: 0, minInterval: 1, axisLine: { lineStyle: { color: theme.axisLine } }, axisTick: { show: false }, axisLabel: { color: theme.axis, fontSize: 10, formatter: value => `${Math.round(value) + 1}m` }, splitLine: { show: false } }
+        : { type: "time", boundaryGap: false, axisLine: { lineStyle: { color: theme.axisLine } }, axisTick: { show: false }, axisLabel: { color: theme.axis, fontSize: 10, hideOverlap: true }, splitLine: { show: false } },
+      yAxis: { type: "value", min: 0, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: theme.axis, fontSize: 10, formatter: compactValue }, splitLine: { lineStyle: { color: theme.grid } } },
+      dataZoom: [
+        { type: "inside", filterMode: "none", zoomOnMouseWheel: true, moveOnMouseMove: true, moveOnMouseWheel: true, preventDefaultMouseMove: true },
+        { type: "slider", filterMode: "none", height: 20, bottom: 16, borderColor: "transparent", backgroundColor: theme.zoom, fillerColor: "rgba(108,92,231,.18)", dataBackground: { lineStyle: { color: theme.zoomLine }, areaStyle: { color: theme.zoomArea } }, selectedDataBackground: { lineStyle: { color: "#6c5ce7" }, areaStyle: { color: "#5a4f8f" } }, handleStyle: { color: theme.handle, borderColor: "#6c5ce7" }, moveHandleStyle: { color: "#6c5ce7" }, textStyle: { color: theme.axis, fontSize: 9 } }
+      ],
+      series: viewModel.series.map(item => ({
+        name: item.name, type: "line", data: item.points, stack: viewModel.style === "area" ? "lifetime" : undefined, smooth: .12, showSymbol: false,
+        lineStyle: { color: item.color, width: viewModel.style === "area" ? 1.5 : 2.4 }, itemStyle: { color: item.color }, areaStyle: viewModel.style === "area" ? { color: item.color, opacity: .68 } : undefined,
+        emphasis: { focus: "series", lineStyle: { width: 3.2 } }
+      }))
+    });
+  }
   function disposeCharts() {
     for (const observer of chartResizeObservers.values()) observer.disconnect();
     for (const chart of chartInstances.values()) chart.dispose();
@@ -1582,62 +1766,6 @@
       </div><aside class="upa-card upa-package-detail-metrics" aria-label="Metrics for ${escapeHtml(packageInfo.name)}"><div class="upa-package-detail-title"><div><small>AT A GLANCE</small><h2>Package metrics</h2></div></div><p>Performance for the selected time range.</p><div class="upa-package-detail-highlights"><div class="upa-package-detail-primary"><span>Gross revenue</span><strong>${money(totals.sales)}</strong><small>Before refunds and Unity's revenue share</small></div><div class="upa-package-detail-primary upa-package-growth-primary"><span>12-month growth</span><strong class="${growthClass}">${growthValue}</strong><small>${growthPeriod}</small></div></div><dl><div><dt>Sales${totals.freeQty > 0 ? " <small>Paid units</small>" : ""}</dt><dd>${number(totals.paidQty)}</dd></div>${totals.freeQty > 0 ? `<div><dt>Claims <small>Free units</small></dt><dd>${number(totals.freeQty)}</dd></div>` : ""}<div><dt>Pageviews</dt><dd>${number(totals.pageViews)}</dd></div><div><dt><span class="upa-package-metric-label">Conversion ${kpiHelp("upa-package-conversion-help", "About package conversion", conversionDescription)}</span></dt><dd>${conversion}</dd></div><div><dt>Downloads</dt><dd>${number(totals.downloads)}</dd></div></dl></aside></div>
     </section>`;
   }
-
-  function calendarViewModel(items, metricKey) {
-    const metric = calendarMetric(metricKey), byDate = new Map();
-    for (const item of items) {
-      const value = byDate.get(item.date) || { value: 0, revenue: 0, pageViews: 0 };
-      if (metric.ratio) { value.revenue += toNumber(item.sales); value.pageViews += toNumber(item.pageViews); }
-      else value.value += toNumber(item[metric.key]);
-      byDate.set(item.date, value);
-    }
-    const points = [...byDate].sort(([a], [b]) => a.localeCompare(b)).map(([date, value]) => [date, metric.ratio ? (value.pageViews ? value.revenue / value.pageViews : 0) : value.value]);
-    const years = [...new Set(points.map(([date]) => date.slice(0, 4)))];
-    const values = points.map(([, value]) => value).filter(value => value > 0).sort((a, b) => a - b);
-    const scaleMax = values.length ? values[Math.min(values.length - 1, Math.floor(values.length * .95))] : 1;
-    const peak = points.reduce((best, point) => !best || point[1] > best[1] ? point : best, null);
-    const totals = [...byDate.values()].reduce((sum, value) => ({ revenue: sum.revenue + value.revenue, pageViews: sum.pageViews + value.pageViews, value: sum.value + value.value }), { revenue: 0, pageViews: 0, value: 0 });
-    return { metric, points, years, scaleMax: Math.max(scaleMax, 1), peak, total: metric.ratio ? (totals.pageViews ? totals.revenue / totals.pageViews : 0) : totals.value };
-  }
-
-  function assetHeatmapViewModel(items, packageOptions, metricKey) {
-    const metric = calendarMetric(metricKey), dates = [...new Set(items.map(item => item.date).filter(Boolean))].sort();
-    const assetsByKey = new Map(packageOptions.map(item => [item.key, { key: item.key, name: item.name, total: 0, revenue: 0, pageViews: 0 }]));
-    const valuesByCell = new Map();
-    for (const item of items) {
-      const key = String(item.packageId || item.package || "unknown"), value = Math.max(0, toNumber(item[metric.key]));
-      if (!assetsByKey.has(key)) assetsByKey.set(key, { key, name: item.package || `Package ${key}`, total: 0, revenue: 0, pageViews: 0 });
-      const asset = assetsByKey.get(key);
-      if (metric.ratio) { asset.revenue += toNumber(item.sales); asset.pageViews += toNumber(item.pageViews); }
-      else asset.total += value;
-      const cellKey = `${key}\u0000${item.date}`;
-      const cell = valuesByCell.get(cellKey) || { value: 0, revenue: 0, pageViews: 0 };
-      if (metric.ratio) { cell.revenue += toNumber(item.sales); cell.pageViews += toNumber(item.pageViews); }
-      else cell.value += value;
-      valuesByCell.set(cellKey, cell);
-    }
-    if (metric.ratio) for (const asset of assetsByKey.values()) asset.total = asset.pageViews ? asset.revenue / asset.pageViews : 0;
-    if (metric.ratio) for (const [key, cell] of valuesByCell) valuesByCell.set(key, cell.pageViews ? cell.revenue / cell.pageViews : 0);
-    else for (const [key, cell] of valuesByCell) valuesByCell.set(key, cell.value);
-    const assets = [...assetsByKey.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
-    const positiveValues = [...valuesByCell.values()].filter(value => value > 0).sort((a, b) => a - b);
-    const scaleValue = positiveValues.length ? positiveValues[Math.min(positiveValues.length - 1, Math.floor(positiveValues.length * .97))] : 1;
-    const points = [], assetNames = new Map(assets.map(item => [item.key, item.name]));
-    let peak = null;
-    for (const [cellKey, value] of valuesByCell) {
-      const separator = cellKey.indexOf("\u0000"), key = cellKey.slice(0, separator), date = cellKey.slice(separator + 1);
-      points.push([date, key, Math.sqrt(value), value]);
-      if (!peak || value > peak.value) peak = { key, name: assetNames.get(key) || key, date, value };
-    }
-    return {
-      metric, dates, assets, points, peak,
-      total: assets.reduce((sum, asset) => sum + asset.total, 0),
-      scaleMax: Math.max(1, Math.sqrt(scaleValue)),
-      initialStart: dates[0] || "",
-      initialEnd: dates.at(-1) || ""
-    };
-  }
-
   function renderCalendarChart(viewModel) {
     const container = document.getElementById("upa-calendar-chart");
     if (!container) return;
@@ -1754,47 +1882,6 @@
       chart.setOption({ xAxis: { axisLabel: { formatter: dateLabelFormatter(currentDateLabelMode) } } });
     });
   }
-
-  function sankeyPackageOptions(items, categoriesByPackage) {
-    const packages = new Map();
-    for (const item of items) {
-      const key = String(item.packageId || item.package || "unknown"), current = packages.get(key) || { key, name: item.package || `Package ${key}`, category: item.category || categoriesByPackage.get(key) || "", gross: 0 };
-      if (!current.category) current.category = item.category || categoriesByPackage.get(key) || "";
-      current.gross += Math.max(0, item.gross); packages.set(key, current);
-    }
-    return [...packages.values()].filter(item => item.gross > 0).sort((a, b) => b.gross - a.gross);
-  }
-
-  function sankeyViewModel(items, selectedPackageKeys, requestedGroupBy, categoriesByPackage) {
-    const options = sankeyPackageOptions(items, categoriesByPackage), availableKeys = new Set(options.map(item => item.key));
-    const explicitKeys = (selectedPackageKeys || []).filter(key => availableKeys.has(key));
-    const activePackages = explicitKeys.length ? options.filter(item => explicitKeys.includes(item.key)) : options.slice(0, 8);
-    const categoryAvailable = options.some(item => item.category);
-    const groupBy = requestedGroupBy === "category" && categoryAvailable ? "category" : "none";
-    const palette = ["#6c5ce7", "#8b7cf0", "#4e8bd7", "#21a7bd", "#aa69c7", "#6170c7", "#6751aa", "#3f8fa4"];
-    const total = activePackages.reduce((sum, item) => sum + item.gross, 0);
-    const nodes = [{ name: "revenue", displayLabel: "Gross revenue", kind: "total", depth: 0, label: { position: "left" }, itemStyle: { color: "#2f9c69" } }];
-    const links = [];
-    const categoryTotals = new Map();
-    if (groupBy === "category") {
-      for (const item of activePackages) {
-        const category = item.category || "Uncategorized";
-        categoryTotals.set(category, (categoryTotals.get(category) || 0) + item.gross);
-      }
-      for (const [category, value] of categoryTotals) {
-        const key = `category:${category}`;
-        nodes.push({ name: key, displayLabel: category, kind: "category", depth: 1, itemStyle: { color: "#34a7b7" } });
-        links.push({ source: "revenue", target: key, value, sourceLabel: "Gross revenue", targetLabel: category });
-      }
-    }
-    activePackages.forEach((item, index) => {
-      const packageNode = `package:${item.key}`, source = groupBy === "category" ? `category:${item.category || "Uncategorized"}` : "revenue";
-      nodes.push({ name: packageNode, displayLabel: item.name, kind: "package", depth: groupBy === "category" ? 2 : 1, label: { position: "right" }, itemStyle: { color: palette[index % palette.length] } });
-      links.push({ source, target: packageNode, value: item.gross, sourceLabel: groupBy === "category" ? (item.category || "Uncategorized") : "Gross revenue", targetLabel: item.name });
-    });
-    return { options, explicitKeys, activePackages, nodes, links, total, groupBy, categoryAvailable, categories: categoryTotals.size };
-  }
-
   function renderSankeyChart(viewModel) {
     const container = document.getElementById("upa-sankey-chart");
     if (!container) return;
@@ -1915,10 +2002,10 @@
   }
 
   function settingsPanel() {
-    const salesMonths = new Set(records.filter(item => item.type === "sales").map(item => item.period)).size;
-    const downloadMonths = new Set(records.filter(item => item.type === "downloads").map(item => item.period)).size;
-    const performanceDays = new Set(records.filter(item => item.type === "daily" && item.scope === "all").map(item => item.date)).size;
-    const revenueEntries = records.filter(item => item.type === "revenue").length;
+    const salesMonths = new Set(indexedRecords("sales").map(item => item.period)).size;
+    const downloadMonths = new Set(indexedRecords("downloads").map(item => item.period)).size;
+    const performanceDays = new Set(indexedRecords("daily", "all").map(item => item.date)).size;
+    const revenueEntries = indexedRecords("revenue").length;
     const themeOptions = [
       { id: "system", label: "System", icon: "◐" },
       { id: "light", label: "Light", icon: "☀" },
@@ -1985,13 +2072,73 @@
     if (menu) menu.hidden = !open;
   }
 
+  let cachedWorkspaceModelsSource = null;
+  let cachedWorkspaceModels = new Map();
+  let packageCategoriesRecordsSource = null;
+  let packageCategoriesPackagesSource = null;
+  let packageCategoriesCache = new Map();
+
+  function cachedWorkspaceModel(key, build) {
+    if (cachedWorkspaceModelsSource !== records) {
+      cachedWorkspaceModelsSource = records;
+      cachedWorkspaceModels = new Map();
+    }
+    if (cachedWorkspaceModels.has(key)) {
+      const value = cachedWorkspaceModels.get(key);
+      cachedWorkspaceModels.delete(key);
+      cachedWorkspaceModels.set(key, value);
+      return value;
+    }
+    const value = build();
+    cachedWorkspaceModels.set(key, value);
+    if (cachedWorkspaceModels.size > 16) cachedWorkspaceModels.delete(cachedWorkspaceModels.keys().next().value);
+    return value;
+  }
+
+  function analyticsViewModelKey(view) {
+    const bounds = selectedDateBounds(), range = [bounds.start, bounds.end];
+    if (view === "revenue") return JSON.stringify([range, resolvedInterval(bounds), prefs.performanceScopes, prefs.performanceHiddenScopes, packageGroups, packageMetadataSignature()]);
+    if (view === "lifetime") return JSON.stringify([prefs.lifetimeMetric, prefs.lifetimePackages, prefs.lifetimeHiddenPackages, prefs.lifetimeStyle, prefs.lifetimeAlign]);
+    if (view === "calendar") return JSON.stringify([range, prefs.calendarMetric, prefs.calendarStyle]);
+    if (view === "sankey") return JSON.stringify([range, prefs.sankeyPackages, prefs.sankeyGroupBy, packageMetadataSignature()]);
+    return "";
+  }
+
+  function dashboardViewModelKey() {
+    const bounds = selectedDateBounds();
+    return JSON.stringify([[bounds.start, bounds.end], prefs.range, resolvedInterval(bounds)]);
+  }
+
+  function packageMetadataSignature() {
+    return (syncJob?.packages || []).map(item => [String(item.id || ""), item.name || "", item.category || ""]);
+  }
+
+  function packageCategoryIndex() {
+    const packages = syncJob?.packages || null;
+    if (packageCategoriesRecordsSource === records && packageCategoriesPackagesSource === packages) return packageCategoriesCache;
+    packageCategoriesRecordsSource = records;
+    packageCategoriesPackagesSource = packages;
+    packageCategoriesCache = new Map();
+    for (const item of packages || []) {
+      const key = String(item.id || item.name || "");
+      if (key && item.category) packageCategoriesCache.set(key, item.category);
+    }
+    for (const item of records) {
+      const key = String(item.packageId || item.package || "");
+      if (key && item.category && !packageCategoriesCache.has(key)) packageCategoriesCache.set(key, item.category);
+    }
+    return packageCategoriesCache;
+  }
+
   function render() {
     renderQueued = false;
     const host = document.getElementById("upa-root");
     if (!host) return;
     try {
       if (publisherIdentityState !== "ready") { renderRecovery(host); return; }
+      const renderStartedAt = globalThis.__UPA_PERF_TRACE === true ? performance.now() : 0;
       renderWorkspace();
+      if (renderStartedAt) console.info("[UPA performance] workspace render", { totalMs: performance.now() - renderStartedAt, records: records.length });
     } catch (error) {
       workspaceStage = "render";
       publisherIdentityState = "error";
@@ -2004,10 +2151,16 @@
 
   function renderWorkspace() {
     renderQueued = false; const host = document.getElementById("upa-root"); if (!host) return;
+    const previousAnalyticsModels = analyticsChartModels?.source === records ? analyticsChartModels : null;
+    const previousDashboardModels = dashboardChartModels?.source === records ? dashboardChartModels : null;
     disposeCharts(); chartShareMetadata.clear();
+    const previousViewPanels = new Map();
+    if (previousAnalyticsModels) {
+      for (const panel of host.querySelectorAll(".upa-view-panel[id]")) previousViewPanels.set(panel.id, panel.cloneNode(true));
+    }
     const salesItems = filtered("sales");
     const lifetimeMetric = lifetimeMetricDefinition(prefs.lifetimeMetric);
-    const lifetimeItems = records.filter(item => item.type === lifetimeMetric.source && (lifetimeMetric.source !== "daily" || item.scope === "package"));
+    const lifetimeItems = lifetimeMetric.source === "daily" ? indexedRecords("daily", "package") : indexedRecords(lifetimeMetric.source);
     const daily = filtered("daily"), dailyAll = daily.filter(item => item.scope === "all"), dailyPackages = daily.filter(item => item.scope === "package"), packages = aggregatePackages(daily);
     const pageViews = dailyAll.reduce((sum, item) => sum + item.pageViews, 0), salesQty = dailyAll.reduce((sum, item) => sum + item.salesQty, 0);
     const paidUnits = dailyAll.reduce((sum, item) => sum + item.paidQty, 0), downloads = dailyAll.reduce((sum, item) => sum + item.downloads, 0);
@@ -2015,7 +2168,7 @@
     const progress = syncJob?.active ? Math.min(100, Math.round((syncJob.completed || 0) / Math.max(syncJob.total || 1, 1) * 100)) : 0;
     const hasData = records.length > 0;
     const availableBounds = availableDateBounds(), dateBounds = selectedDateBounds(), suggestedInterval = automaticInterval(dateBounds), interval = resolvedInterval(dateBounds), revenueChartData = revenueViewModel(dailyAll, interval);
-    const allDaily = records.filter(item => item.type === "daily" && item.scope === "all"), trailingRevenue = trailingRevenueMetrics(allDaily, availableBounds);
+    const allDaily = indexedRecords("daily", "all"), trailingRevenue = trailingRevenueMetrics(allDaily, availableBounds);
     const comparisonBounds = comparisonDateBounds(dateBounds, prefs.range);
     const comparisonAvailable = comparisonBounds && comparisonBounds.start >= availableBounds.start && comparisonBounds.end <= availableBounds.end;
     const previousDaily = comparisonAvailable ? allDaily.filter(item => item.date >= comparisonBounds.start && item.date <= comparisonBounds.end) : [];
@@ -2029,14 +2182,19 @@
     const pageViewsChange = changeIndicator(relativeChange(pageViews, previousPageViews), comparisonLabel);
     const conversionChange = previousConversionRate === null ? "" : changeIndicator(conversionRate - previousConversionRate, comparisonLabel, " pp");
     const downloadsChange = changeIndicator(relativeChange(downloads, previousDownloads), comparisonLabel);
-    const packageHistory = new Map();
-    const allPackageTotals = aggregatePackages(records.filter(row => row.type === "daily" && row.scope === "package"));
-    const lifetimeSalesByPackage = new Map(allPackageTotals.map(item => [String(item.id), item.salesQty]));
+    const allPackageDaily = indexedRecords("daily", "package");
+    const allPackageTotals = cachedWorkspaceModel("all-package-totals", () => aggregatePackages(allPackageDaily));
+    const lifetimeSalesByPackage = cachedWorkspaceModel("lifetime-sales-by-package", () => new Map(allPackageTotals.map(item => [String(item.id), item.salesQty])));
+    const packageHistory = cachedWorkspaceModel("package-history", () => {
+      const history = new Map();
+      for (const item of allPackageDaily) {
+        const id = item.packageId || item.package, rows = history.get(id) || [];
+        rows.push(item); history.set(id, rows);
+      }
+      return history;
+    });
     const discoveredPackageById = new Map((syncJob?.packages || []).map(item => [String(item.id || ""), item]));
     for (const item of packages) item.icon = discoveredPackageById.get(String(item.id))?.icon || item.icon || "";
-    for (const item of records.filter(row => row.type === "daily" && row.scope === "package")) {
-      const id = item.packageId || item.package, history = packageHistory.get(id) || []; history.push(item); packageHistory.set(id, history);
-    }
     const packageRevenueTotal = packages.reduce((sum, item) => sum + item.sales, 0);
     const dashboardPackages = packages.slice(0, 12).map(item => ({
       ...item,
@@ -2047,17 +2205,15 @@
       trailing: trailingRevenueMetrics(packageHistory.get(item.id) || [], availableBounds)
     }));
     dashboardPackageRows = dashboardPackages;
-    const packageCategories = new Map();
-    for (const item of syncJob?.packages || []) {
-      const packageKey = String(item.id || item.name || "");
-      if (packageKey && item.category) packageCategories.set(packageKey, item.category);
-    }
-    for (const item of records) {
-      const packageKey = String(item.packageId || item.package || "");
-      if (packageKey && item.category && !packageCategories.has(packageKey)) packageCategories.set(packageKey, item.category);
-    }
-    const allPackageDaily = records.filter(item => item.type === "daily" && item.scope === "package");
+    const packageCategories = packageCategoryIndex();
     const performanceOptions = performancePackageOptions(allPackageDaily, dailyPackages, syncJob?.packages);
+    const dailyPackageRowsById = new Map();
+    for (const item of dailyPackages) {
+      const key = String(item.packageId || item.package || "");
+      if (!key) continue;
+      const rows = dailyPackageRowsById.get(key);
+      if (rows) rows.push(item); else dailyPackageRowsById.set(key, [item]);
+    }
     const selectedPackage = performanceOptions.find(item => item.key === prefs.packageId);
     const selectedPackageIndex = selectedPackage ? performanceOptions.findIndex(item => item.key === selectedPackage.key) : -1;
     const canNavigatePackages = performanceOptions.length > 1;
@@ -2069,7 +2225,7 @@
     const packageInterval = interval;
     const packageRevenueGrowth = packageRevenueGrowthViewModel(selectedPackageLifetimeRows, dateBounds, packageInterval);
     const packageUnitsTrend = packageTrendViewModel(selectedPackageRows, packageInterval, [{ field: "paidQty", label: "Sales", color: "#3ca56f" }, ...(selectedPackageTotals.freeQty > 0 ? [{ field: "freeQty", label: "Claims", color: "#d99721" }] : [])]);
-    const packageRevenueHeatmap = packageRevenueHeatmapViewModel(selectedPackageLifetimeRows);
+    const packageRevenueHeatmap = selectedPackage ? cachedWorkspaceModel(`package-revenue-heatmap:${selectedPackage.key}`, () => packageRevenueHeatmapViewModel(selectedPackageLifetimeRows)) : packageRevenueHeatmapViewModel([]);
     const availablePerformancePackageIds = new Set(performanceOptions.map(item => item.key));
     const performanceScopeOptions = [
       { type: "all", id: "all", key: "all:all", name: "All assets", membershipIds: [...availablePerformancePackageIds], items: dailyAll },
@@ -2077,7 +2233,7 @@
         const membershipIds = group.packageIds.filter(id => availablePerformancePackageIds.has(id)), membership = new Set(membershipIds);
         return { type: "group", id: group.id, key: `group:${group.id}`, name: group.name, membershipIds, items: dailyPackages.filter(item => membership.has(String(item.packageId || ""))) };
       }),
-      ...performanceOptions.map(option => ({ type: "asset", id: option.key, key: `asset:${option.key}`, name: option.name, membershipIds: [option.key], items: dailyPackages.filter(item => String(item.packageId || "") === option.key) }))
+      ...performanceOptions.map(option => ({ type: "asset", id: option.key, key: `asset:${option.key}`, name: option.name, membershipIds: [option.key], items: dailyPackageRowsById.get(option.key) || [] }))
     ];
     const requestedPerformanceScopeKeys = new Set(sanitizedPerformanceScopes(prefs.performanceScopes).map(scope => `${scope.type}:${scope.id}`));
     let selectedPerformanceScopes = performanceScopeOptions.filter(scope => requestedPerformanceScopeKeys.has(scope.key));
@@ -2086,12 +2242,39 @@
     const overlapCounts = new Map();
     for (const scope of selectedPerformanceScopes) for (const packageId of scope.membershipIds) overlapCounts.set(packageId, (overlapCounts.get(packageId) || 0) + 1);
     const overlappingPerformanceAssets = [...overlapCounts.values()].filter(count => count > 1).length;
-    const performanceCharts = PERFORMANCE_METRICS.map(metric => performanceViewModel(selectedPerformanceScopes, interval, metric, performanceScopeOptions, prefs.performanceHiddenScopes));
+    const analyticsView = ["revenue", "lifetime", "calendar", "sankey", "packages"].includes(prefs.view) ? prefs.view : "revenue";
+    const performanceModelKey = analyticsViewModelKey("revenue");
+    const lifetimeModelKey = analyticsViewModelKey("lifetime");
+    const calendarModelKey = analyticsViewModelKey("calendar");
+    const sankeyModelKey = analyticsViewModelKey("sankey");
+    const modelFreshness = { ...(previousAnalyticsModels?.freshness || {}) };
+    const performanceCharts = !previousAnalyticsModels || analyticsView === "revenue"
+      ? PERFORMANCE_METRICS.map(metric => performanceViewModel(selectedPerformanceScopes, interval, metric, performanceScopeOptions, prefs.performanceHiddenScopes))
+      : previousAnalyticsModels.performanceCharts;
+    if (!previousAnalyticsModels || analyticsView === "revenue") modelFreshness.revenue = performanceModelKey;
     const performanceData = performanceCharts[0];
     const performanceScopeName = selectedPerformanceScopes.length === 1 ? selectedPerformanceScopes[0].name : `${number(selectedPerformanceScopes.length)} scopes selected`;
     const performanceScopeSummary = selectedPerformanceScopes.length <= 3 ? selectedPerformanceScopes.map(scope => scope.name).join(", ") : `${number(selectedPerformanceScopes.length)} selected scopes`;
-    const assetHeatmapActive = prefs.section === "analytics" && prefs.view === "calendar" && prefs.calendarStyle === "assets";
-    const overviewChartData = overviewViewModel(dailyAll, dateBounds), calendarData = calendarViewModel(dailyAll, prefs.calendarMetric), assetHeatmapData = assetHeatmapActive ? assetHeatmapViewModel(dailyPackages, performanceOptions, prefs.calendarMetric) : { metric: calendarData.metric, dates: [], assets: [], points: [], peak: null, total: 0 }, lifetimeData = lifetimeViewModel(lifetimeItems, lifetimeMetric.id, prefs.lifetimePackages, prefs.lifetimeHiddenPackages, prefs.lifetimeStyle, prefs.lifetimeAlign), sankeyData = sankeyViewModel(salesItems, prefs.sankeyPackages, prefs.sankeyGroupBy, packageCategories);
+    const assetHeatmapActive = prefs.section === "analytics" && analyticsView === "calendar" && prefs.calendarStyle === "assets";
+    const dashboardKey = dashboardViewModelKey();
+    const overviewChartData = !previousDashboardModels || prefs.section === "dashboard"
+      ? overviewViewModel(dailyAll, dateBounds)
+      : previousDashboardModels.overviewChartData;
+    const calendarData = !previousAnalyticsModels || analyticsView === "calendar" ? calendarViewModel(dailyAll, prefs.calendarMetric) : previousAnalyticsModels.calendarData;
+    const emptyHeatmap = { metric: calendarData.metric, dates: [], assets: [], points: [], peak: null, total: 0 };
+    const assetHeatmapData = assetHeatmapActive
+      ? assetHeatmapViewModel(dailyPackages, performanceOptions, prefs.calendarMetric)
+      : previousAnalyticsModels?.assetHeatmapData || emptyHeatmap;
+    if ((analyticsView === "calendar" && (prefs.calendarStyle !== "assets" || assetHeatmapActive)) || (!previousAnalyticsModels && prefs.calendarStyle !== "assets")) modelFreshness.calendar = calendarModelKey;
+    const lifetimeCacheKey = `lifetime:${JSON.stringify([lifetimeMetric.id, prefs.lifetimePackages, prefs.lifetimeHiddenPackages, prefs.lifetimeStyle, prefs.lifetimeAlign])}`;
+    const lifetimeData = !previousAnalyticsModels || analyticsView === "lifetime"
+      ? cachedWorkspaceModel(lifetimeCacheKey, () => lifetimeViewModel(lifetimeItems, lifetimeMetric.id, prefs.lifetimePackages, prefs.lifetimeHiddenPackages, prefs.lifetimeStyle, prefs.lifetimeAlign))
+      : previousAnalyticsModels.lifetimeData;
+    if (!previousAnalyticsModels || analyticsView === "lifetime") modelFreshness.lifetime = lifetimeModelKey;
+    const sankeyData = !previousAnalyticsModels || analyticsView === "sankey"
+      ? sankeyViewModel(salesItems, prefs.sankeyPackages, prefs.sankeyGroupBy, packageCategories)
+      : previousAnalyticsModels.sankeyData;
+    if (!previousAnalyticsModels || analyticsView === "sankey") modelFreshness.sankey = sankeyModelKey;
     const dailyPatternsTotal = assetHeatmapActive ? assetHeatmapData.total : calendarData.total;
     const sankeyHeight = Math.max(410, sankeyData.activePackages.length * 48 + 96);
     chartShareMetadata.set("overview", { title: "Business activity over time", subtitle: `${intervalName(overviewChartData.interval)} revenue, pageviews, and downloads · ${dateBounds.start} to ${dateBounds.end}` });
@@ -2115,6 +2298,7 @@
     const preferredSection = prefs.section === "package" && !selectedPackage ? "dashboard" : ["dashboard", "analytics", "package", "groups", "settings"].includes(prefs.section) ? prefs.section : "dashboard";
     const section = hasData || preferredSection === "settings" ? preferredSection : "dashboard";
     const view = views.some(item => item.id === prefs.view) ? prefs.view : "revenue";
+    analyticsChartModels = { source: records, freshness: modelFreshness, performanceCharts, lifetimeData, calendarData, assetHeatmapData, performanceOptions, sankeyData };
     const sectionMeta = section === "dashboard"
       ? { label: "Dashboard", description: "Your publishing business at a glance." }
       : section === "analytics"
@@ -2143,19 +2327,21 @@
       : syncFailed
         ? '<div class="upa-sync-icon upa-sync-error" aria-hidden="true">!</div>'
         : '<div class="upa-sync-icon" aria-hidden="true">Ⅱ</div>';
-    const latestCapturedAt = records.reduce((latest, item) => item.capturedAt > latest ? item.capturedAt : latest, "");
+    const latestCapturedAt = latestRecordCapturedAt();
     const lastRefreshedAt = syncJob?.lastRefreshedAt || syncJob?.finishedAt || latestCapturedAt;
     const refreshTooltip = `Refresh publisher data · ${lastRefreshedAt ? `Last refreshed ${dateTime(lastRefreshedAt)}` : "Not refreshed yet"}`;
-    const showRefreshAction = section === "dashboard" && hasData && !syncJob?.active && !syncFailed && !syncIncomplete;
-    const refreshAction = showRefreshAction ? `<button class="upa-refresh-action ${isRefreshing ? "upa-refreshing" : ""}" type="button" data-action="refresh" aria-label="${escapeHtml(refreshTooltip)}" ${isRefreshing ? "disabled" : ""}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 5.9A5.5 5.5 0 1 0 13 10.7"></path><path d="M13.4 2.8v3.5H9.9"></path></svg><span>${isRefreshing ? "Refreshing…" : "Refresh data"}</span><span class="upa-refresh-tooltip" role="tooltip">${escapeHtml(refreshTooltip)}</span></button>` : "";
+    const refreshAction = hasData && !syncJob?.active && !syncFailed && !syncIncomplete ? `<button class="upa-refresh-action ${isRefreshing ? "upa-refreshing" : ""}" type="button" data-action="refresh" aria-label="${escapeHtml(refreshTooltip)}" ${isRefreshing ? "disabled" : ""}${section === "dashboard" ? "" : ' style="display:none"'}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 5.9A5.5 5.5 0 1 0 13 10.7"></path><path d="M13.4 2.8v3.5H9.9"></path></svg><span>${isRefreshing ? "Refreshing…" : "Refresh data"}</span><span class="upa-refresh-tooltip" role="tooltip">${escapeHtml(refreshTooltip)}</span></button>` : "";
     const headerIdentity = section === "package" && selectedPackage ? `<div class="upa-header-package-identity">${packageIconMarkup(selectedPackage, "upa-package-avatar")}<div>${headerTitle}<div class="upa-header-subline"><p>${sectionMeta.description}</p>${refreshAction}</div></div></div>` : `${headerTitle}<div class="upa-header-subline"><p>${hasData || ["groups", "settings"].includes(section) ? sectionMeta.description : "Build a complete, configurable view of your publishing business."}</p>${refreshAction}</div>`;
     const customRangeLabel = `${shortDate(dateBounds.start)} – ${shortDate(dateBounds.end)}`;
     const selectedRangeLabel = prefs.range === "custom" ? customRangeLabel : RANGE_OPTIONS.find(option => option.id === prefs.range)?.label || "All time";
     const revenueMixLabel = prefs.range === "all" ? "Lifetime" : selectedRangeLabel;
-    const revenueMixData = revenueMixViewModel(daily.filter(item => item.scope === "package"), revenueMixLabel);
+    const revenueMixData = !previousDashboardModels || prefs.section === "dashboard"
+      ? revenueMixViewModel(daily.filter(item => item.scope === "package"), revenueMixLabel)
+      : previousDashboardModels.revenueMixData;
+    dashboardChartModels = { source: records, key: dashboardKey, revenueMixData, overviewChartData, suggestedInterval };
     const rangePopover = isRangePopoverOpen ? rangePopoverMarkup(dateBounds, availableBounds) : "";
-    const rangeControl = hasData && section !== "settings" && !(section === "analytics" && view === "lifetime") ? `<div class="upa-header-control upa-header-range"><span>Time range</span><div class="upa-range-picker"><button class="upa-range-trigger" type="button" data-action="range-toggle" aria-haspopup="dialog" aria-expanded="${isRangePopoverOpen}"><b>${selectedRangeLabel}</b><svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3"></path></svg></button>${rangePopover}</div></div>` : "";
-    const intervalControl = hasData && (section === "package" || section === "analytics" && view === "revenue") ? `<label class="upa-header-control upa-header-interval"><span>Interval</span><select id="upa-interval" aria-label="Chart interval"><option value="auto" ${prefs.interval === "auto" ? "selected" : ""}>Automatic (${intervalName(suggestedInterval).toLowerCase()})</option><option value="day" ${prefs.interval === "day" ? "selected" : ""}>Daily</option><option value="week" ${prefs.interval === "week" ? "selected" : ""}>Weekly</option><option value="month" ${prefs.interval === "month" ? "selected" : ""}>Monthly</option><option value="quarter" ${prefs.interval === "quarter" ? "selected" : ""}>Quarterly</option><option value="year" ${prefs.interval === "year" ? "selected" : ""}>Yearly</option></select></label>` : "";
+    const rangeControl = hasData ? `<div class="upa-header-control upa-header-range"${section === "analytics" && view === "lifetime" ? ' style="display:none"' : ""}><span>Time range</span><div class="upa-range-picker"><button class="upa-range-trigger" type="button" data-action="range-toggle" aria-haspopup="dialog" aria-expanded="${isRangePopoverOpen}"><b>${selectedRangeLabel}</b><svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3"></path></svg></button>${rangePopover}</div></div>` : "";
+    const intervalControl = hasData ? `<label class="upa-header-control upa-header-interval"${section === "analytics" && view === "revenue" ? "" : ' style="display:none"'}><span>Interval</span><select id="upa-interval" aria-label="Chart interval"><option value="auto" ${prefs.interval === "auto" ? "selected" : ""}>Automatic (${intervalName(suggestedInterval).toLowerCase()})</option><option value="day" ${prefs.interval === "day" ? "selected" : ""}>Daily</option><option value="week" ${prefs.interval === "week" ? "selected" : ""}>Weekly</option><option value="month" ${prefs.interval === "month" ? "selected" : ""}>Monthly</option><option value="quarter" ${prefs.interval === "quarter" ? "selected" : ""}>Quarterly</option><option value="year" ${prefs.interval === "year" ? "selected" : ""}>Yearly</option></select></label>` : "";
     const averageRevenueHelp = trailingRevenue.monthCount ? `Average gross revenue across the ${trailingRevenue.monthCount === 12 ? "last 12" : number(trailingRevenue.monthCount)} complete months available.` : "Average monthly revenue is calculated once a complete month is available.";
     const performancePackageNames = new Map(performanceOptions.map(item => [item.key, item.name]));
     const performanceGroupMenuItems = packageGroups.map(group => {
@@ -2206,7 +2392,7 @@
           ${publisherAccount()}
         </aside>
         <section class="upa-workspace">
-          <header class="upa-header ${section === "dashboard" || section === "package" || section === "groups" || section === "settings" ? "upa-header-compact" : ""}"><div class="upa-header-main"><div class="upa-header-copy"><small>Publisher workspace</small>${headerIdentity}</div><div class="upa-header-actions">${packageNavigation}${intervalControl}${rangeControl}</div></div>${mobileNavigation}${hasData && section === "analytics" ? `<nav class="upa-view-tabs" role="tablist" aria-label="Analytics views">${viewTabs}</nav>` : ""}</header>
+          <header class="upa-header ${section === "dashboard" || section === "package" || section === "groups" || section === "settings" ? "upa-header-compact" : ""}"><div class="upa-header-main"><div class="upa-header-copy"><small>Publisher workspace</small>${headerIdentity}</div><div class="upa-header-actions">${packageNavigation}${intervalControl}${rangeControl}</div></div>${mobileNavigation}${hasData ? `<nav class="upa-view-tabs" role="tablist" aria-label="Analytics views"${section === "analytics" ? "" : ' style="display:none"'}>${viewTabs}</nav>` : ""}</header>
           ${(syncJob?.active || syncFailed || syncIncomplete) ? `<section class="upa-sync ${syncJob?.active ? "upa-syncing" : ""}" role="status" aria-live="polite">${syncIcon}<div class="upa-sync-copy"><strong>${escapeHtml(syncTitle)}</strong><span>${escapeHtml(syncDetail)}</span>${syncJob?.active ? '<small class="upa-sync-note">Large catalogs can take several minutes. Keep this tab open; if interrupted, progress resumes when you return.</small>' : ""}</div><div class="upa-sync-actions">${syncPreparing ? "" : syncJob?.active ? '<button data-action="stop-sync">Pause</button>' : syncIncomplete ? '<button data-action="continue-sync">Continue</button>' : '<button data-action="sync-all">Try full sync again</button>'}${syncFailed ? '<button data-action="download-support">Download support report</button>' : ""}</div>${syncJob?.active ? `<div class="upa-progress ${syncPreparing ? "upa-progress-preparing" : ""}"><i style="width:${progress}%"></i></div>` : ""}</section>` : ""}
           <main class="upa-content" data-section="${section}" data-view="${view}">${section === "groups" ? groupsPanel(performanceOptions) : section === "settings" ? settingsPanel() : records.length ? `<section class="upa-dashboard-view upa-view-panel upa-view-dashboard" id="upa-view-dashboard">${dashboardSummary}<article class="upa-dashboard-chart"><div class="upa-section-title"><div><small>BUSINESS ACTIVITY</small><h2>Performance over time</h2><p>${intervalName(overviewChartData.interval)} revenue, pageviews, and downloads on aligned timelines.</p></div><div class="upa-section-tools"><span>${overviewChartData.points.length} periods</span>${chartActions("overview")}</div></div><div class="upa-pulse-legend"><span><i class="upa-pulse-revenue"></i>Gross revenue</span><span><i class="upa-pulse-views"></i>Pageviews</span><span><i class="upa-pulse-downloads"></i>Downloads</span></div><div id="upa-overview-chart" class="upa-overview-chart" role="img" aria-label="Aligned gross revenue, pageviews, and downloads timelines"></div></article>${dashboardPackageTable}</section>
             <section class="upa-dashboard-grid"><section class="upa-view-panel upa-view-revenue upa-performance-view" id="upa-view-revenue"><article class="upa-card upa-performance-controls"><div class="upa-performance-control-layout"><div><small>CATALOG PERFORMANCE</small><h2>Compare the signals that drive your business</h2><p>Choose All assets, a saved group, or an individual asset. Every included asset gets its own line across all four charts.</p></div><div class="upa-performance-tools">${performanceLayoutControls}${performanceScopeControls}</div></div>${performanceLegend}</article><div class="upa-performance-chart-grid" data-layout="${prefs.performanceLayout}">${performanceChartsMarkup}</div></section>
@@ -2218,6 +2404,12 @@
       </div>
       <div class="upa-toast" role="status" aria-live="polite"></div>
     </aside>`;
+    if (previousViewPanels.size && ["dashboard", "analytics"].includes(section)) {
+      for (const [id, panel] of previousViewPanels) {
+        const isActive = section === "dashboard" ? id === "upa-view-dashboard" : id === `upa-view-${view}`;
+        if (!isActive) host.querySelector(`#${id}`)?.replaceWith(panel);
+      }
+    }
     setDashboardPackageSettingsOpen(isDashboardPackageSettingsOpen);
     const nextContent = host.querySelector(".upa-content");
     if (previousContent && nextContent && previousSection === section && previousView === view) {
@@ -2235,14 +2427,99 @@
         renderPackageRevenueGrowthChart(packageRevenueGrowth, selectedPackage.name, dateBounds, prefs.packageRevenueMode, packageInterval);
         if (selectedPackageTotals.freeQty > 0) renderPackageTrendChart("package-units", packageUnitsTrend, selectedPackage.name);
       }
-      if (section === "analytics" && view === "revenue") for (const chart of performanceCharts) renderPerformanceChart(chart);
-      if (section === "analytics" && view === "lifetime") renderLifetimeChart(lifetimeData);
-      if (section === "analytics" && view === "calendar") {
-        if (prefs.calendarStyle === "assets") renderAssetHeatmapChart(assetHeatmapData);
-        else renderCalendarChart(calendarData);
-      }
-      if (section === "analytics" && view === "sankey") renderSankeyChart(sankeyData);
+      if (section === "analytics") renderAnalyticsViewChart(view);
     }
+  }
+
+  function renderAnalyticsViewChart(view) {
+    if (!analyticsChartModels) return;
+    if (view === "revenue") for (const chart of analyticsChartModels.performanceCharts) renderPerformanceChart(chart);
+    if (view === "lifetime") renderLifetimeChart(analyticsChartModels.lifetimeData);
+    if (view === "calendar") {
+      if (prefs.calendarStyle === "assets") renderAssetHeatmapChart(analyticsChartModels.assetHeatmapData);
+      else renderCalendarChart(analyticsChartModels.calendarData);
+    }
+    if (view === "sankey") renderSankeyChart(analyticsChartModels.sankeyData);
+  }
+
+  function switchAnalyticsView(view) {
+    const tracePerformance = globalThis.__UPA_PERF_TRACE === true;
+    const switchStartedAt = tracePerformance ? performance.now() : 0;
+    const content = document.querySelector("#upa-root .upa-content");
+    if (content?.dataset.section !== "analytics") return false;
+    if (!content || !analyticsChartModels || !["revenue", "lifetime", "calendar", "sankey", "packages"].includes(view)) return false;
+    if (view !== "packages" && analyticsChartModels.freshness?.[view] !== analyticsViewModelKey(view)) return false;
+    // This view has range-dependent text and chart data. Let the caller run a
+    // synchronous workspace render so both stay in sync when it is selected.
+    if (view === "calendar" && prefs.calendarStyle === "assets") return false;
+    content.dataset.view = view;
+    for (const tab of content.ownerDocument.querySelectorAll("#upa-root button[data-view]")) {
+      const selected = tab.dataset.view === view;
+      tab.classList.toggle("upa-active", selected);
+      tab.setAttribute("aria-selected", String(selected));
+    }
+    const host = content.ownerDocument.getElementById("upa-root");
+    const range = host?.querySelector(".upa-header-range");
+    if (range) range.style.display = view === "lifetime" ? "none" : "";
+    const interval = host?.querySelector(".upa-header-interval");
+    if (interval) interval.style.display = view === "revenue" ? "" : "none";
+    disposeCharts();
+    renderAnalyticsViewChart(view);
+    if (tracePerformance) console.info("[UPA performance] analytics view switch", { view, totalMs: performance.now() - switchStartedAt, records: records.length });
+    return true;
+  }
+
+  function switchWorkspaceSection(section) {
+    const tracePerformance = globalThis.__UPA_PERF_TRACE === true;
+    const switchStartedAt = tracePerformance ? performance.now() : 0;
+    const host = document.getElementById("upa-root"), content = host?.querySelector(".upa-content");
+    if (!content || !records.length || !["dashboard", "analytics"].includes(content.dataset.section) || !["dashboard", "analytics"].includes(section) || !dashboardChartModels || !analyticsChartModels) return false;
+    if (section === "dashboard" && dashboardChartModels.key !== dashboardViewModelKey()) return false;
+    if (section === "analytics" && prefs.view !== "packages" && analyticsChartModels.freshness?.[prefs.view] !== analyticsViewModelKey(prefs.view)) return false;
+    prefs.section = section;
+    if (section === "analytics" && prefs.view === "lifetime") {
+      isRangePopoverOpen = false; isCustomRangeEditorOpen = false;
+      host.querySelector(".upa-range-popover")?.remove();
+      host.querySelector(".upa-range-trigger")?.setAttribute("aria-expanded", "false");
+    }
+    accountMenuOpen = false;
+    content.dataset.section = section;
+    content.dataset.view = prefs.view;
+    content.scrollTop = 0;
+    const header = host.querySelector(".upa-header");
+    header?.classList.toggle("upa-header-compact", section === "dashboard");
+    const title = host.querySelector(".upa-header-copy h1"), description = host.querySelector(".upa-header-subline p");
+    if (title) title.textContent = section === "dashboard" ? "Dashboard" : "Analytics";
+    if (description) description.textContent = section === "dashboard" ? "Your publishing business at a glance." : "Explore trends, patterns, and package performance.";
+    for (const button of host.querySelectorAll("button[data-section=\"dashboard\"], button[data-section=\"analytics\"]")) {
+      const selected = button.dataset.section === section;
+      button.classList.toggle("upa-active", selected);
+      button.setAttribute("aria-current", selected ? "page" : "false");
+    }
+    const tabs = host.querySelector(".upa-view-tabs");
+    if (tabs) tabs.style.display = section === "analytics" ? "" : "none";
+    for (const tab of host.querySelectorAll("button[data-view]")) {
+      const selected = tab.dataset.view === prefs.view;
+      tab.classList.toggle("upa-active", selected);
+      tab.setAttribute("aria-selected", String(selected));
+    }
+    const range = host.querySelector(".upa-header-range");
+    if (range) range.style.display = section === "analytics" && prefs.view === "lifetime" ? "none" : "";
+    const interval = host.querySelector(".upa-header-interval");
+    if (interval) interval.style.display = section === "analytics" && prefs.view === "revenue" ? "" : "none";
+    const refresh = host.querySelector(".upa-refresh-action");
+    const syncIncomplete = Boolean(syncJob && !syncJob.active && ["months", "daily"].includes(syncJob.phase));
+    const syncFailed = Boolean(syncJob?.error);
+    if (refresh) refresh.style.display = section === "dashboard" && !syncJob?.active && !syncFailed && !syncIncomplete ? "" : "none";
+    disposeCharts();
+    if (isOpen) {
+      if (section === "dashboard") {
+        renderRevenueMixChart(dashboardChartModels.revenueMixData);
+        renderOverviewChart(dashboardChartModels.overviewChartData);
+      } else renderAnalyticsViewChart(prefs.view);
+    }
+    if (tracePerformance) console.info("[UPA performance] workspace section switch", { section, totalMs: performance.now() - switchStartedAt, records: records.length });
+    return true;
   }
 
   function scheduleRender() { if (!renderQueued) { renderQueued = true; requestAnimationFrame(render); } }
@@ -2431,7 +2708,7 @@
           isRangePopoverOpen = false; isCustomRangeEditorOpen = false; updateRangePopover(); return;
         }
         prefs.range = rangeOption; isRangePopoverOpen = false; isCustomRangeEditorOpen = false;
-        await savePrefs(); render(); return;
+        render(); await savePrefs(); return;
       }
       if (action === "range-back") { isRangePopoverOpen = true; isCustomRangeEditorOpen = false; updateRangePopover(); return; }
       if (action === "range-cancel") { isRangePopoverOpen = false; isCustomRangeEditorOpen = false; updateRangePopover(); return; }
@@ -2443,7 +2720,7 @@
         end = [[end, available.start].sort().at(-1), available.end].sort()[0];
         if (start > end) [start, end] = [end, start];
         prefs.range = "custom"; prefs.start = start; prefs.end = end; isRangePopoverOpen = false; isCustomRangeEditorOpen = false;
-        await savePrefs(); render(); return;
+        render(); await savePrefs(); return;
       }
       const chartButton = event.target.closest("[data-chart-action]");
       if (chartButton) { await handleChartAction(chartButton.dataset.chartAction, chartButton.dataset.chart); return; }
@@ -2462,12 +2739,23 @@
         await savePrefs(); render(); return;
       }
       const sectionButton = event.target.closest("button[data-section]");
-      if (sectionButton) { prefs.section = sectionButton.dataset.section; if (prefs.section !== "groups") groupEditor = null; accountMenuOpen = false; await savePrefs(); render(); return; }
+      if (sectionButton) {
+        prefs.section = sectionButton.dataset.section;
+        if (prefs.section !== "groups") groupEditor = null;
+        accountMenuOpen = false;
+        const switchedInPlace = switchWorkspaceSection(prefs.section);
+        await savePrefs();
+        if (!switchedInPlace) render();
+        return;
+      }
       const viewButton = event.target.closest("button[data-view]");
       if (viewButton) {
         prefs.section = "analytics"; prefs.view = viewButton.dataset.view; groupEditor = null;
         if (prefs.view === "lifetime") { isRangePopoverOpen = false; isCustomRangeEditorOpen = false; }
-        await savePrefs(); render(); return;
+        const switchedInPlace = switchAnalyticsView(prefs.view);
+        await savePrefs();
+        if (!switchedInPlace) render();
+        return;
       }
       const calendarStyleButton = event.target.closest("button[data-calendar-style]");
       if (calendarStyleButton) { prefs.calendarStyle = calendarStyleButton.dataset.calendarStyle === "assets" ? "assets" : "calendar"; await savePrefs(); render(); return; }
@@ -2479,7 +2767,10 @@
         if (shouldStart) await startFullSync();
         return;
       }
-      if (action === "exit-analytics") { isOpen = false; groupEditor = null; accountMenuOpen = false; render(); return; }
+      if (action === "exit-analytics") {
+        if (standalone) { extensionApi.runtime.sendMessage({ type: "UPA_FOCUS_PORTAL", portalTabId }).catch(() => {}); return; }
+        isOpen = false; groupEditor = null; accountMenuOpen = false; render(); return;
+      }
       if (action === "sync-all") await startFullSync();
       if (action === "refresh") await incrementalSync(true);
       if (action === "stop-sync" && syncJob) { syncJob.active = false; syncJob.label = "Sync paused"; await saveJob(); render(); }
@@ -2493,7 +2784,7 @@
       if (!action && outsideAccountMenu) render();
     });
     document.addEventListener("change", async event => {
-      if (event.target.id === "upa-interval") { prefs.interval = event.target.value; await savePrefs(); render(); }
+      if (event.target.id === "upa-interval") { prefs.interval = event.target.value; render(); await savePrefs(); }
       if (event.target.id === "upa-calendar-metric") { prefs.calendarMetric = event.target.value; await savePrefs(); render(); }
       if (event.target.id === "upa-lifetime-metric") { prefs.lifetimeMetric = LIFETIME_METRICS[event.target.value] ? event.target.value : "revenue"; await savePrefs(); render(); }
       if (event.target.id === "upa-lifetime-style") { prefs.lifetimeStyle = event.target.value === "area" ? "area" : "lines"; if (prefs.lifetimeStyle === "area") prefs.lifetimeAlign = "calendar"; await savePrefs(); render(); }
@@ -2542,8 +2833,7 @@
   }
 
   async function init() {
-    try { isOpen = Boolean((await extensionApi.runtime.sendMessage({ type: "UPA_CONSUME_OPEN" }))?.open); }
-    catch { /* The in-page launcher remains available if the service worker is unavailable. */ }
+    isOpen = standalone;
     const root = document.createElement("div"); root.id = "upa-root"; document.body.appendChild(root); bindEvents(); render();
     await openPublisherWorkspace();
   }

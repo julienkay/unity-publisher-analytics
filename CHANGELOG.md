@@ -6,6 +6,7 @@ This file lists the main changes that affect publishers.
 
 - Added package icons to Dashboard and Analytics package views.
 - Fixed opening large saved histories that exceed the browser's message limit.
+- Made large history loading faster and showed loading progress.
 - Distinguished sign-in problems from problems loading or displaying saved history.
 - Kept Settings and the Publisher Portal accessible after workspace errors.
 - Added downloadable support reports that exclude account details and sales figures.

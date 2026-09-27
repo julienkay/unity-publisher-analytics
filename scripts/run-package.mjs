@@ -16,6 +16,11 @@ if (!npmEntryPoint) {
 
 const stages = [
   {
+    name: "content build",
+    command: process.execPath,
+    args: ["scripts/build-content.mjs"]
+  },
+  {
     name: "chart build",
     command: process.execPath,
     args: [npmEntryPoint, "run", "build:charts"]

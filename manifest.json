@@ -33,8 +33,7 @@
     },
     {
       "matches": ["https://publisher.unity.com/*"],
-      "js": ["vendor/echarts.min.js", "content.js"],
-      "css": ["styles.css"],
+      "js": ["portal-bridge.js"],
       "run_at": "document_idle"
     }
   ],
