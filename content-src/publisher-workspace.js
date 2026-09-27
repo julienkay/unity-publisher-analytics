@@ -81,7 +81,7 @@
 
   function failureDetails(error) {
     const message = String(error?.message || "");
-    const code = ["missing-publisher", "timeout", "network", "http", "unexpected-response"].includes(error?.code) ? error.code
+    const code = ["missing-publisher", "timeout", "network", "http", "portal-tab-unavailable", "unexpected-response"].includes(error?.code) ? error.code
       : /maximum allowed size|message.*too large/i.test(message) ? "message-too-large"
       : /quota/i.test(message) ? "storage-full"
       : /extension context invalidated/i.test(message) ? "extension-reloaded"
@@ -244,5 +244,11 @@
     render();
     if (!resume || publisherIdentityState !== "ready") return;
     if (syncJob?.active) runFullSync(identity.id, generation);
+    else if (syncJob?.failure?.code === "portal-tab-unavailable" && ["preparing", "months", "daily"].includes(syncJob.phase)) {
+      extensionApi.tabs.getCurrent().then(tab => {
+        if (tab?.id) extensionApi.runtime.sendMessage({ type: "UPA_SYNC_RECOVERY_READY", analyticsTabId: tab.id }).catch(() => {});
+      }).catch(() => {});
+      continueFullSync();
+    }
     else if (records.length) incrementalSync(false, identity.id, generation);
   }

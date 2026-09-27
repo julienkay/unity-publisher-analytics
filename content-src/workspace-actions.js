@@ -250,7 +250,17 @@
       if (action === "sync-all") await startFullSync();
       if (action === "refresh") await incrementalSync(true);
       if (action === "stop-sync" && syncJob) { syncJob.active = false; syncJob.label = "Sync paused"; await saveJob(); render(); }
-      if (action === "continue-sync") await continueFullSync();
+      if (action === "continue-sync") {
+        if (syncJob?.failure?.code === "portal-tab-unavailable") {
+          extensionApi.tabs.getCurrent().then(tab => extensionApi.runtime.sendMessage({
+            type: "UPA_OPEN_PORTAL_FOR_SYNC", closeAnalyticsTabId: tab?.id
+          })).then(response => {
+            if (!response?.ok) toast("We couldn't reopen the Publisher Portal. Please try again.", "error");
+          }).catch(() => toast("We couldn't reopen the Publisher Portal. Please try again.", "error"));
+          return;
+        }
+        await continueFullSync();
+      }
       if (action === "lifetime-top") { prefs.lifetimePackages = []; prefs.lifetimeHiddenPackages = []; await savePrefs(); render(); }
       if (action === "sankey-top") { prefs.sankeyPackages = []; await savePrefs(); render(); }
       if (action === "export") { download(`publisher-analytics-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ version: 2, exportedAt: new Date().toISOString(), publisher: { id: publisherIdentity.id, name: publisherIdentity.name }, records }, null, 2)); toast("Your analytics backup is downloading."); }

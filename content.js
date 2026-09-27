@@ -803,7 +803,7 @@
 
   function failureDetails(error) {
     const message = String(error?.message || "");
-    const code = ["missing-publisher", "timeout", "network", "http", "unexpected-response"].includes(error?.code) ? error.code
+    const code = ["missing-publisher", "timeout", "network", "http", "portal-tab-unavailable", "unexpected-response"].includes(error?.code) ? error.code
       : /maximum allowed size|message.*too large/i.test(message) ? "message-too-large"
       : /quota/i.test(message) ? "storage-full"
       : /extension context invalidated/i.test(message) ? "extension-reloaded"
@@ -966,6 +966,12 @@
     render();
     if (!resume || publisherIdentityState !== "ready") return;
     if (syncJob?.active) runFullSync(identity.id, generation);
+    else if (syncJob?.failure?.code === "portal-tab-unavailable" && ["preparing", "months", "daily"].includes(syncJob.phase)) {
+      extensionApi.tabs.getCurrent().then(tab => {
+        if (tab?.id) extensionApi.runtime.sendMessage({ type: "UPA_SYNC_RECOVERY_READY", analyticsTabId: tab.id }).catch(() => {});
+      }).catch(() => {});
+      continueFullSync();
+    }
     else if (records.length) incrementalSync(false, identity.id, generation);
   }
 
@@ -1125,11 +1131,12 @@
     const shape = Array.isArray(message.data) ? "array" : message.data === null ? "null" : typeof message.data;
     if (pending.generation === workspaceGeneration) recordDiagnostic({ kind: "request", endpoint: pending.endpoint, method: pending.method,
       status: Number(message.status) || 0, outcome: message.ok ? "success" : "failure", durationMs: Date.now() - pending.startedAt, shape,
+      ...(!message.ok && message.code ? { code: message.code } : {}),
       ...(pending.endpoint === "user" ? { publisherIdPresent: Boolean(compact(message.data?.publisherId)) } : {}) });
     if (message.ok) pending.resolve(message.data);
     else {
       const detail = typeof message.data === "string" ? compact(message.data).slice(0, 180) : message.data?.message || message.error || "";
-      pending.reject(Object.assign(new Error(`Publisher API returned ${message.status || "a network error"} for ${pending.path.split("?")[0]}${detail ? `: ${detail}` : ""}.`), { code: message.status ? "http" : "network" }));
+      pending.reject(Object.assign(new Error(`Publisher API returned ${message.status || "a network error"} for ${pending.path.split("?")[0]}${detail ? `: ${detail}` : ""}.`), { code: message.code || (message.status ? "http" : "network") }));
     }
   }
 
@@ -2322,7 +2329,8 @@
     const syncDetail = syncJob?.active
       ? syncPreparing ? "Finding your assets and available history…" : `${syncJob.completed || 0} of ${syncJob.total || "?"} steps complete`
       : syncFailed
-        ? syncIncomplete ? "Continue from your saved progress. If it fails again, refresh the Publisher Portal first." : "Try again. If it keeps happening, refresh the Publisher Portal first."
+        ? syncJob.failure?.code === "portal-tab-unavailable" ? "The Publisher Portal tab closed. Continue to reopen it and resume your saved progress."
+          : syncIncomplete ? "Continue from your saved progress. If it fails again, refresh the Publisher Portal first." : "Try again. If it keeps happening, refresh the Publisher Portal first."
         : "Continue when you're ready. Your progress has been saved.";
     const syncIcon = syncJob?.active
       ? syncPreparing ? '<div class="upa-sync-icon upa-sync-preparing" aria-hidden="true"><i></i></div>' : `<div class="upa-sync-icon upa-sync-progress" style="--upa-progress-angle:${progress * 3.6}deg" aria-hidden="true"><span>${progress}%</span></div>`
@@ -2777,7 +2785,17 @@
       if (action === "sync-all") await startFullSync();
       if (action === "refresh") await incrementalSync(true);
       if (action === "stop-sync" && syncJob) { syncJob.active = false; syncJob.label = "Sync paused"; await saveJob(); render(); }
-      if (action === "continue-sync") await continueFullSync();
+      if (action === "continue-sync") {
+        if (syncJob?.failure?.code === "portal-tab-unavailable") {
+          extensionApi.tabs.getCurrent().then(tab => extensionApi.runtime.sendMessage({
+            type: "UPA_OPEN_PORTAL_FOR_SYNC", closeAnalyticsTabId: tab?.id
+          })).then(response => {
+            if (!response?.ok) toast("We couldn't reopen the Publisher Portal. Please try again.", "error");
+          }).catch(() => toast("We couldn't reopen the Publisher Portal. Please try again.", "error"));
+          return;
+        }
+        await continueFullSync();
+      }
       if (action === "lifetime-top") { prefs.lifetimePackages = []; prefs.lifetimeHiddenPackages = []; await savePrefs(); render(); }
       if (action === "sankey-top") { prefs.sankeyPackages = []; await savePrefs(); render(); }
       if (action === "export") { download(`publisher-analytics-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ version: 2, exportedAt: new Date().toISOString(), publisher: { id: publisherIdentity.id, name: publisherIdentity.name }, records }, null, 2)); toast("Your analytics backup is downloading."); }

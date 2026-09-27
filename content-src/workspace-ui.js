@@ -348,7 +348,8 @@
     const syncDetail = syncJob?.active
       ? syncPreparing ? "Finding your assets and available history…" : `${syncJob.completed || 0} of ${syncJob.total || "?"} steps complete`
       : syncFailed
-        ? syncIncomplete ? "Continue from your saved progress. If it fails again, refresh the Publisher Portal first." : "Try again. If it keeps happening, refresh the Publisher Portal first."
+        ? syncJob.failure?.code === "portal-tab-unavailable" ? "The Publisher Portal tab closed. Continue to reopen it and resume your saved progress."
+          : syncIncomplete ? "Continue from your saved progress. If it fails again, refresh the Publisher Portal first." : "Try again. If it keeps happening, refresh the Publisher Portal first."
         : "Continue when you're ready. Your progress has been saved.";
     const syncIcon = syncJob?.active
       ? syncPreparing ? '<div class="upa-sync-icon upa-sync-preparing" aria-hidden="true"><i></i></div>' : `<div class="upa-sync-icon upa-sync-progress" style="--upa-progress-angle:${progress * 3.6}deg" aria-hidden="true"><span>${progress}%</span></div>`

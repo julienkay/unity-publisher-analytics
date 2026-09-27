@@ -6,6 +6,7 @@ const vm = require("node:vm");
 
 const root = path.resolve(__dirname, "..");
 const content = fs.readFileSync(path.join(root, "content.js"), "utf8");
+const background = fs.readFileSync(path.join(root, "background.js"), "utf8");
 const windowDays = Number(content.match(/const DAILY_API_WINDOW_DAYS = (\d+)/)?.[1]);
 
 function extractBetween(start, end) {
@@ -36,7 +37,13 @@ test("the interrupted-sync interface uses the resumable continue action", () => 
   assert.ok(content.includes("const syncFailed = Boolean(syncJob?.error)"));
   assert.ok(content.includes('["preparing", "months", "daily"].includes(syncJob.phase)'));
   assert.ok(content.includes('syncIncomplete ? \'<button data-action="continue-sync">Continue</button>\''));
-  assert.ok(content.includes('if (action === "continue-sync") await continueFullSync()'));
+  assert.ok(content.includes('if (action === "continue-sync") {'));
+  assert.ok(content.includes('type: "UPA_OPEN_PORTAL_FOR_SYNC"'));
+  assert.ok(content.includes('syncJob?.failure?.code === "portal-tab-unavailable"'));
+  assert.ok(content.includes('type: "UPA_SYNC_RECOVERY_READY"'));
+  assert.ok(content.includes('syncJob?.failure?.code === "portal-tab-unavailable" && ["preparing", "months", "daily"].includes(syncJob.phase)'));
+  assert.ok(background.includes('message?.type === "UPA_SYNC_RECOVERY_READY"'));
+  assert.ok(background.includes('upaCloseAfterRecovery:${analyticsTab.id}'));
   assert.ok(content.includes('["preparing", "months", "daily"].includes(syncJob?.phase) || isRefreshing'));
 });
 
@@ -88,6 +95,7 @@ function monthlyJob() {
 function createHarness(job, failureMessage, options = {}) {
   const requests = [], savedJobs = [], storedRows = plain(options.storedRows || [{ id: "previously-committed-row" }]), errors = [], notices = [];
   let failNextRequest = options.failFirstRequest !== false;
+  const failureCode = options.failureCode;
   let context;
   const API = {
     sales: month => `/sales/${month}`,
@@ -108,7 +116,7 @@ function createHarness(job, failureMessage, options = {}) {
       requests.push({ requestPath, options: plain(options) });
       if (failNextRequest) {
         failNextRequest = false;
-        throw new Error(failureMessage);
+        throw Object.assign(new Error(failureMessage), { code: failureCode });
       }
       return { requestNumber: requests.length };
     },
@@ -235,6 +243,14 @@ test("a failed preparation step resumes without starting a fresh sync", async ()
   assert.equal(preparationAttempts, 2);
   assert.equal(harness.context.syncJob.phase, "complete");
   assert.equal(harness.context.syncJob.error, "");
+});
+
+test("an unavailable Portal tab is identified in the saved full-sync checkpoint", async () => {
+  const harness = createHarness(monthlyJob(), "The Publisher Portal tab is no longer available.", { failureCode: "portal-tab-unavailable" });
+  await harness.actions.runFullSync("publisher-a", 7);
+  assert.equal(harness.context.syncJob.active, false);
+  assert.equal(harness.context.syncJob.phase, "months");
+  assert.equal(harness.context.syncJob.failure.code, "portal-tab-unavailable");
 });
 
 test("a failure to save the error checkpoint still pauses sync and exposes diagnostics", async () => {

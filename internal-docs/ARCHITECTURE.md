@@ -53,10 +53,12 @@ bridge; analytics rendering belongs to the extension page.
 
 Analytics API requests depend on the Portal tab passed to the extension page.
 If that tab closes, the current request fails. Full sync saves each completed
-step and can continue after the publisher opens Analytics from a Portal tab
-again. A failure during the initial preparation step can also continue by
-repeating preparation. Incremental refresh keeps saved rows and can be run
-again after the Portal is available.
+step. When the bridge confirms that the Portal tab is unavailable, Continue
+opens a new Portal tab. The Portal launcher then opens Analytics with the new
+tab ID, and the page resumes the saved full-sync checkpoint. After that page
+loads the publisher workspace, the background closes the old Analytics tab.
+A failure during initial preparation repeats preparation. Incremental refresh
+keeps saved rows and can be run again after the Portal is available.
 
 Authentication material belongs only to the live page request. Do not put
 cookies, CSRF values, authorization values, or session headers in retained

@@ -26,11 +26,12 @@
     const shape = Array.isArray(message.data) ? "array" : message.data === null ? "null" : typeof message.data;
     if (pending.generation === workspaceGeneration) recordDiagnostic({ kind: "request", endpoint: pending.endpoint, method: pending.method,
       status: Number(message.status) || 0, outcome: message.ok ? "success" : "failure", durationMs: Date.now() - pending.startedAt, shape,
+      ...(!message.ok && message.code ? { code: message.code } : {}),
       ...(pending.endpoint === "user" ? { publisherIdPresent: Boolean(compact(message.data?.publisherId)) } : {}) });
     if (message.ok) pending.resolve(message.data);
     else {
       const detail = typeof message.data === "string" ? compact(message.data).slice(0, 180) : message.data?.message || message.error || "";
-      pending.reject(Object.assign(new Error(`Publisher API returned ${message.status || "a network error"} for ${pending.path.split("?")[0]}${detail ? `: ${detail}` : ""}.`), { code: message.status ? "http" : "network" }));
+      pending.reject(Object.assign(new Error(`Publisher API returned ${message.status || "a network error"} for ${pending.path.split("?")[0]}${detail ? `: ${detail}` : ""}.`), { code: message.code || (message.status ? "http" : "network") }));
     }
   }
 

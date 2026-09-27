@@ -49,6 +49,15 @@ function metaId(publisherId, key) {
   return JSON.stringify([publisherId, String(key || "")]);
 }
 
+async function openPortalAndAnalytics(closeAnalyticsTabId = 0) {
+  const portalTab = await extensionApi.tabs.create({ url: "about:blank" });
+  if (!portalTab.id) throw new Error("Could not open a Publisher Portal tab.");
+  const key = `${OPEN_REQUEST_PREFIX}${portalTab.id}`;
+  await extensionApi.storage.session.set({ [key]: closeAnalyticsTabId ? { closeAnalyticsTabId } : true });
+  try { await extensionApi.tabs.update(portalTab.id, { url: PUBLISHER_PORTAL_URL }); }
+  catch (error) { await extensionApi.storage.session.remove(key); throw error; }
+}
+
 function packageIconId(publisherId, packageId) {
   return JSON.stringify([publisherId, packageId]);
 }
@@ -194,23 +203,64 @@ extensionApi.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (!tabId) return false;
     const key = `${OPEN_REQUEST_PREFIX}${tabId}`;
     extensionApi.storage.session.get(key).then(async values => {
-      if (values[key] !== true) return;
+      const openRequest = values[key];
+      if (!openRequest) return;
       await extensionApi.storage.session.remove(key);
-      await extensionApi.tabs.create({ url: extensionApi.runtime.getURL(`analytics.html?portalTabId=${tabId}`) });
+      const analyticsTab = await extensionApi.tabs.create({ url: "about:blank" });
+      if (!analyticsTab.id) return;
+      const oldAnalyticsTabId = Number(openRequest?.closeAnalyticsTabId) || 0;
+      if (oldAnalyticsTabId) await extensionApi.storage.session.set({ [`upaCloseAfterRecovery:${analyticsTab.id}`]: oldAnalyticsTabId });
+      await extensionApi.tabs.update(analyticsTab.id, { url: extensionApi.runtime.getURL(`analytics.html?portalTabId=${tabId}`) });
     }).catch(() => {});
     return false;
+  }
+  if (message?.type === "UPA_SYNC_RECOVERY_READY") {
+    const extensionRoot = extensionApi.runtime.getURL("");
+    if (!sender.url?.startsWith(extensionRoot)) return false;
+    const analyticsTabId = Number(message.analyticsTabId);
+    const markerKey = `upaCloseAfterRecovery:${analyticsTabId}`;
+    extensionApi.tabs.get(analyticsTabId).then(async analyticsTab => {
+      if (!analyticsTab?.url?.startsWith(extensionRoot) || analyticsTab.url !== sender.url) return;
+      const values = await extensionApi.storage.session.get(markerKey);
+      const oldAnalyticsTabId = Number(values[markerKey]) || 0;
+      if (!oldAnalyticsTabId) return;
+      await extensionApi.storage.session.remove(markerKey);
+      if (oldAnalyticsTabId === analyticsTabId) return;
+      const oldAnalyticsTab = await extensionApi.tabs.get(oldAnalyticsTabId).catch(() => null);
+      if (oldAnalyticsTab?.url?.startsWith(extensionRoot) && oldAnalyticsTab.url.includes("/analytics.html")) {
+        await extensionApi.tabs.remove(oldAnalyticsTabId);
+      }
+    }).then(() => sendResponse({ ok: true })).catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
   }
   if (message?.type === "UPA_PORTAL_API") {
     const extensionRoot = extensionApi.runtime.getURL("");
     if (!sender.url?.startsWith(extensionRoot)) { sendResponse({ ok: false, status: 0, error: "Invalid analytics page." }); return false; }
     const portalTabId = Number(message.portalTabId);
     extensionApi.tabs.get(portalTabId).then(tab => {
-      if (!tab?.url || new URL(tab.url).origin !== "https://publisher.unity.com") throw new Error("Open Publisher Portal in a signed-in tab to make requests.");
+      if (!tab?.url || new URL(tab.url).origin !== "https://publisher.unity.com") throw Object.assign(new Error("The Publisher Portal tab is no longer available."), { code: "portal-tab-unavailable" });
       return extensionApi.tabs.sendMessage(portalTabId, {
         type: "UPA_PORTAL_API_BRIDGE", requestId: message.requestId, path: message.path,
         method: message.method, body: message.body
       });
-    }).then(sendResponse).catch(error => sendResponse({ ok: false, status: 0, error: error.message }));
+    }).then(sendResponse).catch(async error => {
+      let portalTabUnavailable = error.code === "portal-tab-unavailable";
+      if (!portalTabUnavailable) {
+        try {
+          const tab = await extensionApi.tabs.get(portalTabId);
+          portalTabUnavailable = !tab?.url || new URL(tab.url).origin !== "https://publisher.unity.com";
+        } catch { portalTabUnavailable = true; }
+      }
+      sendResponse({ ok: false, status: 0, error: portalTabUnavailable ? "The Publisher Portal tab is no longer available." : error.message,
+        ...(portalTabUnavailable ? { code: "portal-tab-unavailable" } : {}) });
+    });
+    return true;
+  }
+  if (message?.type === "UPA_OPEN_PORTAL_FOR_SYNC") {
+    const extensionRoot = extensionApi.runtime.getURL("");
+    if (!sender.url?.startsWith(extensionRoot)) return false;
+    const oldAnalyticsTabId = Number(message.closeAnalyticsTabId) || 0;
+    openPortalAndAnalytics(oldAnalyticsTabId).then(() => sendResponse({ ok: true })).catch(error => sendResponse({ ok: false, error: error.message }));
     return true;
   }
   if (message?.type === "UPA_OPEN_PORTAL") {
@@ -243,10 +293,5 @@ extensionApi.action.onClicked.addListener(async tab => {
     await extensionApi.tabs.create({ url: extensionApi.runtime.getURL(`analytics.html?portalTabId=${tab.id}`) });
     return;
   }
-  const portalTab = await extensionApi.tabs.create({ url: "about:blank" });
-  if (!portalTab.id) return;
-  const key = `${OPEN_REQUEST_PREFIX}${portalTab.id}`;
-  await extensionApi.storage.session.set({ [key]: true });
-  try { await extensionApi.tabs.update(portalTab.id, { url: PUBLISHER_PORTAL_URL }); }
-  catch (error) { await extensionApi.storage.session.remove(key); throw error; }
+  await openPortalAndAnalytics();
 });
