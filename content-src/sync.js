@@ -99,7 +99,7 @@
   }
 
   async function continueFullSync() {
-    if (!syncJob || syncJob.active || !["months", "daily"].includes(syncJob.phase)) return;
+    if (!syncJob || syncJob.active || !["preparing", "months", "daily"].includes(syncJob.phase)) return;
     const publisherId = publisherIdentity.id, generation = workspaceGeneration;
     if (syncJob.publisherId !== publisherId) return;
     syncJob.active = true;

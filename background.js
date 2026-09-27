@@ -213,11 +213,15 @@ extensionApi.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }).then(sendResponse).catch(error => sendResponse({ ok: false, status: 0, error: error.message }));
     return true;
   }
-  if (message?.type === "UPA_FOCUS_PORTAL") {
+  if (message?.type === "UPA_OPEN_PORTAL") {
     const extensionRoot = extensionApi.runtime.getURL("");
     if (!sender.url?.startsWith(extensionRoot)) return false;
-    extensionApi.tabs.update(Number(message.portalTabId), { active: true }).then(tab => extensionApi.windows.update(tab.windowId, { focused: true })).catch(() => {});
-    return false;
+    const requestedTabId = Number(message.portalTabId);
+    extensionApi.tabs.get(requestedTabId).then(tab => {
+      if (!tab?.url || new URL(tab.url).origin !== "https://publisher.unity.com") return extensionApi.tabs.create({ url: PUBLISHER_PORTAL_URL });
+      return extensionApi.tabs.update(tab.id, { active: true }).then(activeTab => extensionApi.windows.update(activeTab.windowId, { focused: true }));
+    }).then(() => sendResponse({ ok: true })).catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
   }
   if (message?.type === "UPA_CONSUME_OPEN") {
     const key = `${OPEN_REQUEST_PREFIX}${sender.tab?.id}`;

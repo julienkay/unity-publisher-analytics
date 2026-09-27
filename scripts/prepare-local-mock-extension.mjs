@@ -13,7 +13,7 @@ const runtimeFiles = [
 
 const marker = "  function bindEvents() {";
 const clickMarker = '      if (action === "download-support")';
-const accountMarker = '<button type="button" data-action="exit-analytics" role="menuitem">';
+const accountMarker = '<button type="button" data-action="open-settings" role="menuitem">';
 
 const mockCode = String.raw`
   const LOCAL_MOCK_PUBLISHER_ID = "local-mock-catalog-v1";

@@ -100,7 +100,11 @@
         await openPublisherWorkspace(true);
         return;
       }
-      if (publisherIdentityState !== "ready" && action && !["toggle-account", "exit-analytics"].includes(action)) return;
+      if (action === "open-portal") {
+        extensionApi.runtime.sendMessage({ type: "UPA_OPEN_PORTAL", portalTabId }).catch(() => {});
+        return;
+      }
+      if (publisherIdentityState !== "ready" && action && action !== "toggle-account") return;
       const packageButton = event.target.closest("button[data-package-id]");
       if (packageButton && publisherIdentityState === "ready") {
         prefs.packageId = packageButton.dataset.packageId;
@@ -242,10 +246,6 @@
         prefs.section = "dashboard"; accountMenuOpen = false; await savePrefs(); render();
         if (shouldStart) await startFullSync();
         return;
-      }
-      if (action === "exit-analytics") {
-        if (standalone) { extensionApi.runtime.sendMessage({ type: "UPA_FOCUS_PORTAL", portalTabId }).catch(() => {}); return; }
-        isOpen = false; groupEditor = null; accountMenuOpen = false; render(); return;
       }
       if (action === "sync-all") await startFullSync();
       if (action === "refresh") await incrementalSync(true);

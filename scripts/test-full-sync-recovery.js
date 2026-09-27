@@ -34,6 +34,7 @@ function historyMonths(count) {
 
 test("the interrupted-sync interface uses the resumable continue action", () => {
   assert.ok(content.includes("const syncFailed = Boolean(syncJob?.error)"));
+  assert.ok(content.includes('["preparing", "months", "daily"].includes(syncJob.phase)'));
   assert.ok(content.includes('syncIncomplete ? \'<button data-action="continue-sync">Continue</button>\''));
   assert.ok(content.includes('if (action === "continue-sync") await continueFullSync()'));
   assert.ok(content.includes('["preparing", "months", "daily"].includes(syncJob?.phase) || isRefreshing'));
@@ -102,7 +103,7 @@ function createHarness(job, failureMessage, options = {}) {
     syncJob: plain(job),
     records: [],
     ownsWorkspace: (publisherId, generation) => context.publisherIdentity.id === publisherId && context.workspaceGeneration === generation,
-    prepareFullSync: async () => { throw new Error("The recovery test must not prepare a new sync."); },
+    prepareFullSync: options.prepareFullSync || (async () => { throw new Error("The recovery test must not prepare a new sync."); }),
     apiJson: async (requestPath, options = {}) => {
       requests.push({ requestPath, options: plain(options) });
       if (failNextRequest) {
@@ -213,6 +214,27 @@ test("a monthly failure resumes the same month without discarding committed rows
   assert.equal(harness.context.syncJob.monthIndex, checkpoint.months.length);
   assert.equal(harness.context.syncJob.completed, checkpoint.total);
   assert.ok(harness.storedRows.length > 1);
+});
+
+test("a failed preparation step resumes without starting a fresh sync", async () => {
+  let preparationAttempts = 0;
+  const harness = createHarness({ publisherId: "publisher-a", active: true, phase: "preparing", completed: 0, total: 0 }, "unused", {
+    prepareFullSync: async publisherId => {
+      preparationAttempts += 1;
+      if (preparationAttempts === 1) throw new Error("The Publisher Portal tab was closed.");
+      harness.context.syncJob = { publisherId, active: true, phase: "months", months: [], monthIndex: 0, scopes: [], scopeIndex: 0, completed: 0, total: 0, error: "" };
+    }
+  });
+
+  await harness.actions.runFullSync("publisher-a", 7);
+  assert.equal(harness.context.syncJob.active, false);
+  assert.equal(harness.context.syncJob.phase, "preparing");
+  assert.equal(harness.context.syncJob.error, "The Publisher Portal tab was closed.");
+
+  await harness.actions.continueFullSync();
+  assert.equal(preparationAttempts, 2);
+  assert.equal(harness.context.syncJob.phase, "complete");
+  assert.equal(harness.context.syncJob.error, "");
 });
 
 test("a failure to save the error checkpoint still pauses sync and exposes diagnostics", async () => {
