@@ -749,7 +749,7 @@
   }
 
   async function loadPublisherProfile() {
-    if (standalone) return null;
+    if (standalone) return publisherProfileFromPortal();
     if (location.pathname === "/account/profile") {
       for (let attempt = 0; attempt < 30; attempt += 1) {
         const profile = publisherFromProfile(document); if (profile) return profile;
@@ -779,22 +779,32 @@
     let cached;
     try { cached = (await extensionApi.storage.local.get(key))[key]; }
     catch (error) { recordDiagnostic({ kind: "publisher-display-cache", ...failureDetails(error) }); }
-    const fresh = !force && cached?.id === id && Date.now() - Number(cached.updatedAt || 0) < 86400000;
+    const cachedPublisher = cached?.id === id ? cached : null;
+    const fresh = !force && cachedPublisher?.icon && Date.now() - Number(cachedPublisher.updatedAt || 0) < 86400000;
     if (fresh) return { ...cached, portalLabel: displayText(cached.portalLabel), name: displayText(cached.name) };
-    const apiIcon = typeof user.avatar === "string" ? user.avatar : "";
+    const apiIcon = publisherIconUrl(user.avatar);
+    const cachedIcon = publisherIconUrl(cachedPublisher?.icon);
     const apiName = displayText(user.publisherName || user.publisherOrgName);
-    const profile = apiIcon && apiName ? null : await loadPublisherProfile();
+    const profile = apiIcon || (cachedIcon && !force) ? null : await loadPublisherProfile();
     const identity = {
       id,
       organizationId: compact(user.publisherOrgId || user.defaultOrgId),
       portalLabel: displayText(header?.portalLabel),
       name: apiName || displayText(profile?.name) || displayText(header?.name) || "Publisher",
-      icon: apiIcon || profile?.icon || "",
+      icon: apiIcon || publisherIconUrl(profile?.icon) || cachedIcon || "",
       updatedAt: Date.now()
     };
     try { await extensionApi.storage.local.set({ [key]: identity }); }
     catch (error) { recordDiagnostic({ kind: "publisher-display-cache", ...failureDetails(error) }); }
     return identity;
+  }
+
+  function publisherIconUrl(value) {
+    if (typeof value !== "string" || !value.trim()) return "";
+    try {
+      const url = new URL(value.startsWith("//") ? `https:${value}` : value);
+      return url.protocol === "https:" && url.hostname === "assetstorev1-prd-cdn.unity3d.com" && !url.username && !url.password ? url.href : "";
+    } catch { return ""; }
   }
   function recordDiagnostic(event) {
     diagnosticEvents.push({ at: new Date().toISOString(), ...event });
@@ -1123,6 +1133,14 @@
         window.postMessage({ source: "unity-publisher-analytics", type: "UPA_API_REQUEST", requestId, path, method, body: options.body }, location.origin);
       }
     });
+  }
+
+  async function publisherProfileFromPortal() {
+    if (!standalone || !portalTabId) return null;
+    try {
+      const response = await extensionApi.runtime.sendMessage({ type: "UPA_PORTAL_PROFILE", portalTabId });
+      return response?.ok && response.profile && typeof response.profile === "object" ? response.profile : null;
+    } catch { return null; }
   }
 
   function completeApiResponse(message) {

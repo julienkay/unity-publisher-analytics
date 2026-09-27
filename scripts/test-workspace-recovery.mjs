@@ -33,7 +33,7 @@ try {
     await handleDatabaseMessage({ type: "UPA_DB_PUT_MANY", publisherId, records: rows });
     await handleDatabaseMessage({ type: "UPA_DB_PUT_MANY", publisherId: "other-publisher", records: [{ id: "other-row", publisherId: "other-publisher" }] });
     await handleDatabaseMessage({ type: "UPA_DB_SET_META", publisherId, key: "apiSyncV1", value: {
-      publisherId, phase: "daily", active: false, completed: 620, total: 1393,
+      publisherId, phase: "complete", active: false, completed: 620, total: 1393,
       scopeIndex: 45, monthIndex: 92, cursor: "2022-01-01", packages: [], scopes: [], error: "Synthetic previous failure"
     } });
     return { bytes: JSON.stringify(rows).length, count: rows.length };
@@ -46,31 +46,40 @@ try {
     if (message.text().startsWith("[UPA performance]")) performanceEvents.push(message.text());
   });
   await page.route(/^https?:/, route => route.abort());
-  async function open(mode = "normal") {
-    await page.goto(`${base}manifest.json`);
+  async function open(mode = "normal", activePublisherId = publisherId) {
+    await page.goto(`${base}manifest.json?portalTabId=42`);
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.setContent('<!doctype html><html><head><meta charset="utf-8"></head><body></body></html>');
     await page.addStyleTag({ url: `${base}styles.css` });
-    await page.evaluate(async publisherId => {
-      await chrome.storage.local.set({ [`unityPublisherAnalyticsPrefsV2:${publisherId}`]: { section: "dashboard", range: "all", theme: "light" } });
-    }, publisherId);
-    await page.evaluate(({ publisherId, privateMarker, mode, base, tracePerformance }) => {
+    await page.evaluate(async activePublisherId => {
+      await chrome.storage.local.set({ [`unityPublisherAnalyticsPrefsV2:${activePublisherId}`]: { section: "dashboard", range: "all", theme: "light" } });
+    }, activePublisherId);
+    await page.evaluate(({ publisherId: activePublisherId, privateMarker, mode, base, tracePerformance }) => {
       window.testMode = mode;
       window.testRequests = [];
+      window.profileBridgeRequests = 0;
       window.__UPA_PERF_TRACE = tracePerformance;
       const send = chrome.runtime.sendMessage.bind(chrome.runtime);
-      chrome.runtime.sendMessage = async message => {
+      chrome.runtime.sendMessage = function (message, callback) {
+        if (message.type === "UPA_PORTAL_PROFILE" && window.testMode.startsWith("profile")) {
+          window.profileBridgeRequests += 1;
+          const response = { ok: true, profile: { name: "Synthetic publisher profile", icon: "https://assetstorev1-prd-cdn.unity3d.com/key-image/synthetic-publisher.jpg" } };
+          if (typeof callback === "function") { callback(response); return; }
+          return Promise.resolve(response);
+        }
         if (message.type === "UPA_PORTAL_API") {
           window.testRequests.push(message.path);
-          if (window.testMode === "timeout") return new Promise(() => {});
+          if (window.testMode === "timeout") return typeof callback === "function" ? undefined : new Promise(() => {});
           const status = window.testMode === "auth" ? 401 : 200;
           const data = window.testMode === "missing" ? { name: privateMarker }
             : window.testMode === "html" ? `<html>${privateMarker}</html>`
             : status === 401 ? { message: privateMarker }
-            : { publisherId, publisherName: privateMarker, avatar: `${base}icons/publisher-analytics-128.png` };
-          return { ok: status === 200, status, data };
+            : { publisherId: activePublisherId, publisherName: privateMarker, avatar: mode.startsWith("profile") ? {} : `${base}icons/publisher-analytics-128.png` };
+          const response = { ok: status === 200, status, data };
+          if (typeof callback === "function") { callback(response); return; }
+          return Promise.resolve(response);
         }
-        return send(message);
+        return send.apply(this, arguments);
       };
       const getAll = IDBIndex.prototype.getAll;
       IDBIndex.prototype.getAll = function (...args) {
@@ -88,7 +97,7 @@ try {
       const formatter = Intl.NumberFormat;
       if (mode === "render") Intl.NumberFormat = function () { throw new RangeError("Synthetic render failure"); };
       window.restoreFormatter = () => { Intl.NumberFormat = formatter; };
-    }, { publisherId, privateMarker, mode, base, tracePerformance });
+    }, { publisherId: activePublisherId, privateMarker, mode, base, tracePerformance });
     await page.addScriptTag({ url: `${base}content.js` });
   }
   async function report() {
@@ -104,6 +113,7 @@ try {
 
   await open();
   await page.locator(".upa-dashboard-view").waitFor({ timeout: 60000 });
+  await report();
   const loaded = await report();
   if (tracePerformance) console.log(`Performance baseline for 18,000-row padded workspace: ${performanceEvents.join("\n  ")}`);
   assert.equal(loaded.workspace.loadedRecords, seed.count);
@@ -118,7 +128,10 @@ try {
   assert.equal(page.url(), originalUrl, "Changing analytics sections must not navigate the extension page.");
   assert.equal(await page.locator("#upa-root.upa-open").count(), 1, "The analytics workspace must stay open after changing sections.");
   await report();
-  assert.deepEqual(await page.evaluate(() => window.testRequests), ["/publisher-v2-api/user"]);
+  assert.ok((await page.evaluate(() => window.testRequests)).includes("/publisher-v2-api/user"));
+
+  await page.locator('[data-action="toggle-account"]:visible').click();
+  await page.locator('.upa-account-menu [data-action="open-settings"]:visible').click();
   const [download] = await Promise.all([
     page.waitForEvent("download"),
     page.locator('.upa-support-panel [data-action="download-support"]').click()
@@ -127,6 +140,16 @@ try {
   assert.equal(downloaded.workspace.loadedRecords, seed.count);
   assert.ok(!JSON.stringify(downloaded).includes(privateMarker));
   console.log(`Direct IndexedDB loading passed: ${seed.count} rows, ${(seed.bytes / 1024 / 1024).toFixed(1)} MiB.`);
+
+  const profilePublisherId = "synthetic-profile-publisher";
+  await open("profile", profilePublisherId);
+  await page.locator(".upa-publisher-avatar img").waitFor({ timeout: 60000 });
+  const profileIcon = await page.locator(".upa-publisher-avatar img").getAttribute("src");
+  assert.equal(profileIcon, "https://assetstorev1-prd-cdn.unity3d.com/key-image/synthetic-publisher.jpg");
+  assert.equal(await page.evaluate(() => window.profileBridgeRequests), 1, "A missing API avatar must use the live Portal profile bridge.");
+  await open("profile-restart", profilePublisherId);
+  await page.locator(".upa-publisher-avatar img").waitFor({ timeout: 60000 });
+  assert.equal(await page.evaluate(() => window.profileBridgeRequests), 0, "A cached publisher icon must not require another profile lookup.");
 
   for (const [mode, stage, code] of [
     ["storage", "local-data", "unexpected-error"], ["preferences", "preferences", "unexpected-error"],

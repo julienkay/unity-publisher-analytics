@@ -13,6 +13,7 @@ This file lists the main changes that affect publishers.
 - Kept Settings and the Publisher Portal accessible after workspace errors.
 - Added downloadable support reports that exclude account details and sales figures.
 - Keep Dashboard and Analytics hidden until a full history sync completes. Settings and sync recovery remain available while it runs.
+- Restore the publisher profile icon in the extension workspace.
 
 ## 1.2.1 — 2026-09-24
 

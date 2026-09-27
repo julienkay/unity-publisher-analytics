@@ -112,6 +112,13 @@ The Publisher Portal production bundle inspected on 2026-08-16 requests
 `publisherId` for Asset Store publisher-profile URLs. It uses `publisherOrgId`
 or `defaultOrgId` for Unity organization context.
 
+On 2026-09-27, a read-only CDP request to `/publisher-v2-api/user` in the
+signed-in Portal returned HTTP 200. Its `avatar` value was an empty object.
+No account values were retained. A separate signed-in Unity publisher profile
+page displayed a 160 × 160 organization image from the approved Asset Store
+image CDN. This does not prove that the older `/account/profile` page uses the
+same markup or that other accounts return the same response.
+
 Publisher Analytics+ uses a non-empty `publisherId` string as the local ownership
 key. Organization IDs are only descriptive identity metadata. They do not select
 analytics storage. Each normalized record includes its publisher ID. IndexedDB

@@ -86,6 +86,20 @@ function validateCrossBrowserApiFacade() {
   }
 }
 
+function validatePublisherProfileRelay() {
+  const background = fs.readFileSync(path.join(root, "background.js"), "utf8");
+  const bridge = fs.readFileSync(path.join(root, "portal-bridge.js"), "utf8");
+  const content = fs.readFileSync(path.join(root, "content.js"), "utf8");
+  assert.ok(background.includes('message?.type === "UPA_PORTAL_PROFILE"'), "The background must handle publisher-profile requests from the extension page.");
+  assert.ok(background.includes('new URL(tab.url).origin !== "https://publisher.unity.com"'), "Profile requests must target only a Publisher Portal tab.");
+  assert.ok(background.includes('type: "UPA_PORTAL_PROFILE_BRIDGE"'), "The background must relay profile requests to the Portal content script.");
+  assert.ok(bridge.includes('message?.type === "UPA_PORTAL_PROFILE_BRIDGE"'), "The Portal content script must handle profile relay requests.");
+  assert.ok(bridge.includes('img[alt="Profile picture"]'), "The profile relay must read the profile image from the Portal DOM.");
+  assert.ok(content.includes('type: "UPA_PORTAL_PROFILE", portalTabId'), "The standalone workspace must request profile details from its linked Portal tab.");
+  assert.ok(content.includes('url.hostname === "assetstorev1-prd-cdn.unity3d.com"'), "Publisher images must stay on the approved image host.");
+  assert.ok(content.includes("const cachedIcon = publisherIconUrl(cachedPublisher?.icon)"), "A publisher icon must be reused from the publisher-scoped display cache.");
+}
+
 function validatePackageGroupPersistence() {
   const content = fs.readFileSync(path.join(root, "content.js"), "utf8");
   const background = fs.readFileSync(path.join(root, "background.js"), "utf8");
@@ -178,6 +192,7 @@ Promise.resolve()
   .then(validateNamespacePropagation)
   .then(validateIdentityLifecycle)
   .then(validateCrossBrowserApiFacade)
+  .then(validatePublisherProfileRelay)
   .then(validatePackageGroupPersistence)
   .then(validateClearRecovery)
   .then(() => console.log("Publisher isolation, package-group, and clear-recovery validation passed."))

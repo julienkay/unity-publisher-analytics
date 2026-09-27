@@ -233,6 +233,16 @@ extensionApi.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }).then(() => sendResponse({ ok: true })).catch(error => sendResponse({ ok: false, error: error.message }));
     return true;
   }
+  if (message?.type === "UPA_PORTAL_PROFILE") {
+    const extensionRoot = extensionApi.runtime.getURL("");
+    if (!sender.url?.startsWith(extensionRoot)) { sendResponse({ ok: false, error: "Invalid analytics page." }); return false; }
+    const portalTabId = Number(message.portalTabId);
+    extensionApi.tabs.get(portalTabId).then(tab => {
+      if (!tab?.url || new URL(tab.url).origin !== "https://publisher.unity.com") throw new Error("The Publisher Portal tab is no longer available.");
+      return extensionApi.tabs.sendMessage(portalTabId, { type: "UPA_PORTAL_PROFILE_BRIDGE" });
+    }).then(sendResponse).catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
   if (message?.type === "UPA_PORTAL_API") {
     const extensionRoot = extensionApi.runtime.getURL("");
     if (!sender.url?.startsWith(extensionRoot)) { sendResponse({ ok: false, status: 0, error: "Invalid analytics page." }); return false; }

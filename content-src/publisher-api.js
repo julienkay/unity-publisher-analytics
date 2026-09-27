@@ -20,6 +20,14 @@
     });
   }
 
+  async function publisherProfileFromPortal() {
+    if (!standalone || !portalTabId) return null;
+    try {
+      const response = await extensionApi.runtime.sendMessage({ type: "UPA_PORTAL_PROFILE", portalTabId });
+      return response?.ok && response.profile && typeof response.profile === "object" ? response.profile : null;
+    } catch { return null; }
+  }
+
   function completeApiResponse(message) {
     const pending = pendingApiRequests.get(message.requestId); if (!pending) return;
     pendingApiRequests.delete(message.requestId); clearTimeout(pending.timeout);

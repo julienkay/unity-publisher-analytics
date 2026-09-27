@@ -60,6 +60,15 @@ loads the publisher workspace, the background closes the old Analytics tab.
 A failure during initial preparation repeats preparation. Incremental refresh
 keeps saved rows and can be run again after the Portal is available.
 
+The extension page cannot read the Portal page DOM. If the identity API has no
+publisher image URL, it asks the background to read the profile image from its
+linked Portal tab. The background checks that tab's origin before it forwards
+the request. The Portal content script returns only the profile name and image
+URL. The extension accepts image URLs only from the approved Asset Store image
+CDN. It stores the URL in the publisher-keyed display cache and reuses it on
+later opens. A forced identity refresh can update the image. A different
+publisher uses a different cache key.
+
 Authentication material belongs only to the live page request. Do not put
 cookies, CSRF values, authorization values, or session headers in retained
 artifacts. Raw API responses can be retained as development evidence.

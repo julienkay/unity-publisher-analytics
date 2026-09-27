@@ -217,7 +217,9 @@ bounded database responses, complete loading, publisher isolation, and retained
 sync progress. It injects storage, preference, HTTP 401, missing-identity, HTML,
 timeout, and rendering failures. It checks Settings, retry, report download,
 report privacy, and a narrow viewport. It also checks optional display-cache
-failure. The synthetic text padding tests transport size. It does not establish
+failure. It also checks that a missing API avatar uses the Portal profile
+bridge and that the publisher-scoped icon cache avoids another profile lookup.
+The synthetic text padding tests transport size. It does not establish
 a performance budget for large daily-history charts.
 
 Set `UPA_PERF_TRACE=1` to report record-page round-trip time, IndexedDB page
