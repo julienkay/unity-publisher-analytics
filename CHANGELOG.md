@@ -12,6 +12,7 @@ This file lists the main changes that affect publishers.
 - Distinguished sign-in problems from problems loading or displaying saved history.
 - Kept Settings and the Publisher Portal accessible after workspace errors.
 - Added downloadable support reports that exclude account details and sales figures.
+- Keep Dashboard and Analytics hidden until a full history sync completes. Settings and sync recovery remain available while it runs.
 
 ## 1.2.1 — 2026-09-24
 

@@ -113,6 +113,11 @@ before rendering analytics. A generation change discards a result if the
 active workspace changes. The read is not a cross-tab snapshot. Writes reject
 records whose `publisherId` does not match the requested publisher.
 
+Full-sync rows are written as each step completes. Do not show those rows as
+analytics until the sync checkpoint reaches `complete`. This also applies
+after a pause, failure, or page restart. Keep the sync status and recovery
+actions visible. Keep Settings available while the full sync is incomplete.
+
 Workspace activation loads the checkpoint before the records. Failure stages
 separate identity, preferences, checkpoint, record loading, and rendering.
 The recovery screen does not calculate analytics. It permits Settings, appearance

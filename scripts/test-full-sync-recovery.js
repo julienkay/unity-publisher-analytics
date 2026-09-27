@@ -22,6 +22,7 @@ function extractFunction(name) {
 }
 
 const addDaysSource = extractFunction("addDays");
+const fullSyncPendingSource = extractFunction("fullSyncPending");
 const runFullSyncSource = extractBetween("  async function runFullSync", "  async function continueFullSync");
 const continueFullSyncSource = extractBetween("  async function continueFullSync", "  async function startFullSync");
 const plain = value => JSON.parse(JSON.stringify(value));
@@ -222,6 +223,24 @@ test("a monthly failure resumes the same month without discarding committed rows
   assert.equal(harness.context.syncJob.monthIndex, checkpoint.months.length);
   assert.equal(harness.context.syncJob.completed, checkpoint.total);
   assert.ok(harness.storedRows.length > 1);
+});
+
+test("partial full-sync records stay hidden until the saved job completes", () => {
+  const context = {};
+  vm.runInNewContext(`${fullSyncPendingSource}; this.fullSyncPending = fullSyncPending;`, context);
+  for (const phase of ["preparing", "months", "daily"]) {
+    assert.equal(context.fullSyncPending({ phase, active: true }), true);
+    assert.equal(context.fullSyncPending({ phase, active: false }), true);
+  }
+  assert.equal(context.fullSyncPending({ phase: "complete", active: false }), false);
+  assert.equal(context.fullSyncPending(null), false);
+  assert.ok(content.includes("const hasData = records.length > 0 && !fullSyncPending(syncJob)"));
+  assert.ok(content.includes("fullSyncPending(syncJob) || !analyticsChartModels"));
+  assert.ok(content.includes("fullSyncPending(syncJob) || !records.length"));
+  assert.ok(content.includes(": section === \"settings\" ? settingsPanel() : hasData ?"));
+  assert.ok(content.includes("Your complete history must finish syncing before it is ready to view."));
+  assert.ok(content.includes('data-action="continue-sync"'));
+  assert.ok(content.includes('data-action="open-settings"'));
 });
 
 test("a failed preparation step resumes without starting a fresh sync", async () => {
