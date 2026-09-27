@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputRoot = path.join(projectRoot, ".local-mock-extension");
 const runtimeFiles = [
-  "api-client.js", "analytics.html", "background.js", "content.js", "portal-bridge.js", "styles.css", "manifest.json", "LICENSE",
+  "api-client.js", "analytics.html", "background.js", "content.js", "portal-bridge.js", "portal-launcher.css", "styles.css", "manifest.json", "LICENSE",
   "icons/publisher-analytics-16.png", "icons/publisher-analytics-32.png",
   "icons/publisher-analytics-48.png", "icons/publisher-analytics-128.png",
   "vendor/echarts.min.js", "vendor/echarts.min.js.LEGAL.txt"

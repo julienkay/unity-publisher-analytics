@@ -34,6 +34,7 @@
     {
       "matches": ["https://publisher.unity.com/*"],
       "js": ["portal-bridge.js"],
+      "css": ["portal-launcher.css"],
       "run_at": "document_idle"
     }
   ],

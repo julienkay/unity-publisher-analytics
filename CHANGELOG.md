@@ -4,6 +4,7 @@ This file lists the main changes that affect publishers.
 
 ## 1.2.2 — Unreleased
 
+- Restored the Publisher Portal shortcut to open Publisher Analytics+ in its own tab.
 - Added package icons to Dashboard and Analytics package views.
 - Fixed opening large saved histories that exceed the browser's message limit.
 - Made large history loading faster and showed loading progress.

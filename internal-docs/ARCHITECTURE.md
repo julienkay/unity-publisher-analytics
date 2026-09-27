@@ -12,7 +12,7 @@ Publisher Analytics+ is a Manifest V3 extension with four runtime contexts:
 | Context | Files | Responsibility |
 |---|---|---|
 | Publisher Portal page world | `api-client.js` | Performs allowlisted same-origin requests with the signed-in Portal session. |
-| Publisher Portal content-script world | `portal-bridge.js` | Relays requests between the extension page and the Portal page world. |
+| Publisher Portal content-script world | `portal-bridge.js`, `portal-launcher.css` | Shows the Analytics launcher and relays requests between the extension page and the Portal page world. |
 | Extension page | `analytics.html`, bundled `content.js`, `styles.css`, `vendor/echarts.min.js` | Owns workspace loading, sync, preferences, groups, aggregation, rendering, and exports. It reads saved rows from IndexedDB directly. |
 | Extension background context | `background.js` | Owns IndexedDB writes, package icon downloads and caching, sync metadata persistence, and toolbar-driven opening behavior. |
 
@@ -44,6 +44,12 @@ session. `api-client.js` is also a security boundary: it rejects origins,
 methods, paths, query forms, and request bodies outside its explicit allowlist.
 A new endpoint requires an updated caller and a narrow allowlist. Tests must
 cover both changes.
+
+The Portal content script also adds a small fixed launcher. Its click sends
+`UPA_OPEN_ANALYTICS_FROM_PORTAL` to the background context. The background
+checks the sender tab origin before opening `analytics.html` with that Portal
+tab ID. Keep the Portal injection limited to this launcher and the request
+bridge; analytics rendering belongs to the extension page.
 
 Authentication material belongs only to the live page request. Do not put
 cookies, CSRF values, authorization values, or session headers in retained

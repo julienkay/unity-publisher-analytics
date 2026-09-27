@@ -1,0 +1,40 @@
+#upa-portal-launcher {
+  position: fixed;
+  left: 22px;
+  bottom: 22px;
+  z-index: 2147483645;
+  width: 54px;
+  height: 54px;
+  padding: 0;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  box-shadow: 0 14px 40px rgba(17, 21, 34, .3);
+  cursor: pointer;
+  transition: .2s transform, .2s box-shadow;
+}
+
+#upa-portal-launcher img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+#upa-portal-launcher:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 18px 48px rgba(17, 21, 34, .36);
+}
+
+@media (max-width: 540px) {
+  #upa-portal-launcher {
+    left: 14px;
+    bottom: 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #upa-portal-launcher {
+    transition: none;
+  }
+}

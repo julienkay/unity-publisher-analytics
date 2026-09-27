@@ -181,6 +181,14 @@ async function handleDatabaseMessage(message) {
 }
 
 extensionApi.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "UPA_OPEN_ANALYTICS_FROM_PORTAL") {
+    const tabId = sender.tab?.id;
+    if (!tabId || !sender.tab.url || new URL(sender.tab.url).origin !== "https://publisher.unity.com") return false;
+    extensionApi.tabs.create({ url: extensionApi.runtime.getURL(`analytics.html?portalTabId=${tabId}`) })
+      .then(() => sendResponse({ ok: true }))
+      .catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
   if (message?.type === "UPA_PORTAL_READY") {
     const tabId = sender.tab?.id;
     if (!tabId) return false;

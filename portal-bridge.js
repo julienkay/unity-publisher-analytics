@@ -3,6 +3,22 @@
   const extensionApi = globalThis.browser ?? globalThis.chrome;
   const pending = new Map();
 
+  const ensureLauncher = () => {
+    if (!document.documentElement || document.getElementById("upa-portal-launcher")) return;
+    const launcher = document.createElement("button");
+    launcher.id = "upa-portal-launcher";
+    launcher.type = "button";
+    launcher.setAttribute("aria-label", "Open Publisher Analytics+");
+    launcher.title = "Publisher Analytics+";
+    launcher.innerHTML = `<img src="${extensionApi.runtime.getURL("icons/publisher-analytics-128.png")}" alt="">`;
+    launcher.addEventListener("click", () => {
+      extensionApi.runtime.sendMessage({ type: "UPA_OPEN_ANALYTICS_FROM_PORTAL" }).catch(() => {});
+    });
+    document.documentElement.appendChild(launcher);
+  };
+  ensureLauncher();
+  new MutationObserver(ensureLauncher).observe(document.documentElement, { childList: true, subtree: true });
+
   window.addEventListener("message", event => {
     const message = event.data;
     if (event.source !== window || event.origin !== location.origin || message?.source !== "unity-publisher-analytics-api" || message?.type !== "UPA_API_RESPONSE") return;
