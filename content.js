@@ -982,7 +982,7 @@
       }).catch(() => {});
       continueFullSync();
     }
-    else if (records.length) incrementalSync(false, identity.id, generation);
+    else if (records.length) incrementalSync(identity.id, generation);
   }
 
   async function database(message) {
@@ -1422,10 +1422,9 @@
     }
   }
 
-  async function incrementalSync(announce = false, publisherId = publisherIdentity.id, generation = workspaceGeneration) {
+  async function incrementalSync(publisherId = publisherIdentity.id, generation = workspaceGeneration) {
     if (syncJob?.active || ["preparing", "months", "daily"].includes(syncJob?.phase) || isRefreshing || !records.length) return;
     isRefreshing = true; render();
-    let notice = "", noticeType = "success";
     try {
       const packages = await fetchPackages(), currentMonth = new Date().toISOString().slice(0, 7);
       if (ownsWorkspace(publisherId, generation)) void cacheDiscoveredPackageIcons(packages, publisherId, generation);
@@ -1447,13 +1446,11 @@
       records = await getAll(publisherId);
       syncJob = { ...(syncJob || {}), publisherId, packages, active: false, phase: "complete", error: "", label: "Your history is up to date", lastRefreshedAt: new Date().toISOString() };
       await saveJob(syncJob, publisherId);
-      if (announce) notice = "Your publisher data has been refreshed.";
     } catch (error) {
       if (!ownsWorkspace(publisherId, generation)) return;
       console.warn("Publisher Analytics+ incremental API sync failed:", error.message);
       recordDiagnostic({ kind: "refresh", ...failureDetails(error) });
-      if (announce) { notice = "We couldn't refresh your publisher data. Please try again."; noticeType = "error"; }
-    } finally { if (ownsWorkspace(publisherId, generation)) { isRefreshing = false; render(); if (notice) toast(notice, noticeType); } }
+    } finally { if (ownsWorkspace(publisherId, generation)) { isRefreshing = false; render(); } }
   }
 
   function renderLifetimeChart(viewModel) {
@@ -2359,11 +2356,9 @@
       : syncFailed
         ? '<div class="upa-sync-icon upa-sync-error" aria-hidden="true">!</div>'
         : '<div class="upa-sync-icon" aria-hidden="true">Ⅱ</div>';
-    const latestCapturedAt = latestRecordCapturedAt();
-    const lastRefreshedAt = syncJob?.lastRefreshedAt || syncJob?.finishedAt || latestCapturedAt;
-    const refreshTooltip = `Refresh publisher data · ${lastRefreshedAt ? `Last refreshed ${dateTime(lastRefreshedAt)}` : "Not refreshed yet"}`;
-    const refreshAction = hasData && !syncJob?.active && !syncFailed && !syncIncomplete ? `<button class="upa-refresh-action ${isRefreshing ? "upa-refreshing" : ""}" type="button" data-action="refresh" aria-label="${escapeHtml(refreshTooltip)}" ${isRefreshing ? "disabled" : ""}${section === "dashboard" ? "" : ' style="display:none"'}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 5.9A5.5 5.5 0 1 0 13 10.7"></path><path d="M13.4 2.8v3.5H9.9"></path></svg><span>${isRefreshing ? "Refreshing…" : "Refresh data"}</span><span class="upa-refresh-tooltip" role="tooltip">${escapeHtml(refreshTooltip)}</span></button>` : "";
-    const headerIdentity = section === "package" && selectedPackage ? `<div class="upa-header-package-identity">${packageIconMarkup(selectedPackage, "upa-package-avatar")}<div>${headerTitle}<div class="upa-header-subline"><p>${sectionMeta.description}</p>${refreshAction}</div></div></div>` : `${headerTitle}<div class="upa-header-subline"><p>${hasData || ["groups", "settings"].includes(section) ? sectionMeta.description : "Build a complete, configurable view of your publishing business."}</p>${refreshAction}</div>`;
+    const refreshStatus = hasData && isRefreshing && !syncJob?.active && !syncFailed && !syncIncomplete && section === "dashboard"
+      ? '<span class="upa-refresh-status" role="status" aria-live="polite"><i aria-hidden="true"></i>Refreshing data…</span>' : "";
+    const headerIdentity = section === "package" && selectedPackage ? `<div class="upa-header-package-identity">${packageIconMarkup(selectedPackage, "upa-package-avatar")}<div>${headerTitle}<div class="upa-header-subline"><p>${sectionMeta.description}</p>${refreshStatus}</div></div></div>` : `${headerTitle}<div class="upa-header-subline"><p>${hasData || ["groups", "settings"].includes(section) ? sectionMeta.description : "Build a complete, configurable view of your publishing business."}</p>${refreshStatus}</div>`;
     const customRangeLabel = `${shortDate(dateBounds.start)} – ${shortDate(dateBounds.end)}`;
     const selectedRangeLabel = prefs.range === "custom" ? customRangeLabel : RANGE_OPTIONS.find(option => option.id === prefs.range)?.label || "All time";
     const revenueMixLabel = prefs.range === "all" ? "Lifetime" : selectedRangeLabel;
@@ -2540,10 +2535,6 @@
     if (range) range.style.display = section === "analytics" && prefs.view === "lifetime" ? "none" : "";
     const interval = host.querySelector(".upa-header-interval");
     if (interval) interval.style.display = section === "analytics" && prefs.view === "revenue" ? "" : "none";
-    const refresh = host.querySelector(".upa-refresh-action");
-    const syncIncomplete = Boolean(syncJob && !syncJob.active && ["preparing", "months", "daily"].includes(syncJob.phase));
-    const syncFailed = Boolean(syncJob?.error);
-    if (refresh) refresh.style.display = section === "dashboard" && !syncJob?.active && !syncFailed && !syncIncomplete ? "" : "none";
     disposeCharts();
     if (isOpen) {
       if (section === "dashboard") {
@@ -2805,7 +2796,6 @@
         return;
       }
       if (action === "sync-all") await startFullSync();
-      if (action === "refresh") await incrementalSync(true);
       if (action === "stop-sync" && syncJob) { syncJob.active = false; syncJob.label = "Sync paused"; await saveJob(); render(); }
       if (action === "continue-sync") {
         if (syncJob?.failure?.code === "portal-tab-unavailable") {

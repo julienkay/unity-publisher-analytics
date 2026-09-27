@@ -57,8 +57,10 @@ step. When the bridge confirms that the Portal tab is unavailable, Continue
 opens a new Portal tab. The Portal launcher then opens Analytics with the new
 tab ID, and the page resumes the saved full-sync checkpoint. After that page
 loads the publisher workspace, the background closes the old Analytics tab.
-A failure during initial preparation repeats preparation. Incremental refresh
-keeps saved rows and can be run again after the Portal is available.
+A failure during initial preparation repeats preparation. Opening a ready
+workspace also starts an incremental refresh. If its Portal tab has closed, the
+refresh fails and saved rows remain available. Open Analytics from an active
+Portal tab to link a new workspace to that tab and retry the refresh.
 
 The extension page cannot read the Portal page DOM. If the identity API has no
 publisher image URL, it asks the background to read the profile image from its

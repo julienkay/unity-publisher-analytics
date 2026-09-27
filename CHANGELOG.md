@@ -4,16 +4,10 @@ This file lists the main changes that affect publishers.
 
 ## 1.2.2 — Unreleased
 
-- Removed the redundant Portal exit control. Full sync reopens the Portal, resumes, and closes the old Analytics tab if its Portal tab closes.
-- Restored the Publisher Portal shortcut to open Publisher Analytics+ in its own tab.
 - Added package icons to Dashboard and Analytics package views.
-- Fixed opening large saved histories that exceed the browser's message limit.
-- Made large history loading faster and showed loading progress.
-- Distinguished sign-in problems from problems loading or displaying saved history.
-- Kept Settings and the Publisher Portal accessible after workspace errors.
-- Added downloadable support reports that exclude account details and sales figures.
-- Keep Dashboard and Analytics hidden until a full history sync completes. Settings and sync recovery remain available while it runs.
-- Restore the publisher profile icon in the extension workspace.
+- The extension now opens its analytics workspace in a separate tab.
+- Refreshes recent publisher data automatically when the workspace opens.
+- Improved loading and navigation for large catalogs, with progress shown while saved history loads.
 
 ## 1.2.1 — 2026-09-24
 

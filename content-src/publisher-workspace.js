@@ -260,5 +260,5 @@
       }).catch(() => {});
       continueFullSync();
     }
-    else if (records.length) incrementalSync(false, identity.id, generation);
+    else if (records.length) incrementalSync(identity.id, generation);
   }

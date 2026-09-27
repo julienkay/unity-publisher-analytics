@@ -152,10 +152,9 @@
     }
   }
 
-  async function incrementalSync(announce = false, publisherId = publisherIdentity.id, generation = workspaceGeneration) {
+  async function incrementalSync(publisherId = publisherIdentity.id, generation = workspaceGeneration) {
     if (syncJob?.active || ["preparing", "months", "daily"].includes(syncJob?.phase) || isRefreshing || !records.length) return;
     isRefreshing = true; render();
-    let notice = "", noticeType = "success";
     try {
       const packages = await fetchPackages(), currentMonth = new Date().toISOString().slice(0, 7);
       if (ownsWorkspace(publisherId, generation)) void cacheDiscoveredPackageIcons(packages, publisherId, generation);
@@ -177,11 +176,9 @@
       records = await getAll(publisherId);
       syncJob = { ...(syncJob || {}), publisherId, packages, active: false, phase: "complete", error: "", label: "Your history is up to date", lastRefreshedAt: new Date().toISOString() };
       await saveJob(syncJob, publisherId);
-      if (announce) notice = "Your publisher data has been refreshed.";
     } catch (error) {
       if (!ownsWorkspace(publisherId, generation)) return;
       console.warn("Publisher Analytics+ incremental API sync failed:", error.message);
       recordDiagnostic({ kind: "refresh", ...failureDetails(error) });
-      if (announce) { notice = "We couldn't refresh your publisher data. Please try again."; noticeType = "error"; }
-    } finally { if (ownsWorkspace(publisherId, generation)) { isRefreshing = false; render(); if (notice) toast(notice, noticeType); } }
+    } finally { if (ownsWorkspace(publisherId, generation)) { isRefreshing = false; render(); } }
   }

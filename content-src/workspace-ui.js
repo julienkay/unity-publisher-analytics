@@ -360,11 +360,9 @@
       : syncFailed
         ? '<div class="upa-sync-icon upa-sync-error" aria-hidden="true">!</div>'
         : '<div class="upa-sync-icon" aria-hidden="true">Ⅱ</div>';
-    const latestCapturedAt = latestRecordCapturedAt();
-    const lastRefreshedAt = syncJob?.lastRefreshedAt || syncJob?.finishedAt || latestCapturedAt;
-    const refreshTooltip = `Refresh publisher data · ${lastRefreshedAt ? `Last refreshed ${dateTime(lastRefreshedAt)}` : "Not refreshed yet"}`;
-    const refreshAction = hasData && !syncJob?.active && !syncFailed && !syncIncomplete ? `<button class="upa-refresh-action ${isRefreshing ? "upa-refreshing" : ""}" type="button" data-action="refresh" aria-label="${escapeHtml(refreshTooltip)}" ${isRefreshing ? "disabled" : ""}${section === "dashboard" ? "" : ' style="display:none"'}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 5.9A5.5 5.5 0 1 0 13 10.7"></path><path d="M13.4 2.8v3.5H9.9"></path></svg><span>${isRefreshing ? "Refreshing…" : "Refresh data"}</span><span class="upa-refresh-tooltip" role="tooltip">${escapeHtml(refreshTooltip)}</span></button>` : "";
-    const headerIdentity = section === "package" && selectedPackage ? `<div class="upa-header-package-identity">${packageIconMarkup(selectedPackage, "upa-package-avatar")}<div>${headerTitle}<div class="upa-header-subline"><p>${sectionMeta.description}</p>${refreshAction}</div></div></div>` : `${headerTitle}<div class="upa-header-subline"><p>${hasData || ["groups", "settings"].includes(section) ? sectionMeta.description : "Build a complete, configurable view of your publishing business."}</p>${refreshAction}</div>`;
+    const refreshStatus = hasData && isRefreshing && !syncJob?.active && !syncFailed && !syncIncomplete && section === "dashboard"
+      ? '<span class="upa-refresh-status" role="status" aria-live="polite"><i aria-hidden="true"></i>Refreshing data…</span>' : "";
+    const headerIdentity = section === "package" && selectedPackage ? `<div class="upa-header-package-identity">${packageIconMarkup(selectedPackage, "upa-package-avatar")}<div>${headerTitle}<div class="upa-header-subline"><p>${sectionMeta.description}</p>${refreshStatus}</div></div></div>` : `${headerTitle}<div class="upa-header-subline"><p>${hasData || ["groups", "settings"].includes(section) ? sectionMeta.description : "Build a complete, configurable view of your publishing business."}</p>${refreshStatus}</div>`;
     const customRangeLabel = `${shortDate(dateBounds.start)} – ${shortDate(dateBounds.end)}`;
     const selectedRangeLabel = prefs.range === "custom" ? customRangeLabel : RANGE_OPTIONS.find(option => option.id === prefs.range)?.label || "All time";
     const revenueMixLabel = prefs.range === "all" ? "Lifetime" : selectedRangeLabel;
@@ -541,10 +539,6 @@
     if (range) range.style.display = section === "analytics" && prefs.view === "lifetime" ? "none" : "";
     const interval = host.querySelector(".upa-header-interval");
     if (interval) interval.style.display = section === "analytics" && prefs.view === "revenue" ? "" : "none";
-    const refresh = host.querySelector(".upa-refresh-action");
-    const syncIncomplete = Boolean(syncJob && !syncJob.active && ["preparing", "months", "daily"].includes(syncJob.phase));
-    const syncFailed = Boolean(syncJob?.error);
-    if (refresh) refresh.style.display = section === "dashboard" && !syncJob?.active && !syncFailed && !syncIncomplete ? "" : "none";
     disposeCharts();
     if (isOpen) {
       if (section === "dashboard") {

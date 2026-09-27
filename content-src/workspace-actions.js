@@ -248,7 +248,6 @@
         return;
       }
       if (action === "sync-all") await startFullSync();
-      if (action === "refresh") await incrementalSync(true);
       if (action === "stop-sync" && syncJob) { syncJob.active = false; syncJob.label = "Sync paused"; await saveJob(); render(); }
       if (action === "continue-sync") {
         if (syncJob?.failure?.code === "portal-tab-unavailable") {

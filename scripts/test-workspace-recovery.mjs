@@ -36,7 +36,14 @@ try {
       publisherId, phase: "complete", active: false, completed: 620, total: 1393,
       scopeIndex: 45, monthIndex: 92, cursor: "2022-01-01", packages: [], scopes: [], error: "Synthetic previous failure"
     } });
-    return { bytes: JSON.stringify(rows).length, count: rows.length };
+    const refreshPublisherId = "synthetic-refresh-publisher";
+    await handleDatabaseMessage({ type: "UPA_DB_PUT_MANY", publisherId: refreshPublisherId, records: [{
+      id: `${refreshPublisherId}|revenue`, publisherId: refreshPublisherId, type: "revenue", date: "2026-01-01", period: "2026-01", credit: 10, debit: 0, balance: 10
+    }] });
+    await handleDatabaseMessage({ type: "UPA_DB_SET_META", publisherId: refreshPublisherId, key: "apiSyncV1", value: {
+      publisherId: refreshPublisherId, phase: "complete", active: false, completed: 1, total: 1, packages: [], scopes: []
+    } });
+    return { bytes: JSON.stringify(rows).length, count: rows.length, refreshPublisherId };
   }, { publisherId, privateMarker, tracePerformance });
   assert.ok(seed.bytes > 64 * 1024 * 1024);
 
@@ -76,6 +83,10 @@ try {
             : status === 401 ? { message: privateMarker }
             : { publisherId: activePublisherId, publisherName: privateMarker, avatar: mode.startsWith("profile") ? {} : `${base}icons/publisher-analytics-128.png` };
           const response = { ok: status === 200, status, data };
+          if (window.testMode === "slow-incremental" && message.path.includes("once-published-packages")) {
+            if (typeof callback === "function") { setTimeout(() => callback(response), 700); return; }
+            return new Promise(resolve => setTimeout(() => resolve(response), 700));
+          }
           if (typeof callback === "function") { callback(response); return; }
           return Promise.resolve(response);
         }
@@ -113,6 +124,7 @@ try {
 
   await open();
   await page.locator(".upa-dashboard-view").waitFor({ timeout: 60000 });
+  assert.equal(await page.locator('[data-action="refresh"]').count(), 0, "The workspace has no manual refresh button.");
   await report();
   const loaded = await report();
   if (tracePerformance) console.log(`Performance baseline for 18,000-row padded workspace: ${performanceEvents.join("\n  ")}`);
@@ -140,6 +152,12 @@ try {
   assert.equal(downloaded.workspace.loadedRecords, seed.count);
   assert.ok(!JSON.stringify(downloaded).includes(privateMarker));
   console.log(`Direct IndexedDB loading passed: ${seed.count} rows, ${(seed.bytes / 1024 / 1024).toFixed(1)} MiB.`);
+
+  await open("slow-incremental", seed.refreshPublisherId);
+  await page.locator(".upa-dashboard-view").waitFor({ timeout: 60000 });
+  await page.locator(".upa-refresh-status").waitFor({ timeout: 10000 });
+  assert.equal(await page.locator('[data-action="refresh"]').count(), 0, "Incremental refresh runs on workspace open and has no manual button.");
+  await page.locator(".upa-refresh-status").waitFor({ state: "detached", timeout: 10000 });
 
   const profilePublisherId = "synthetic-profile-publisher";
   await open("profile", profilePublisherId);
